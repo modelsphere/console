@@ -95,11 +95,10 @@ swiss:
     enabled: false
 
   config:
-    # The model catalog swissd lists and composes plans from.
+    # The model catalog swissd lists and composes plans from, until the site
+    # profile names one of its own. The cluster's name is the profile's name,
+    # set on swissd's setup page.
     catalog: "https://models.example.com/swiss-catalog/"
-    cluster:
-      # REQUIRED when enabled: recorded against every plan composed here.
-      name: ""
     # Deploy, upgrade, uninstall and rollback. Off leaves swissd read-only.
     allowDeploy: true
 

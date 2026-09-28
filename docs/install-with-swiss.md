@@ -38,7 +38,7 @@ hack/preflight-swiss.sh --model-ns <模型命名空间> --gateway-ns <网关命�
 | 组件 | 镜像 |
 |---|---|
 | console | `swr.cn-east-3.myhuaweicloud.com/risecloud/console:0.1.0-dev.49daa54` |
-| swissd | `swr.cn-east-3.myhuaweicloud.com/risecloud/swissd:0.5.7`（chart 的 appVersion） |
+| swissd | `swr.cn-east-3.myhuaweicloud.com/risecloud/swissd:0.5.8`（chart 的 appVersion） |
 
 ```sh
 kubectl create ns modelsphere
@@ -55,8 +55,7 @@ kubectl -n modelsphere create secret docker-registry swr-creds \
 
 | 值 | 填什么 |
 |---|---|
-| `swiss.config.catalog` | 模型目录地址 |
-| `swiss.config.cluster.name` | 集群名，记在每个部署计划上 |
+| `swiss.config.catalog` | 模型目录地址（默认值；站点配置里的 `catalog` 优先） |
 | `swiss.rbac.namespaces` | 模型部署到的命名空间（= 站点配置的 `namespace`） |
 | `playground.gateway.namespaces` | 网关所在命名空间（路由 ConfigMap 和 key Secret） |
 
@@ -135,7 +134,7 @@ kubectl -n modelsphere create configmap chart-mirror --from-file=.
 | Playground 502 `site profile ... not found` | 还没完成第 4 步 |
 | Playground 502 `forbidden` 读 Secret/ConfigMap | `playground.gateway.namespaces` 没包含网关命名空间 |
 | 部署页看不到 release、或 apply 403 | 模型命名空间不在 `swiss.rbac.namespaces` |
-| 状态页探活 401 | swissd 早于 0.5.7，或 `secretKey` 指的条目不是 key |
+| 状态页探活 401 | swissd 早于 0.5.8，或 `secretKey` 指的条目不是 key |
 | diff 500 `progressDeadlineSeconds (2000) does not clear the startupProbe budget` | 目录里 qwen3.6-35b-a3b 1.0.0 的问题。改用 1.0.1（model-catalog 分支 `fix/qwen3.6-progress-deadline`，需要发布到目录） |
 | diff 500 `no matches for kind "LeaderWorkerSet"` | 集群没装 LWS CRD；kimi-k2.5 这类多节点模型需要 |
 | diff 500 `failed to fetch ... index.yaml` / 超时 | 集群访问不到 chart 仓库，见"集群访问不到 chart 仓库时" |

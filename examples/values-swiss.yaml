@@ -15,9 +15,8 @@ swiss:
   imagePullSecrets:
     - name: swr-creds
   config:
+    # Until the site profile names a catalog of its own.
     catalog: "<https base of the published model catalog, serving index.json>"
-    cluster:
-      name: "<this cluster's name, e.g. testenv>"
   rbac:
     # The site profile's `namespace` (where models are deployed). swissd sees and
     # deploys releases only here.
