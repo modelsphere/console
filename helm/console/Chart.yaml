@@ -7,6 +7,6 @@ appVersion: "0.1.0"
 dependencies:
   # A copy of modelsphere/swiss's chart, run as console's 模型部署 backend.
   - name: swiss
-    version: 0.5.8
+    version: 0.5.10
     repository: file://charts/swiss
     condition: swiss.enabled

@@ -38,7 +38,7 @@ hack/preflight-swiss.sh --model-ns <模型命名空间> --gateway-ns <网关命�
 | 组件 | 镜像 |
 |---|---|
 | console | `swr.cn-east-3.myhuaweicloud.com/risecloud/console:0.1.0-dev.49daa54` |
-| swissd | `swr.cn-east-3.myhuaweicloud.com/risecloud/swissd:0.5.8`（chart 的 appVersion） |
+| swissd | `swr.cn-east-3.myhuaweicloud.com/risecloud/swissd:0.5.10`（chart 的 appVersion，上游 swiss 182fa11 构建） |
 
 ```sh
 kubectl create ns modelsphere
@@ -70,11 +70,22 @@ console 代码有变动时用 `hack/image.sh` 重新构建推送，它会写出 
 
 ## 4. 站点配置（首次进入 模型部署 时）
 
+先给 swissd 准备一个只放纯 key 的 Secret。openresty 自己的 Secret 存的是 `key1:owner1,...`：console 会取第一个 key，但 swissd 会把整串当成 key 发出去，部署后的探活就会 401。
+
+```sh
+# 取 openresty key Secret 里的第一个 key（去掉 :owner），另存一份
+key=$(kubectl -n <网关ns> get secret <openresty key Secret> -o jsonpath='{.data.keys}' | base64 -d | cut -d, -f1 | cut -d: -f1)
+kubectl -n <网关ns> create secret generic swiss-gateway-key --from-literal=apiKey="$key"
+```
+
+openresty 的 key 轮换后，这个 Secret 要一起更新。
+
 swissd 没有站点配置时会把页面带到设置页，保存后写入 `<ns>/console-swiss-profile`。和网关相关的字段必须这样填：
 
 ```yaml
 name: <集群名>
 namespace: <模型命名空间>          # 必须在 swiss.rbac.namespaces 里
+catalog: <模型目录地址>            # 可选；填了就覆盖 chart 里的 swiss.config.catalog
 chartRepo: <模型 chart 仓库>
 registry:
   mirror: <引擎镜像的镜像仓库，可空>
@@ -85,14 +96,14 @@ route:
   nginxService: <网关ns>/<openresty Service>
   nginxPort: 8080
   auth:
-    secretRef: <网关ns>/<key Secret>  # 必须写成 namespace/name
-    secretKey: keys                   # 必须显式写；openresty 的 "key:owner" 格式可以直接用
+    secretRef: <网关ns>/swiss-gateway-key  # 必须写成 namespace/name
+    secretKey: apiKey                      # 条目里只能是一个纯 key
 scaler:
   serverAddress: http://decision-gen.llm-scaler.svc:80
   sloAddress: http://slo-api.llm-scaler.svc:80
 ```
 
-为什么 `secretRef`、`secretKey` 要写全：不写时 swissd 和 console 的默认值不一样（见 console-design.md 的 "Still missing" 表）。
+为什么 `secretRef`、`secretKey` 要写全：不写时 swissd 和 console 的默认值不一样（见 console-design.md 的 "Still missing" 表）。console 和 swissd 都能读纯 key，所以两边共用这一个 Secret。
 
 保存后约 30 秒，Playground 就能列出网关上已有的模型。
 
@@ -134,8 +145,8 @@ kubectl -n modelsphere create configmap chart-mirror --from-file=.
 | Playground 502 `site profile ... not found` | 还没完成第 4 步 |
 | Playground 502 `forbidden` 读 Secret/ConfigMap | `playground.gateway.namespaces` 没包含网关命名空间 |
 | 部署页看不到 release、或 apply 403 | 模型命名空间不在 `swiss.rbac.namespaces` |
-| 状态页探活 401 | swissd 早于 0.5.8，或 `secretKey` 指的条目不是 key |
-| diff 500 `progressDeadlineSeconds (2000) does not clear the startupProbe budget` | 目录里 qwen3.6-35b-a3b 1.0.0 的问题。改用 1.0.1（model-catalog 分支 `fix/qwen3.6-progress-deadline`，需要发布到目录） |
+| 状态页探活 401 | `secretRef`/`secretKey` 指向了 openresty 的 `key:owner` 条目，而不是第 4 步准备的纯 key |
+| diff 500 `progressDeadlineSeconds (2000) does not clear the startupProbe budget` | 目录里 qwen3.6-35b-a3b 1.0.0 的问题：它设置的 progressDeadlineSeconds 小于启动探针预算，sglang 0.7.1 拒绝渲染。需要模型目录维护者修复，先部署其他模型 |
 | diff 500 `no matches for kind "LeaderWorkerSet"` | 集群没装 LWS CRD；kimi-k2.5 这类多节点模型需要 |
 | diff 500 `failed to fetch ... index.yaml` / 超时 | 集群访问不到 chart 仓库，见"集群访问不到 chart 仓库时" |
 
