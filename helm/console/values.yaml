@@ -46,10 +46,64 @@ admin:
 # variable holding it in apiKeyEnv. console then sends `Authorization: Bearer
 # <value>` instead of the caller's token, so the key stays in the cluster and out
 # of the browser. The value comes from a Secret: see backendSecrets.
-backends:
-  - name: swiss
-    prefix: /api/deploy
-    url: http://swissd.swiss.svc:8080/api
+#
+# swiss.enabled below adds the "swiss" backend (/api/deploy -> the bundled
+# swissd) by itself. List one here only for a swissd installed elsewhere, e.g.
+#   - name: swiss
+#     prefix: /api/deploy
+#     url: http://swiss.swiss.svc:80/api
+backends: []
+
+# swissd, the deploy control plane behind the 模型部署 menu, installed as a
+# subchart (charts/swiss, a copy of modelsphere/swiss's chart). Everything under
+# this key is that chart's values; the ones set here are what running behind
+# console means:
+#
+#   auth.disabled   swissd has no login of its own. console authenticates the
+#                   user and authorises each call with RBAC on backends/swiss.
+#   networkPolicy   so only console's pods can reach swissd -- with no login,
+#                   anything else that reached it could deploy.
+#
+# Before enabling, the cluster needs what a swiss deploy renders against: the
+# model charts' registry, GPU nodes with weights at the profile's pathTemplate,
+# llm-openresty's route ConfigMap, and the CRDs the charts create
+# (LeaderWorkerSet, LLMScaler, LLMSLORequirement, ModelRoute). swissd's setup
+# page writes the site profile that names them, on first visit.
+swiss:
+  enabled: false
+
+  # Only console's pods may connect to swissd. Needs a CNI that enforces
+  # NetworkPolicy; on one that does not (flannel) this is inert, so swissd is
+  # then open to anything in the cluster.
+  networkPolicy:
+    enabled: true
+
+  image:
+    repository: swr.cn-east-3.myhuaweicloud.com/risecloud/swissd
+    tag: ""
+  auth:
+    disabled: true
+    create: false
+  service:
+    type: ClusterIP
+    port: 80
+  ingress:
+    enabled: false
+
+  config:
+    # The model catalog swissd lists and composes plans from.
+    catalog: "https://models.example.com/swiss-catalog/"
+    cluster:
+      # REQUIRED when enabled: recorded against every plan composed here.
+      name: ""
+    # Deploy, upgrade, uninstall and rollback. Off leaves swissd read-only.
+    allowDeploy: true
+
+  rbac:
+    # Namespaces swissd may deploy into and read releases from, when
+    # rbac.scope is namespaced. Include the site profile's namespace.
+    scope: namespaced
+    namespaces: []
 
 # The built-in inference gateway: llm-openresty with one aggregate route, "llm",
 # serving the demo model and gateway.models. It is what makes a bare `helm
@@ -124,6 +178,11 @@ demo:
 #              serving several models -- is chosen from the ConfigMap's
 #              session_route_<route>.conf keys.
 #   route      pins one route instead of choosing. Empty means the aggregate one.
+#   fromSwiss  with swiss.enabled and neither profile nor configMap set, use the
+#              bundled swissd's site profile -- the gateway its deploys land on.
+#   namespaces extra namespaces console may read ConfigMaps and Secrets in. A
+#              profile names the route ConfigMap and key Secret only once it is
+#              written, so list the gateway's namespace here (e.g. llm-route).
 #
 # Left empty, the built-in gateway above is used.
 playground:
@@ -132,6 +191,8 @@ playground:
     configMap: ""
     service: ""
     route: ""
+    fromSwiss: true
+    namespaces: []
     # Optional overrides. secretRef names the Secret holding the gateway's keys
     # (normally read from the profile); apiKeyEnv takes the key from an
     # environment variable instead, for an install that copies it into its own

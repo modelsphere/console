@@ -26,9 +26,47 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{ include "console.fullname" . }}
 {{- end -}}
 
+{{- /* The swiss subchart's fullname, computed the way charts/swiss/templates/_helpers.tpl does. */ -}}
+{{- define "console.swiss.fullname" -}}
+{{- $v := .Values.swiss -}}
+{{- if $v.fullnameOverride -}}
+{{- $v.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $name := default "swiss" $v.nameOverride -}}
+{{- if contains $name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "console.swiss.url" -}}
+{{- printf "http://%s.%s.svc:%d/api" (include "console.swiss.fullname" .) .Release.Namespace (int .Values.swiss.service.port) -}}
+{{- end -}}
+
+{{- /* swiss's site profile, "namespace/name": swiss.config.cluster.profile or the one swissd creates. */ -}}
+{{- define "console.swiss.profile" -}}
+{{- if .Values.swiss.config.cluster.profile -}}
+{{- .Values.swiss.config.cluster.profile -}}
+{{- else -}}
+{{- printf "%s/%s-profile" .Release.Namespace (include "console.swiss.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{- /* The site profile the gateway is resolved from: the one named, else the bundled swissd's. */ -}}
+{{- define "console.gateway.profile" -}}
+{{- $gw := .Values.playground.gateway -}}
+{{- if $gw.profile -}}
+{{- $gw.profile -}}
+{{- else if and .Values.swiss.enabled $gw.fromSwiss (not $gw.configMap) -}}
+{{- include "console.swiss.profile" . -}}
+{{- end -}}
+{{- end -}}
+
 {{- /* An existing gateway named in playground.gateway wins over the built-in one. */ -}}
 {{- define "console.gateway.external" -}}
-{{- if or .Values.playground.gateway.profile .Values.playground.gateway.configMap -}}true{{- end -}}
+{{- if or (include "console.gateway.profile" .) .Values.playground.gateway.configMap -}}true{{- end -}}
 {{- end -}}
 
 {{- define "console.gateway.builtin" -}}

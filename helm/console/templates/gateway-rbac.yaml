@@ -13,10 +13,14 @@ follows the profile.
 {{- if and .Values.rbac.create (or (include "console.gateway.external" .) (include "console.gateway.builtin" .)) -}}
 {{- $namespaces := dict -}}
 {{- if include "console.gateway.external" . -}}
-{{- range $ref := list $gw.profile $gw.configMap $gw.service $gw.secretRef -}}
+{{- range $ref := list (include "console.gateway.profile" .) $gw.configMap $gw.service $gw.secretRef -}}
 {{-   if $ref -}}
 {{-     $_ := set $namespaces (ternary (first (splitList "/" $ref)) $.Release.Namespace (contains "/" $ref)) true -}}
 {{-   end -}}
+{{- end -}}
+{{- /* Where a profile's route and key live is only known once it is written. */ -}}
+{{- range $gw.namespaces -}}
+{{-   $_ := set $namespaces . true -}}
 {{- end -}}
 {{- else -}}
 {{- $_ := set $namespaces .Release.Namespace true -}}

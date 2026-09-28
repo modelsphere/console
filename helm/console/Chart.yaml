@@ -4,3 +4,9 @@ description: ModelSphere community portal — identity (users, roles, login) and
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+dependencies:
+  # A copy of modelsphere/swiss's chart, run as console's 模型部署 backend.
+  - name: swiss
+    version: 0.5.6
+    repository: file://charts/swiss
+    condition: swiss.enabled

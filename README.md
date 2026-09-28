@@ -52,6 +52,7 @@ Needs a default StorageClass (for the demo model's weights) and roughly 2 CPU /
 | `demo.enabled=false` | once real models are in |
 | `playground.gateway.profile=<ns>/<site-profile>` | use an existing gateway (swiss's site profile) instead of the built-in one |
 | `playground.gateway.{configMap,service,secretRef}` | the modelsphere stack's gateway (`llm-route/openresty-conf`, `llm-route/openresty`): every model autoconfig routes shows up in one list |
+| `swiss.enabled`, `swiss.config.{catalog,cluster.name}`, `swiss.rbac.namespaces`, `playground.gateway.namespaces` | 模型部署: swissd behind console, deploying models the Playground then serves ([swissd in the chart](docs/console-design.md#swissd-in-the-chart)) |
 | `service.type`, `metrics.serviceMonitor.enabled` | exposure and Prometheus Operator scraping |
 
 See [docs/console-design.md](docs/console-design.md#one-command-install).

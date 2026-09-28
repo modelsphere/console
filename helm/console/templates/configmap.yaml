@@ -14,7 +14,9 @@ data:
         tokenTTL: {{ .Values.auth.tokenTTL | quote }}
         # jwtSecret is injected from the Secret via env, not rendered here.
     backends:
+      {{- $named := dict }}
       {{- range .Values.backends }}
+      {{- $_ := set $named .name true }}
       - name: {{ .name | quote }}
         prefix: {{ .prefix | quote }}
         url: {{ .url | quote }}
@@ -22,8 +24,15 @@ data:
         apiKeyEnv: {{ . | quote }}
         {{- end }}
       {{- end }}
+      {{- if and .Values.swiss.enabled (not (hasKey $named "swiss")) }}
+      # The bundled swissd: see the swiss section of values.
+      - name: swiss
+        prefix: /api/deploy
+        url: {{ include "console.swiss.url" . | quote }}
+      {{- end }}
       {{- $gw := .Values.playground.gateway }}
-      {{- if or $gw.profile $gw.configMap }}
+      {{- $profile := include "console.gateway.profile" . }}
+      {{- if or $profile $gw.configMap }}
       # Resolved from the cluster at startup: see the gateway section of values.
       - name: llm
         prefix: /api/llm
@@ -31,7 +40,7 @@ data:
         apiKeyEnv: {{ . | quote }}
         {{- end }}
         gateway:
-          {{- with $gw.profile }}
+          {{- with $profile }}
           profile: {{ . | quote }}
           {{- end }}
           {{- with $gw.configMap }}

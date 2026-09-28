@@ -33,6 +33,16 @@ Models are served through the built-in gateway ({{ $svc }}-gateway). Add your ow
 OpenAI-compatible endpoints under gateway.models{{ if .Values.demo.enabled }}, and set demo.enabled=false once
 you have them{{ end }}.
 {{- end }}
+{{- if .Values.swiss.enabled }}
+
+模型部署 (swissd {{ include "console.swiss.fullname" . }}) is behind console at /swiss.
+On first visit it asks for the site profile; the Playground then serves what it
+deploys, through the gateway that profile names ({{ include "console.gateway.profile" . | default "playground.gateway" }}).
+{{- if not .Values.playground.gateway.namespaces }}
+Set playground.gateway.namespaces to the gateway's namespace, or console cannot
+read its routes and key.
+{{- end }}
+{{- end }}
 {{- if include "console.router.enabled" . }}
 
 Programs call the same models at http://<console address>/v1 with an API key an

@@ -331,8 +331,28 @@ stream, 401 on a bad key), `cached_tokens` 28/29 on a repeated prompt.
 | console image is not public | `swr…/risecloud/console` needs credentials; the verification loaded the image onto the node | publish `console:<appVersion>` anonymously (e.g. Docker Hub `4pdosc/console`) and default the chart to it |
 | llama.cpp comes from ghcr.io | slow or blocked in some networks | a mirror value, or a copy under the same public org |
 | models deployed through swiss reach console only via the stack's gateway | the built-in gateway's route is rendered by the chart; autoconfig writes per-model routes into the stack's own `llm-route/openresty-conf` | point `playground.gateway` at the stack's gateway (see "Models across routes"); a built-in gateway fed by autoconfig is a later step |
-| swiss is not part of the install | its image (`harbor.4pd.io`) is private, its catalog URL is a placeholder, its engines need GPUs and hostPath weights, and routing needs autoconfig with the ModelRoute and LLMSLORequirement CRDs | see "Bringing swiss in" |
-| swiss and console read the gateway key differently | swiss sends the Secret value verbatim (`apiKey`), console parses `key:owner` (`keys`) | one format, in swiss |
+| swiss is off by default | its catalog URL is a placeholder, its engines need GPUs and hostPath weights, and routing needs autoconfig with the ModelRoute and LLMSLORequirement CRDs | `swiss.enabled`, see "swissd in the chart" |
+| swiss and console read the gateway key differently | swiss sends the Secret value verbatim (default entry `apiKey`), console takes the first key of `key:owner,…` (default entry `keys`); a bare secretRef is swissd's namespace to swiss, the entrypoint's to console | one format, in swiss. Until then the profile names `secretRef` as `namespace/name` and `secretKey` explicitly, on an entry holding one bare key |
+
+### swissd in the chart
+
+`charts/swiss` is modelsphere/swiss's chart, copied verbatim (the commit names the
+swiss revision); `swiss.enabled` installs it. Everything under `swiss:` is that
+chart's values, plus `networkPolicy`.
+
+| Concern | Decision |
+|---|---|
+| Login | `swiss.auth.disabled`: console authenticates and authorises (`backends/swiss`) |
+| Who reaches swissd | a NetworkPolicy admits console's pods only. Inert on a CNI that does not enforce policy (flannel) |
+| Backend | `swiss` added to `backends` at `/api/deploy` → `http://<release>-swiss.<ns>.svc:<port>/api`, unless `backends` names one already. The old default (`swissd.swiss.svc:8080`) matched no Service the swiss chart renders |
+| Gateway | with no `playground.gateway.profile`/`configMap`, `fromSwiss` points the `llm` backend at swissd's site profile, so the Playground serves what swiss deploys. The built-in gateway and demo model are then not installed |
+| Gateway RBAC | the profile names its route ConfigMap and key Secret only once saved, so the chart cannot know their namespace: `playground.gateway.namespaces` lists it |
+| Image | `swr…/risecloud/swissd:<swiss appVersion>` |
+
+```
+helm install → setup page writes the site profile → 模型目录 → 部署 → release Ready
+            → autoconfig writes the model's route → console re-reads the profile (30s) → Playground
+```
 
 ## Bringing swiss in
 
