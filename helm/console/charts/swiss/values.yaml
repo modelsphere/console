@@ -1,0 +1,253 @@
+# swissd runs one replica. The read path is stateless, so more would work -- but
+# persistence lands next (drafts, the audit log) as SQLite on a PVC, which is a
+# single writer. Scaling out is a Postgres decision, not a replica-count one.
+replicaCount: 1
+
+image:
+  repository: harbor.4pd.io/hardcore-tech/swissd
+  # Empty follows the chart's appVersion, so a chart bump and an image bump
+  # cannot silently disagree.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# ---------------------------------------------------------------------------
+# swiss.yaml, rendered into a ConfigMap. One document, the same shape the CLI
+# reads: `swiss` and `swissd` are one tool, and two config formats would
+# eventually disagree.
+# ---------------------------------------------------------------------------
+config:
+  # The catalog: an https base or a path. index.json is appended when the
+  # location does not already name a .json file. No git; a catalog is a
+  # published index plus the documents it points at.
+  catalog: "https://models.example.com/swiss-catalog/"
+
+  cluster:
+    # REQUIRED. Labels every plan composed here and names this cluster in the
+    # switcher. There is no default worth guessing: it ends up recorded against
+    # real deploys.
+    name: ""
+    # The site profile ConfigMap, "namespace/name". Empty means <release>-profile
+    # in this namespace, which swissd creates the first time the profile is
+    # saved from the web. The chart writes no profile of its own: two writers of
+    # one document is how an edit made in the UI gets reverted by the next
+    # `helm upgrade`.
+    profile: ""
+    profileKey: profile.yaml
+
+  # How long a fetched catalog or profile is reused before refetching.
+  cacheTTL: 60s
+
+  # Gates every endpoint that changes a cluster, and grants the RBAC those
+  # endpoints need -- one switch, so swissd cannot accept an apply it has no
+  # permission to perform. Needs persistence and one replica.
+  #
+  # The grant is everything the sglang and vllm charts render, in the namespaces
+  # rbac.scope selects, and nothing else:
+  #
+  #   core                      configmaps, services, serviceaccounts, secrets
+  #   apps                      deployments
+  #   policy                    poddisruptionbudgets
+  #   rbac                      roles, rolebindings   (the cart subchart)
+  #   monitoring.coreos.com     servicemonitors
+  #   leaderworkerset.x-k8s.io  leaderworkersets
+  #   autoscaling.4pd.io        llmscalers           (and autoscaling.modelsphere.dev)
+  #   inference.x-k8s.io        llmslorequirements   (and inference.modelsphere.dev)
+  #   routing.gpucluster.io     modelroutes          (and routing.modelsphere.dev)
+  #
+  # Each type is granted under both its current group and the modelsphere.dev
+  # group the published charts moved to, so swissd can deploy either.
+  #
+  # roles/rolebindings means swissd can create RBAC. Kubernetes bounds that to
+  # what swissd already holds -- which is why the grant also includes
+  # coordination.k8s.io leases and pods watch/patch: the cart subchart's HA Role
+  # hands those to CART, and a subject cannot grant what it lacks. swissd never
+  # uses them itself. Still the widest thing this chart does.
+  #
+  # Requires rbac.create; with RBAC managed outside this chart the permissions
+  # are yours to wire.
+  allowDeploy: false
+
+  # Drafts, plans and the audit log. Never the source of truth for what is
+  # deployed -- every applied plan is also written beside its release.
+  database: /data/swiss.db
+
+# ---------------------------------------------------------------------------
+# The site login: one account, mounted into the pod as files.
+#
+# A Secret volume rather than an API read -- the kubelet keeps the files
+# current, so rotating the password takes effect at the next login instead of
+# the next restart, and swissd needs no Secret grant of its own to log anybody
+# in.
+#
+# Leave password empty and the chart generates one on first install and reads
+# it back on every upgrade after that, so `helm upgrade` never rotates it out
+# from under you. Read it with:
+#
+#   kubectl get secret <release>-auth -o jsonpath='{.data.password}' | base64 -d
+# ---------------------------------------------------------------------------
+auth:
+  create: true
+  username: admin
+  # Empty generates one. Set it to choose your own; it then lives in your values
+  # file, which is the tradeoff.
+  password: ""
+
+  # Point at a Secret you made yourself, with keys username, password and
+  # optionally tokenKey. The chart then creates none.
+  existingSecret: ""
+
+  # How long a login lasts. Long enough not to interrupt a 40-minute model load
+  # being watched; short enough that a forgotten tab is not a standing key. A
+  # session in active use is extended rather than cut off.
+  tokenTTL: 24h
+
+  # auto sets the session cookie's Secure flag when the request arrived over
+  # TLS, which is right behind an ingress that terminates it and right in a
+  # plain-http port-forward. always | never override it.
+  cookieSecure: auto
+
+  # No login at all.
+  disabled: false
+
+# ---------------------------------------------------------------------------
+# RBAC. Read the comments before widening this.
+# ---------------------------------------------------------------------------
+rbac:
+  create: true
+
+  # namespaced (default) or cluster.
+  #
+  # swissd reads helm's own release storage, which is SECRETS. Kubernetes RBAC
+  # cannot filter a secret read by label or name prefix, so "let it read helm
+  # releases" and "let it read every credential in those namespaces" are the
+  # same grant. There is no third option.
+  #
+  #   namespaced  Role/RoleBinding in each namespace listed below. Tight, and
+  #               the default -- but swissd can only see releases in those
+  #               namespaces, so an unlisted namespace is invisible rather than
+  #               reported as untracked.
+  #   cluster     One ClusterRole. swissd sees every release, which is what makes
+  #               the untracked-release view complete -- at the cost of read
+  #               access to every Secret in the cluster.
+  #
+  # Start namespaced. Widen deliberately, knowing what it grants.
+  scope: namespaced
+
+  # Cluster-wide pod LIST, for the GPU usage column on the nodes page.
+  #
+  # A node publishes how many GPUs it has and how many are allocatable, never
+  # how many are in use -- that has to be summed from the pods bound to it, and
+  # a sum taken over only the namespaces below would under-report every GPU held
+  # elsewhere. Off means swissd shows capacity and reports usage as unknown,
+  # which is the honest answer when it cannot see every pod.
+  nodeGPUUsage: true
+
+  # Lets swissd write its own site profile: the setup page on a fresh install,
+  # and the profile editor after that. swissd owns the profile now -- the chart
+  # creates none -- so turning this off means the ConfigMap has to be managed
+  # by hand or by GitOps, and the web editor will say it cannot write.
+  #
+  # It is configmaps create/update in swissd's own namespace. RBAC cannot scope
+  # a create to one name.
+  manageProfile: true
+
+  # Namespaces holding model releases. Used when scope is namespaced.
+  namespaces: []
+    # - modelforge
+    # - kimi
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # Predictable hostnames keep the peer list trivial: swiss.<cluster>.internal.
+  host: ""
+  path: /
+  pathType: Prefix
+  tls: []
+
+# CPU-only, and small: swissd holds no model and does no rendering of its own.
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  # The binary and its embedded UI are all swissd needs; nothing is written to
+  # disk until the database lands, and that will be a mounted volume.
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# swissd is CPU-only, so it has no business occupying a GPU node -- the same
+# reasoning the sglang chart applies to CART. Preferred rather than required, so
+# it still schedules in a cluster where every node carries GPUs.
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: nvidia.com/gpu.product
+              operator: DoesNotExist
+
+nodeSelector: {}
+tolerations: []
+
+podAnnotations: {}
+podLabels: {}
+
+logLevel: info
+
+# Scratch space for helm caches and the per-operation workspace.
+tmpSizeLimit: 1Gi
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: ""
+  existingClaim: ""
+
+updateStrategy: {}
+
+# /healthz is liveness: the process is up. /readyz gates on reaching the cluster
+# and nothing else -- the catalog is fetched lazily, so an unreachable one must
+# not take this pod out of the Service.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 3
+  periodSeconds: 10
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 3
+  periodSeconds: 10
+  failureThreshold: 3

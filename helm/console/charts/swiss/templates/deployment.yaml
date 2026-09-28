@@ -1,0 +1,125 @@
+{{- if and .Values.config.allowDeploy (not .Values.persistence.enabled) (not .Values.persistence.existingClaim) }}
+{{- fail "config.allowDeploy needs persistence: the database holds the audit log, which is not cluster state and cannot be rebuilt, plus the release -> plan mapping apply and upgrade read. Set persistence.enabled or persistence.existingClaim." }}
+{{- end }}
+{{- if and .Values.config.allowDeploy (gt (int .Values.replicaCount) 1) }}
+{{- fail "config.allowDeploy runs one replica: sqlite is a single writer and the volume is ReadWriteOnce" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "swiss.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "swiss.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  {{- if .Values.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.updateStrategy | nindent 4 }}
+  {{- else if and .Values.config.allowDeploy (or .Values.persistence.enabled .Values.persistence.existingClaim) }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "swiss.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Roll the pods when the config or the profile changes. swissd refetches
+        # the profile on its own TTL, but its listen address, catalog and peer
+        # list are read once at start.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "swiss.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "swiss.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: swissd
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config=/etc/swiss/swiss.yaml
+            - --log-level={{ .Values.logLevel }}
+          env:
+            # A profile naming route.auth.secretRef by bare name means a Secret
+            # in this namespace, so swissd has to know which one it is.
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/swiss
+              readOnly: true
+            # helm and helmfile write caches, plugin state and the materialised
+            # workspace; the root filesystem is read-only.
+            - name: tmp
+              mountPath: /tmp
+            {{- if not .Values.auth.disabled }}
+            - name: auth
+              mountPath: /etc/swiss-auth
+              readOnly: true
+            {{- end }}
+            {{- if .Values.config.allowDeploy }}
+            - name: data
+              mountPath: {{ dir .Values.config.database }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "swiss.fullname" . }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmpSizeLimit }}
+        {{- if not .Values.auth.disabled }}
+        - name: auth
+          secret:
+            secretName: {{ include "swiss.authSecretName" . }}
+            defaultMode: 0400
+        {{- end }}
+        {{- if .Values.config.allowDeploy }}
+        - name: data
+          {{- if or .Values.persistence.enabled .Values.persistence.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (printf "%s-data" (include "swiss.fullname" .)) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

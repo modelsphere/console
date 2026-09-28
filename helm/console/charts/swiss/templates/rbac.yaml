@@ -1,0 +1,257 @@
+{{- if .Values.rbac.create }}
+{{- $fullName := include "swiss.fullname" . }}
+{{- $sa := include "swiss.serviceAccountName" . }}
+{{- $profileNS := (include "swiss.effectiveProfileRef" . | splitList "/" | first) }}
+# ---------------------------------------------------------------------------
+# Nodes are cluster-scoped, so the fit check needs a ClusterRole no matter which
+# rbac.scope is chosen. Read-only, and node objects carry no secrets.
+#
+# rbac.nodeGPUUsage adds a cluster-wide pod LIST on top. Kubernetes publishes a
+# node's GPU capacity and allocatable but never its allocated count, so "6 of 8
+# GPUs in use" can only be summed from the pods bound to that node -- and under
+# namespaced scope that sum would silently omit every pod outside the listed
+# namespaces, which is an undercount presented as a fact. So it is one grant,
+# taken deliberately or not at all: with it off swissd reports the usage as
+# unknown rather than wrong. Pod specs are not secrets, but they are more than
+# node objects: this is a real widening on a namespaced install.
+# ---------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullName }}-nodes
+  labels:
+    {{- include "swiss.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  {{- if .Values.rbac.nodeGPUUsage }}
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $fullName }}-nodes
+  labels:
+    {{- include "swiss.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fullName }}-nodes
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- if .Values.config.allowDeploy }}
+# Namespaces are cluster-scoped, so an install that creates one needs a
+# ClusterRole whichever rbac.scope is in use. patch as well as create: helm v4
+# applies the Namespace object server-side, and that is a PATCH.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullName }}-namespaces
+  labels:
+    {{- include "swiss.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $fullName }}-namespaces
+  labels:
+    {{- include "swiss.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fullName }}-namespaces
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- end }}
+# ---------------------------------------------------------------------------
+# swissd's own namespace: the site profile ConfigMap, and the entrypoint Secret
+# when the profile names one by bare name. Granted whichever scope is in use,
+# and only for the objects that actually live here.
+#
+# The secret grant covers this namespace whole -- RBAC cannot filter a read by
+# name -- which includes swiss's own helm release.
+# ---------------------------------------------------------------------------
+{{- /*
+The entrypoint credential the profile may name is not known at install time
+any more: swissd owns the profile, and the operator writes route.auth.secretRef
+into it from the web. So the secret read here is granted for this namespace
+whole, which is the same grant it was before -- RBAC cannot filter a read by
+name -- just no longer conditional on a value this chart can see.
+
+The login Secret needs no grant at all: it is mounted as a volume, and the
+kubelet reads it rather than swissd.
+*/}}
+{{- $profileVerbs := list "get" }}
+{{- if .Values.rbac.manageProfile }}
+{{- /* swissd writes the profile the setup page and the editor produce. `create`
+       cannot be scoped to one name by RBAC, so this is configmaps create in
+       swissd's own namespace. */}}
+{{- $profileVerbs = list "get" "create" "update" "patch" }}
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullName }}-profile
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "swiss.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  {{- if eq $profileNS .Release.Namespace }}
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: {{ $profileVerbs | toJson }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullName }}-profile
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "swiss.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $fullName }}-profile
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- if ne $profileNS .Release.Namespace }}
+{{- /* The profile was pointed at another namespace, so the grant has to follow
+       it there rather than be assumed here. */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullName }}-profile
+  namespace: {{ $profileNS }}
+  labels:
+    {{- include "swiss.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: {{ $profileVerbs | toJson }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullName }}-profile
+  namespace: {{ $profileNS }}
+  labels:
+    {{- include "swiss.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $fullName }}-profile
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- end }}
+{{- if eq .Values.rbac.scope "cluster" }}
+# ---------------------------------------------------------------------------
+# CLUSTER SCOPE. This grants read access to EVERY SECRET IN THE CLUSTER.
+#
+# Not an oversight, and not avoidable at this scope: helm stores each release in
+# a Secret, and Kubernetes RBAC cannot filter a secret read by label or name.
+# "Read helm releases everywhere" and "read every credential everywhere" are one
+# grant.
+#
+# What it buys is a complete untracked-release view -- a release installed by
+# hand in a namespace nobody listed is exactly what this is for, and a namespaced
+# scope cannot see it.
+# ---------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullName }}-releases
+  labels:
+    {{- include "swiss.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps", "pods"]
+    verbs: ["get", "list"]
+  {{- if .Values.config.allowDeploy }}
+  {{- include "swiss.deployRules" . | nindent 2 }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $fullName }}-releases
+  labels:
+    {{- include "swiss.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fullName }}-releases
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+{{- else }}
+# ---------------------------------------------------------------------------
+# NAMESPACED SCOPE (the default). One Role per listed namespace.
+#
+# Still a full secret read within each -- see above, it cannot be narrower -- but
+# bounded to the namespaces that actually hold model releases. The cost is that
+# a release in an unlisted namespace is invisible rather than reported as
+# untracked, so this list is worth revisiting when namespaces are added.
+# ---------------------------------------------------------------------------
+{{- if not .Values.rbac.namespaces }}
+{{- fail "rbac.scope is namespaced but rbac.namespaces is empty: swissd would see no releases at all. List the namespaces holding model releases, or set rbac.scope: cluster knowing it grants cluster-wide secret reads." }}
+{{- end }}
+{{- range $ns := .Values.rbac.namespaces }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullName }}-releases
+  namespace: {{ $ns }}
+  labels:
+    {{- include "swiss.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps", "pods"]
+    verbs: ["get", "list"]
+  {{- if $.Values.config.allowDeploy }}
+  {{- include "swiss.deployRules" $ | nindent 2 }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullName }}-releases
+  namespace: {{ $ns }}
+  labels:
+    {{- include "swiss.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $fullName }}-releases
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ $.Release.Namespace }}
+---
+{{- end }}
+{{- end }}
+{{- end }}

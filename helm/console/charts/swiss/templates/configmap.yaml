@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "swiss.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "swiss.labels" . | nindent 4 }}
+data:
+  # One document, the same shape `swiss` reads on a laptop. The CLI ignores the
+  # server section, so this file can be copied out of the cluster and used
+  # as-is.
+  swiss.yaml: |
+    catalog: {{ .Values.config.catalog | quote }}
+    cluster:
+      name: {{ required "config.cluster.name is required -- it is recorded against every plan composed here" .Values.config.cluster.name | quote }}
+      profile:
+        configMap: {{ include "swiss.effectiveProfileRef" . | quote }}
+        key: {{ .Values.config.cluster.profileKey | quote }}
+      {{- if eq .Values.rbac.scope "namespaced" }}
+      {{- /* Must match the namespaces the Roles were granted in: under
+             namespaced RBAC a cluster-wide list is forbidden outright, so this
+             is rendered from rbac.namespaces rather than repeated. */}}
+      namespaces:
+        {{- toYaml .Values.rbac.namespaces | nindent 8 }}
+      {{- end }}
+    server:
+      addr: ":8080"
+      cacheTTL: {{ .Values.config.cacheTTL }}
+      allowDeploy: {{ .Values.config.allowDeploy }}
+      database: {{ .Values.config.database | quote }}
+      auth:
+        {{- if .Values.auth.disabled }}
+        disabled: true
+        {{- else }}
+        dir: /etc/swiss-auth
+        tokenTTL: {{ .Values.auth.tokenTTL }}
+        cookieSecure: {{ .Values.auth.cookieSecure | quote }}
+        {{- end }}
+---
+{{- /*
+No site profile here.
+
+swissd owns it: a fresh install has none, the first login lands on the setup
+page, and what is saved there is written to this ConfigMap by swissd itself.
+Two writers of one document is how a profile edited in the web UI gets silently
+reverted by the next `helm upgrade`.
+
+UPGRADING FROM A CHART THAT CREATED IT: helm deletes what it no longer renders.
+Hand the existing ConfigMap over before upgrading, or lose it --
+
+  kubectl annotate configmap <release>-profile helm.sh/resource-policy=keep
+
+*/}}
