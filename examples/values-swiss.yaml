@@ -1,0 +1,40 @@
+# console with swissd (模型部署), for a cluster that already runs the modelsphere
+# serving stack: GPU nodes, llm-openresty's routes, autoconfig and the CRDs.
+#
+#   hack/preflight-swiss.sh -f examples/values-swiss.yaml   # what the cluster is missing
+#   helm upgrade --install console ./helm/console -n modelsphere --create-namespace \
+#     -f examples/values-swiss.yaml -f console-image.yaml
+#
+# Every <...> is a fact about the target cluster; there is no default to guess.
+
+imagePullSecrets:
+  - name: swr-creds   # kubectl -n modelsphere create secret docker-registry swr-creds --docker-server=swr.cn-east-3.myhuaweicloud.com ...
+
+swiss:
+  enabled: true
+  imagePullSecrets:
+    - name: swr-creds
+  config:
+    catalog: "<https base of the published model catalog, serving index.json>"
+    cluster:
+      name: "<this cluster's name, e.g. testenv>"
+  rbac:
+    # The site profile's `namespace` (where models are deployed). swissd sees and
+    # deploys releases only here.
+    namespaces:
+      - "<model namespace, e.g. swiss-deploy>"
+  persistence:
+    storageClass: ""   # the cluster default when empty
+
+playground:
+  gateway:
+    # The namespace of the profile's route.nginxConfigMap and route.auth.secretRef.
+    namespaces:
+      - "<gateway namespace, e.g. llm-route>"
+
+# The Playground serves what swiss deploys, so the built-in gateway and demo are
+# not installed (fromSwiss). Say so explicitly to keep the intent readable.
+gateway:
+  enabled: false
+demo:
+  enabled: false

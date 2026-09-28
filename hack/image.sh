@@ -35,7 +35,9 @@ fi
 echo "building ${image}"
 # Both indexes are build args because a build host behind a firewall has to point
 # at a mirror; the Dockerfile is explicit about that.
-docker build -t "${image}" \
+# No provenance attestation: it turns the image into an index SWR rejects
+# ("fail to parse manifest.json").
+docker build -t "${image}" --provenance=false \
   --build-arg "GOPROXY=${GOPROXY:-$(go env GOPROXY)}" \
   --build-arg "NPM_REGISTRY=${NPM_REGISTRY:-https://registry.npmjs.org}" \
   .

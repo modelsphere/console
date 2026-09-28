@@ -3,6 +3,10 @@ image:
   tag: ""            # defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent
 
+# For a private registry, e.g. [{name: swr-creds}]. Console's pods only; the
+# swiss subchart takes its own, swiss.imagePullSecrets.
+imagePullSecrets: []
+
 # Two by default: with the router on, programs call models through console, so a
 # console restart is an inference outage. A PodDisruptionBudget keeps one up
 # through node drains whenever there is more than one.
