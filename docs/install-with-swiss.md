@@ -97,6 +97,20 @@ scaler:
 
 保存后约 30 秒，Playground 就能列出网关上已有的模型。
 
+### 集群访问不到 chart 仓库时
+
+公开仓库是 `https://modelsphere.github.io/helm-charts`（chart 包在 GitHub Releases）。集群内访问不到时，在集群里放一个镜像：
+
+```sh
+# 在能上网的机器上：取目录里用到的 chart 版本（目前 sglang 0.7.0、0.7.1）
+for v in 0.7.0 0.7.1; do curl -sSLO https://github.com/modelsphere/helm-charts/releases/download/sglang-$v/sglang-$v.tgz; done
+helm repo index .          # 生成相对 URL 的 index.yaml
+kubectl -n modelsphere create configmap chart-mirror --from-file=.
+# 再起一个 nginx Deployment + Service，把这个 ConfigMap 挂到 /usr/share/nginx/html
+```
+
+站点配置里写 `chartRepo: http://chart-mirror.modelsphere.svc/`。在 daocloud-ce 上验证过：plan、diff、install、status、uninstall 都通过 console 跑通。
+
 ## 5. 部署并对话
 
 1. 模型部署 → 模型目录 → 选模型 → Deploy → 预览（plan/diff）→ 安装。
@@ -122,6 +136,17 @@ scaler:
 | Playground 502 `forbidden` 读 Secret/ConfigMap | `playground.gateway.namespaces` 没包含网关命名空间 |
 | 部署页看不到 release、或 apply 403 | 模型命名空间不在 `swiss.rbac.namespaces` |
 | 状态页探活 401 | swissd 早于 0.5.7，或 `secretKey` 指的条目不是 key |
+| diff 500 `progressDeadlineSeconds (2000) does not clear the startupProbe budget` | 目录里 qwen3.6-35b-a3b 1.0.0 的问题。改用 1.0.1（model-catalog 分支 `fix/qwen3.6-progress-deadline`，需要发布到目录） |
+| diff 500 `no matches for kind "LeaderWorkerSet"` | 集群没装 LWS CRD；kimi-k2.5 这类多节点模型需要 |
+| diff 500 `failed to fetch ... index.yaml` / 超时 | 集群访问不到 chart 仓库，见"集群访问不到 chart 仓库时" |
+
+目录里每个模型在 daocloud-ce 上 plan + diff 的结果（2026-09-28）：
+
+| 模型 | chart | 结果 |
+|---|---|---|
+| glm5.1, glm5.3, kimi-k3, mimo-v2.5, modelforge, modelforge-0.0.2, qwen-distilled-kimi | sglang 0.7.0/0.7.1 | 通过 |
+| kimi-k2.5 | sglang 0.7.0 (LWS) | 集群缺 LWS CRD |
+| qwen3.6-35b-a3b 1.0.0 | sglang 0.7.1 | 目录缺陷，见上 |
 
 ## 已知限制
 
