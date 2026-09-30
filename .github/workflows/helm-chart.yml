@@ -48,6 +48,11 @@ jobs:
             --include-crds \
             --values helm/console/values-existing-stack.example.yaml \
             >/tmp/console-external-rendered.yaml
+          helm template console-demo helm/console \
+            --namespace modelsphere \
+            --include-crds \
+            --set demo.enabled=true \
+            >/tmp/console-demo-rendered.yaml
 
       - name: Default images are publicly pullable
         run: |
@@ -56,7 +61,7 @@ jobs:
           mkdir -p "$auth"
           printf '{"auths":{}}\n' >"$auth/config.json"
           sed -nE 's/^[[:space:]-]*image:[[:space:]]*"?([^"[:space:]]+)"?.*/\1/p' \
-            /tmp/console-rendered.yaml | sort -u >/tmp/console-images.txt
+            /tmp/console-rendered.yaml /tmp/console-demo-rendered.yaml | sort -u >/tmp/console-images.txt
           test -s /tmp/console-images.txt
           while IFS= read -r image; do
             echo "checking $image"

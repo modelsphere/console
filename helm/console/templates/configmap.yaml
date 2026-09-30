@@ -26,7 +26,10 @@ data:
         {{- end }}
       {{- end }}
       {{- $gw := .Values.playground.gateway }}
-      {{- if or $gw.profile $gw.configMap }}
+      {{- if and (include "console.gateway" .) .Values.demo.enabled }}
+      {{- fail "demo.enabled and playground.gateway both name the Playground's models; set one" }}
+      {{- end }}
+      {{- if include "console.gateway" . }}
       # Resolved from the cluster at startup: see the gateway section of values.
       - name: llm
         prefix: /api/llm
@@ -49,16 +52,11 @@ data:
           {{- with $gw.secretRef }}
           secretRef: {{ . | quote }}
           {{- end }}
-      {{- else if include "console.gateway.builtin" . }}
-      {{- $name := include "console.gateway.name" . }}
-      # The built-in gateway: see the gateway section of values.
+      {{- else if .Values.demo.enabled }}
+      # The demo model, straight to llama.cpp: see the demo section of values.
       - name: llm
         prefix: /api/llm
-        gateway:
-          configMap: {{ printf "%s/%s-routes" .Release.Namespace $name | quote }}
-          service: {{ printf "%s/%s" .Release.Namespace $name | quote }}
-          secretRef: {{ printf "%s-keys" $name | quote }}
-          route: {{ .Values.gateway.route | quote }}
+        url: {{ printf "http://%s-demo.%s.svc:%d" (include "console.fullname" .) .Release.Namespace (int .Values.demo.port) | quote }}
       {{- end }}
     {{- if include "console.router.enabled" . }}
     router:

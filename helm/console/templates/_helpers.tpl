@@ -26,93 +26,21 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{ include "console.fullname" . }}
 {{- end -}}
 
-{{- /* An existing gateway named in playground.gateway wins over the built-in one. */ -}}
-{{- define "console.gateway.external" -}}
+{{- /* playground.gateway names an existing gateway to resolve from the cluster. */ -}}
+{{- define "console.gateway" -}}
 {{- if or .Values.playground.gateway.profile .Values.playground.gateway.configMap -}}true{{- end -}}
 {{- end -}}
 
-{{- define "console.gateway.builtin" -}}
-{{- if and .Values.gateway.enabled (not (include "console.gateway.external" .)) -}}true{{- end -}}
-{{- end -}}
-
-{{- define "console.gateway.name" -}}
-{{ include "console.fullname" . }}-gateway
-{{- end -}}
-
-{{- /* The router needs a gateway: /v1 has nowhere else to go. */ -}}
+{{- /* The router needs somewhere to send /v1: a gateway, or the demo model. */ -}}
 {{- define "console.router.enabled" -}}
-{{- if and .Values.router.enabled (or (include "console.gateway.external" .) (include "console.gateway.builtin" .)) -}}true{{- end -}}
-{{- end -}}
-
-{{- /* Models the built-in gateway serves: the demo model, then gateway.models. */ -}}
-{{- define "console.gateway.models" -}}
-{{- $models := list -}}
-{{- if .Values.demo.enabled -}}
-{{-   $models = append $models (dict "name" .Values.demo.model.name "url" (printf "http://%s-demo.%s.svc.cluster.local:%d" (include "console.fullname" .) .Release.Namespace (int .Values.demo.port))) -}}
-{{- end -}}
-{{- range .Values.gateway.models -}}
-{{-   $models = append $models . -}}
-{{- end -}}
-{{- toJson $models -}}
-{{- end -}}
-
-{{- /*
-The one aggregate route. Peers must be IP literals, so each model gets a relay
-server on loopback that proxies to its URL; nginx resolves that name once, at
-load, through the pod's resolver. Model names are the ids clients send, and must
-equal what the engine serves.
-*/ -}}
-{{- define "console.gateway.routeConf" -}}
-{{- $r := .Values.gateway.route -}}
-{{- $models := include "console.gateway.models" . | fromJsonArray -}}
-lua_shared_dict active_conns_{{ $r }} 4m;
-lua_shared_dict cluster_avg_{{ $r }} 16k;
-lua_shared_dict lc_locks_{{ $r }} 1m;
-lua_shared_dict bad_peers_{{ $r }} 1m;
-lua_shared_dict bodylog_ctl_{{ $r }} 1m;
-lua_shared_dict cch_ctl_{{ $r }} 1m;
-{{- range $i, $m := $models }}
-{{- if not (regexMatch "^[A-Za-z0-9._:/-]+$" $m.name) }}{{ fail (printf "gateway model name %q may only use letters, digits and ._:/-" $m.name) }}{{ end }}
-{{- if not (regexMatch "^https?://[^ \t;{}\\\\]+$" $m.url) }}{{ fail (printf "gateway model %q: url %q must be http(s)://host:port[/path]" $m.name $m.url) }}{{ end }}
-
-server {
-    listen 127.0.0.1:{{ add 18001 $i }};
-    location / {
-        proxy_pass {{ trimSuffix "/" $m.url }}/;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_buffering off;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-    }
-}
-{{- end }}
-
-server {
-    listen unix:/usr/local/openresty/nginx/sock/{{ $r }}.sock;
-    server_name _;
-    set $route "{{ $r }}";
-    set_by_lua_block $__{{ $r | replace "-" "_" | replace "." "_" }}_init {
-        _G.register_route("{{ $r }}", function() return {
-            peers_by_model = {
-{{- range $i, $m := $models }}
-                ["{{ $m.name }}"] = { {"127.0.0.1", {{ add 18001 $i }}, "{{ $m.name }}", 0, {{ $.Values.gateway.maxConcurrency }}} },
-{{- end }}
-            },
-            default_max = {{ .Values.gateway.maxConcurrency }},
-            adaptive_cc = false,
-        } end)
-        return ""
-    }
-    include conf.d/router_locations.inc;
-}
+{{- if and .Values.router.enabled (or (include "console.gateway" .) .Values.demo.enabled) -}}true{{- end -}}
 {{- end -}}
 
 {{- define "console.router.secret" -}}
 {{ include "console.fullname" . }}-api-keys
 {{- end -}}
 
-{{- /* Pods of a bundled component (gateway, demo model). Their own name keeps them
+{{- /* Pods of a bundled component (the demo model). Their own name keeps them
        out of console's selectors, which match name+instance only and cannot
        change on an existing release. */ -}}
 {{- define "console.componentSelectorLabels" -}}

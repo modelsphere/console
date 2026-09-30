@@ -85,3 +85,36 @@ func TestHelmAuthEnabledStillNeedsASigningKey(t *testing.T) {
 		t.Fatal("validate accepted an empty jwtSecret while auth is enabled")
 	}
 }
+
+// With no gateway, the demo model is the llm backend itself: console reaches
+// llama.cpp by URL, and /v1 goes there too.
+func TestHelmDemoIsTheLLMBackend(t *testing.T) {
+	c := renderChartConfig(t, "--set", "demo.enabled=true")
+	c.Server.Auth.JWTSecret = "test"
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	var llm *Backend
+	for i := range c.Backends {
+		if c.Backends[i].Name == "llm" {
+			llm = &c.Backends[i]
+		}
+	}
+	if llm == nil || llm.Gateway != nil || llm.URL != "http://console-console-demo.modelsphere.svc:8080" {
+		t.Fatalf("llm backend = %+v, want the demo Service by URL", llm)
+	}
+	if c.Router.Backend != "llm" || c.Router.Secret == "" {
+		t.Fatalf("router = %+v, want it on the demo model", c.Router)
+	}
+}
+
+func TestHelmDemoWithAGatewayIsRefused(t *testing.T) {
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("helm is not installed")
+	}
+	out, err := exec.Command("helm", "template", "console", filepath.Join("..", "..", "helm", "console"),
+		"--set", "demo.enabled=true", "--set", "playground.gateway.profile=swiss/site-profile").CombinedOutput()
+	if err == nil || !bytes.Contains(out, []byte("demo.enabled and playground.gateway")) {
+		t.Fatalf("want a refusal naming both values, got err=%v\n%s", err, out)
+	}
+}

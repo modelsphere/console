@@ -2,12 +2,6 @@
 # console-values.yaml and replace each value; helm/console/README.md shows how
 # to find them.
 
-gateway:
-  enabled: false
-
-demo:
-  enabled: false
-
 backends:
   - name: swiss
     prefix: /api/deploy

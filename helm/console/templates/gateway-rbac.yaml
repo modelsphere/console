@@ -10,16 +10,12 @@ therefore per namespace and read-only, which is the narrowest thing that still
 follows the profile.
 */ -}}
 {{- $gw := .Values.playground.gateway -}}
-{{- if and .Values.rbac.create (or (include "console.gateway.external" .) (include "console.gateway.builtin" .)) -}}
+{{- if and .Values.rbac.create (include "console.gateway" .) -}}
 {{- $namespaces := dict -}}
-{{- if include "console.gateway.external" . -}}
 {{- range $ref := list $gw.profile $gw.configMap $gw.service $gw.secretRef -}}
 {{-   if $ref -}}
 {{-     $_ := set $namespaces (ternary (first (splitList "/" $ref)) $.Release.Namespace (contains "/" $ref)) true -}}
 {{-   end -}}
-{{- end -}}
-{{- else -}}
-{{- $_ := set $namespaces .Release.Namespace true -}}
 {{- end -}}
 {{- range $ns, $_ := $namespaces }}
 ---

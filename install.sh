@@ -33,7 +33,7 @@ console 安装器
       --gateway-configmap REF   openresty 路由 ConfigMap <ns>/<name>（没有站点配置时用）
       --gateway-service REF     openresty Service <ns>/<name>
       --gateway-secret REF      openresty key Secret <ns>/<name>
-      --gateway-builtin     不用集群里的网关，装 chart 自带的网关和 CPU 演示模型
+      --demo                不用集群里的网关，装 CPU 演示模型，Playground 和 /v1 直连它
       --registry-secret NAME    已存在的镜像拉取 Secret（在目标命名空间）
       --admin-username NAME     种子管理员用户名（默认 admin）
       --service-type TYPE   NodePort（默认）| ClusterIP | LoadBalancer
@@ -67,7 +67,7 @@ gw_profile=""
 gw_cm=""
 gw_svc=""
 gw_secret=""
-gw_builtin=0
+demo=0
 registry_secret=""
 admin_user="admin"
 admin_user_given=0
@@ -92,7 +92,7 @@ while [ $# -gt 0 ]; do
     --gateway-configmap) gw_cm=$2; shift ;;
     --gateway-service) gw_svc=$2; shift ;;
     --gateway-secret) gw_secret=$2; shift ;;
-    --gateway-builtin) gw_builtin=1 ;;
+    --demo) demo=1 ;;
     --registry-secret) registry_secret=$2; shift ;;
     --admin-username) admin_user=$2; admin_user_given=1; shift ;;
     --service-type) service_type=$2; shift ;;
@@ -231,7 +231,7 @@ for dep in deps:
 
 discover_gateway() {
   step "发现推理网关（Playground 和 /v1）"
-  if [ "$gw_builtin" = 1 ]; then gw_mode=builtin; ok "用 chart 自带的网关和演示模型（--gateway-builtin）"; return; fi
+  if [ "$demo" = 1 ]; then gw_mode=demo; ok "不用网关，装 CPU 演示模型（--demo）"; return; fi
 
   local profile="" text=""
   if [ -z "$gw_profile" ] && [ -z "$gw_cm" ]; then gw_profile=$swiss_profile; fi
@@ -262,7 +262,7 @@ for c in d["items"]:
     if any(k.startswith("session_route_") for k in (c.get("data") or {})):
         print(c["metadata"]["namespace"] + "/" + c["metadata"]["name"])')
     case $(printf '%s' "$cands" | grep -c . || true) in
-      0) die "集群里没有 openresty 路由 ConfigMap（含 session_route_*.conf）。先装推理网关，或用 --gateway-builtin" ;;
+      0) die "集群里没有 openresty 路由 ConfigMap（含 session_route_*.conf）。先装推理网关，或用 --demo" ;;
       1) gw_cm=$cands ;;
       *) die "找到多个 openresty 路由 ConfigMap，用 --gateway-configmap 选一个：
 $cands" ;;
@@ -352,10 +352,9 @@ write_values() {
     else
       printf 'backends: []\n'
     fi
-    if [ "$gw_mode" = builtin ]; then
-      printf 'gateway:\n  enabled: true\ndemo:\n  enabled: true\n'
+    if [ "$gw_mode" = demo ]; then
+      printf 'demo:\n  enabled: true\n'
     else
-      printf 'gateway:\n  enabled: false\ndemo:\n  enabled: false\n'
       printf 'playground:\n  gateway:\n'
       [ -n "$gw_profile" ] && printf '    profile: "%s"\n' "$gw_profile"
       [ "$gw_mode" = configmap ] && printf '    configMap: "%s"\n' "$gw_cm"

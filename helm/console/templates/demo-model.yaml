@@ -1,9 +1,9 @@
 {{- /*
-A small CPU model behind the built-in gateway, so a fresh install has something
-to chat with. llama.cpp serves one GGUF file, downloaded once into a PVC by the
-init container; demo.enabled=false removes it all.
+A small CPU model the Playground and /v1 talk to directly, for a cluster with no
+inference gateway. llama.cpp serves one GGUF file, downloaded once into a PVC by
+the init container.
 */ -}}
-{{- if and .Values.demo.enabled (include "console.gateway.builtin" .) }}
+{{- if .Values.demo.enabled }}
 {{- $name := printf "%s-demo" (include "console.fullname" .) }}
 {{- $d := .Values.demo }}
 {{- if $d.persistence.enabled }}
