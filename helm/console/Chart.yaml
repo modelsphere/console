@@ -8,3 +8,10 @@ home: https://github.com/modelsphere/console
 sources:
   - https://github.com/modelsphere/console
 keywords: [console, llm, inference, portal]
+# Fetched into charts/ by `helm dependency build helm/console`; helm will not
+# render this chart until it has run, even with swiss.enabled off.
+dependencies:
+  - name: swiss
+    version: 0.6.0
+    repository: oci://ghcr.io/modelsphere/charts
+    condition: swiss.enabled

@@ -53,6 +53,8 @@ if [ -n "$image" ]; then
     || { echo "image.repository in helm/console/values.yaml was not repointed at $image" >&2; exit 1; }
 fi
 
+helm dependency build "$root/helm/console"
+
 mkdir -p "$output"
 output=$(cd "$output" && pwd)
 helm package "$work/console" --version "$version" --app-version "$version" --destination "$output" >/dev/null

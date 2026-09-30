@@ -27,6 +27,9 @@
 # Locally packaged Helm charts
 /dist/
 
+# Chart dependencies, fetched by `helm dependency build helm/console`
+/helm/console/charts/
+
 /web/dist-swiss/
 # Created by https://www.toptal.com/developers/gitignore/api/tags
 # Edit at https://www.toptal.com/developers/gitignore?templates=tags

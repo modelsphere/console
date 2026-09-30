@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -157,5 +158,50 @@ func TestHelmSwissSubchartIsWiredIn(t *testing.T) {
 	}
 	if bytes.Contains(out, []byte("disabled: true")) || !bytes.Contains(out, []byte("dir: /etc/swiss-auth")) {
 		t.Fatalf("swissd's login must stay on behind console:\n%s", out)
+	}
+}
+
+func helmTemplate(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("helm is not installed")
+	}
+	root := filepath.Join("..", "..")
+	requireChartDependencies(t, root)
+	out, err := exec.Command("helm", append([]string{"template", "console", filepath.Join(root, "helm", "console"),
+		"--namespace", "modelsphere"}, args...)...).CombinedOutput()
+	return string(out), err
+}
+
+// A swissd installed elsewhere is wired the way the subchart is: its URL, its
+// proxy key from a Secret in console's namespace, its site profile.
+func TestHelmExternalSwissIsWiredIn(t *testing.T) {
+	example := filepath.Join("..", "..", "helm", "console", "values-existing-stack.example.yaml")
+	c := renderChartConfig(t, "--values", example)
+	byName := map[string]Backend{}
+	for _, b := range c.Backends {
+		byName[b.Name] = b
+	}
+	if b := byName["swiss"]; b.URL != "http://swiss.swiss-system.svc:80/api" || b.APIKeyEnv != "SWISS_PROXY_KEY" {
+		t.Fatalf("swiss backend = %+v, want externalSwiss.url with its proxy key", b)
+	}
+	if g := byName["llm"].Gateway; g == nil || g.Profile != "swiss-system/swiss-profile" {
+		t.Fatalf("llm backend = %+v, want externalSwiss.profile", byName["llm"])
+	}
+
+	deploy, err := helmTemplate(t, "--values", example, "--show-only", "templates/deployment.yaml")
+	if err != nil {
+		t.Fatalf("helm template: %v\n%s", err, deploy)
+	}
+	if !strings.Contains(deploy, `name: "swiss-proxy-key"`) || !strings.Contains(deploy, `key: "proxyKey"`) {
+		t.Fatalf("SWISS_PROXY_KEY is not read from externalSwiss.proxyKey:\n%s", deploy)
+	}
+}
+
+func TestHelmSwissTwiceIsRefused(t *testing.T) {
+	out, err := helmTemplate(t, "--set", "swiss.enabled=true", "--set", "swiss.rbac.namespaces={models}",
+		"--set", "externalSwiss.url=http://swiss.swiss.svc:80/api")
+	if err == nil || !strings.Contains(out, "swiss.enabled installs a swissd and externalSwiss.url names another") {
+		t.Fatalf("want a refusal naming both, got err=%v\n%s", err, out)
 	}
 }

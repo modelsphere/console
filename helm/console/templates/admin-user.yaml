@@ -19,21 +19,31 @@ the manifest is one helm deletes.
 #
 # groups:[system:masters] makes the authorizer allow everything, so the admin
 # has full access the moment the chart is installed.
+{{- /* Seeded once. After that the User is console's: the admin's password change
+       rewrites spec.encryptedPassword and drops the reset annotation. An upgrade
+       re-renders what is live, so helm's server-side apply neither conflicts
+       with those fields nor sets them back to the seed. */}}
+{{- $spec := dict
+      "email" "admin@modelsphere.local"
+      "description" "Platform administrator"
+      "groups" (list "system:masters")
+      "encryptedPassword" (.Values.admin.encryptedPassword | default "$2b$12$Q44Y0B99hoByZY.6v30jl.D83rXFbSpOfh8iWLbndLZBEjFAZwaeO") }}
+{{- $reset := .Values.admin.requirePasswordReset }}
+{{- if $existing }}
+{{- $spec = $existing.spec }}
+{{- $reset = eq (dig "metadata" "annotations" "iam.theriseunion.io/require-password-reset" "" $existing) "true" }}
+{{- end }}
 apiVersion: iam.theriseunion.io/v1alpha1
 kind: User
 metadata:
   name: {{ .Values.admin.username }}
   labels:
     {{- include "console.labels" . | nindent 4 }}
-{{- if .Values.admin.requirePasswordReset }}
+{{- if $reset }}
   annotations:
     iam.theriseunion.io/require-password-reset: "true"
 {{- end }}
 spec:
-  email: "admin@modelsphere.local"
-  description: "Platform administrator"
-  groups:
-    - system:masters
-  encryptedPassword: {{ .Values.admin.encryptedPassword | default "$2b$12$Q44Y0B99hoByZY.6v30jl.D83rXFbSpOfh8iWLbndLZBEjFAZwaeO" | quote }}
+  {{- toYaml $spec | nindent 2 }}
 {{- end }}
 {{- end }}

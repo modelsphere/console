@@ -49,9 +49,11 @@ admin:
   username: admin
   # bcrypt of the default password `P@88w0rd`. Change on first login, or set a
   # different hash here: htpasswd -bnBC 12 "" '<pw>' | tr -d ':\n'
+  # Read at first install only: an upgrade keeps whatever password the User has.
   encryptedPassword: "$2b$12$Q44Y0B99hoByZY.6v30jl.D83rXFbSpOfh8iWLbndLZBEjFAZwaeO"
   # Require the seeded administrator to change its password after first login.
   # Set false when encryptedPassword already contains an operator-chosen secret.
+  # Also first install only: an upgrade does not ask for the reset again.
   requirePasswordReset: true
 
 # Backends federated behind the portal. Each prefix is reverse-proxied to url,

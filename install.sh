@@ -149,6 +149,9 @@ preflight() {
     else chart=$(ls "$here"/console-*.tgz 2>/dev/null | tail -1 || true); fi
   fi
   [ -n "$chart" ] && [ -e "$chart" ] || die "找不到 chart，用 --chart 指定"
+  if [ -d "$chart" ]; then
+    helm dependency build "$chart" >/dev/null || die "拉取 chart 依赖失败（swiss chart，见 $chart/Chart.yaml）"
+  fi
   ok "chart：$chart"
 }
 
