@@ -203,6 +203,34 @@ kubectl delete crd users.iam.theriseunion.io iamroles.iam.theriseunion.io \
 | `admin.encryptedPassword` | 预先设定管理员密码的 bcrypt 哈希 |
 | `metrics.serviceMonitor.enabled` | 使用 Prometheus Operator 采集指标 |
 | `auth.jwtSecret` | 与 Rise Global 共享签名密钥；为空时首次安装自动生成 |
+| `auth.disabled=true` | 关闭登录，所有请求以本地管理员身份执行；见下节 |
+
+## 关闭登录（auth.disabled）
+
+笔记本、演示环境，或者外层已有认证的单租户集群，可以不要登录页：
+
+```sh
+helm install console ./console --set auth.disabled=true
+```
+
+这时 console 不再签发或校验 token，每个请求都带一个合成的 `admin`
+身份（`system:masters`），授权器的短路分支让它通过所有检查。前端不再显示登录
+页，用户菜单里的"修改密码"和"退出登录"一并隐藏——两者都没有可操作的对象。
+
+| 影响 | 说明 |
+|---|---|
+| 整条链路都没有鉴权 | swissd 在 console 后面本来就以 `server.auth.disabled` 运行、信任 console 的 RBAC。这里再关掉，栈里就没有任何一层做授权了 |
+| 不要暴露在共享网络上 | 任何能访问到这个地址的人都是管理员 |
+| 签名密钥照常生成 | Secret 仍然存在，`auth.jwtSecret` 仍可用于与 Rise Global 共享 |
+| 管理员 User 照常创建 | 没人用它登录，但保留它意味着改回 `auth.disabled=false` 只是改一个值；把它从 manifest 里去掉会让 helm 删除它 |
+
+启动时会打印一条 warning，`helm install` 的 NOTES 也会提示。
+
+改回来：
+
+```sh
+helm upgrade console ./console --set auth.disabled=false
+```
 
 ## 本地打包与发布
 

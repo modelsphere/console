@@ -13,6 +13,9 @@ export interface ClusterInfo {
   namespace?: string;
   chartRepo?: string;
   catalog: string;
+  // Which document named it: "profile" when the site profile sets one,
+  // "config" when it falls back to swissd's config file.
+  catalogFrom?: string;
   catalogRef?: string;
   version: string;
   allowDeploy: boolean;
@@ -179,6 +182,9 @@ export interface RouteAuth {
 export interface SiteProfile {
   name: string;
   namespace?: string;
+  // Where the catalog is read from. Set here it wins over swissd's config
+  // file; empty falls back to it.
+  catalog?: string;
   chartRepo?: string;
   chartPath?: string;
   registry?: { mirror?: string };
@@ -210,7 +216,8 @@ export interface SiteProfile {
 
 export interface ProfileResponse {
   source: string;
-  cluster: string;
+  // The profile's name, once one exists. Absent until setup.
+  cluster?: string;
   // Absent when the stored document does not parse: there is then nothing
   // swissd can compose against, which is the same state as having no profile.
   profile?: SiteProfile;
@@ -619,8 +626,11 @@ export const deployApi = {
   // expectRevision is the optimistic lock a diff computed. It is left out when
   // no diff was run, and the server reads a missing revision as asserting
   // nothing rather than as revision zero.
-  apply: (planHash: string, expectRevision?: number, note?: string) =>
-    post<ApplyResult>("/api/apply", { planHash, expectRevision, note }),
+  // forceConflicts is per apply and never stored in the plan: it says "take the
+  // fields a hand kubectl edit left another manager owning", which is a
+  // decision about this one upgrade rather than about the release.
+  apply: (planHash: string, expectRevision?: number, note?: string, forceConflicts?: boolean) =>
+    post<ApplyResult>("/api/apply", { planHash, expectRevision, note, forceConflicts }),
   install: (planHash: string, note?: string) =>
     post<ApplyResult>("/api/install", { planHash, note }),
   probe: (ns: string, release: string, auth: EntrypointAuth = {}) =>
@@ -682,13 +692,15 @@ export interface SLOBound {
   value: number;
 }
 
-// Public shape of slo-api GET/PUT /config/{route}. The installed CR is often
-// only a service id and a minimum replica count, which arrives here as
-// highPriority false and minimumDeployment, with no ttft or otps.
+// What swissd returns for /slo: slo-api's own shape, plus `found`, plus the
+// CRD integer swissd derives from highPriority. The installed CR is often only
+// a service id and a minimum replica count, which arrives here as highPriority
+// false and minimumDeployment, with no ttft or otps.
 export interface SLOConfig {
   found: boolean;
   route?: string;
-  // CRD field, 0..10. highPriority on the wire is only true when this is 10.
+  // CRD field, 0..10, but slo-api only ever stores 10 or 0, so this is
+  // derived from highPriority and never lands in between.
   priority?: number;
   highPriority?: boolean;
   minimumDeployment?: SLOBound;
@@ -697,8 +709,12 @@ export interface SLOConfig {
   otps?: SLOSection;
 }
 
+// A save merges: fields left out keep their stored value, and only a reset
+// clears them. swissd accepts either priority or highPriority and sends the
+// SLO server the boolean; a priority of 1..9 is refused rather than flattened.
 export interface SLOEdit {
   route?: string;
+  highPriority?: boolean;
   priority?: number;
   minimumDeployment?: SLOBound;
   maximumDeployment?: SLOBound;

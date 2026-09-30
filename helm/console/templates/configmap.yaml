@@ -10,6 +10,9 @@ data:
       addr: ":8080"
       metricsAddr: {{ printf ":%d" (int .Values.metrics.port) | quote }}
       auth:
+        {{- if .Values.auth.disabled }}
+        disabled: true
+        {{- end }}
         issuer: {{ .Values.auth.issuer | quote }}
         tokenTTL: {{ .Values.auth.tokenTTL | quote }}
         # jwtSecret is injected from the Secret via env, not rendered here.

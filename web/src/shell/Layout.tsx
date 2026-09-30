@@ -163,16 +163,22 @@ function TopBar({
               {me?.name}
               {me?.isAdmin ? " · 管理员" : ""}
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setChangePasswordOpen(true)}>
-              <KeyRound className="mr-2 h-4 w-4" />
-              修改密码
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              退出登录
-            </DropdownMenuItem>
+            {/* With auth disabled there is no session to end and no stored
+                password to change; both entries would fail if offered. */}
+            {!me?.authDisabled && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setChangePasswordOpen(true)}>
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  修改密码
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={logout}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  退出登录
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

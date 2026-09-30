@@ -5,8 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:shadcn": "tsc -p tsconfig.shadcn.json && UI_KIT=shadcn vite build --outDir dist-shadcn",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit",
+    "typecheck": "tsc -b --noEmit && tsc -p tsconfig.shadcn.json",
     "test": "vitest run"
   },
   "dependencies": {

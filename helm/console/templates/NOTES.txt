@@ -39,7 +39,13 @@ Programs call the same models at http://<console address>/v1 with an API key an
 administrator issues under 路由 → API 密钥.
 {{- end }}
 
-{{- if not .Values.admin.username }}
+{{- if .Values.auth.disabled }}
+Authentication is DISABLED (auth.disabled=true). There is no login: every
+request runs as the local administrator, and the backends behind console are
+not protected either. Do not put this install on a shared network.
+
+Set auth.disabled=false to turn the login back on{{ if .Values.admin.username }}; {{ .Values.admin.username | quote }} is seeded and ready{{ end }}.
+{{- else if not .Values.admin.username }}
 No administrator user was seeded. Configure an administrator before signing in.
 {{- else if and $existing (not $adminIsOurs) }}
 {{ .Values.admin.username | quote }} already exists on this cluster and belongs to another release, so it was left as it is — it may be Rise Global's, with a password this chart does not know. Set admin.username to a name that is free to seed one, or sign in with the existing credentials.

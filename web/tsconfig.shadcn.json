@@ -1,0 +1,13 @@
+// The same sources against the other ui kit. Both kits have to keep the same
+// export surface or one of the two builds breaks, and nothing but a typecheck
+// of each would say so.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"],
+      "@swiss/components/ui/*": ["./src/modules/swiss/components/ui/shadcn/*"],
+      "@swiss/*": ["./src/modules/swiss/*"]
+    }
+  }
+}

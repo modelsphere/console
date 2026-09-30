@@ -65,6 +65,9 @@ export interface Me {
   isAdmin: boolean;
   permissions: string[];
   requirePasswordReset: boolean;
+  // Set when console runs with server.auth.disabled: there is no session to
+  // end and no password to change, so the shell hides both.
+  authDisabled?: boolean;
 }
 
 export interface ChangePasswordInput {

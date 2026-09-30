@@ -80,6 +80,10 @@ func run(configPath, addr, logLevel, webDir string) error {
 
 	// Identity kernel: users and roles live as CRDs, tokens are HS256, both
 	// wire-compatible with Rise Global.
+	if cfg.Server.Auth.Disabled {
+		log.Warn("authentication is disabled: every request runs as the local administrator, and a backend behind console is not protected either")
+	}
+
 	store := iam.NewStore(kube.Dynamic())
 	signer := iam.NewSigner(cfg.Server.Auth.Issuer, cfg.Server.Auth.JWTSecret, cfg.Server.Auth.TokenTTL)
 	srv.SetIAM(store, signer, iam.NewAuthenticator(store, signer, log), iam.NewAuthorizer(store))

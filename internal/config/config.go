@@ -67,6 +67,13 @@ type Server struct {
 // kept identical to Rise Global so a later cutover is just sharing this secret
 // and pointing at Global's apiserver.
 type Auth struct {
+	// Disabled runs console with no login: every request carries the local
+	// administrator, and the authorizer's system:masters short-circuit allows
+	// it everything. For a laptop or a single-tenant cluster; it is logged at
+	// startup. swissd behind console already runs with its own auth off and
+	// trusts console's RBAC, so with this set nothing in the stack authorises
+	// anything.
+	Disabled bool `yaml:"disabled,omitempty"`
 	// JWTSecret is the HS256 signing key, shared with Global on upgrade.
 	JWTSecret string `yaml:"jwtSecret,omitempty"`
 	// Issuer is the token `iss` claim; also the OIDC issuer URL.
@@ -219,8 +226,8 @@ func (c *Config) origin() string {
 
 // Validate covers what console needs to serve.
 func (c *Config) Validate() error {
-	if c.Server.Auth.JWTSecret == "" {
-		return fmt.Errorf("%s: server.auth.jwtSecret is required -- it signs every token", c.origin())
+	if c.Server.Auth.JWTSecret == "" && !c.Server.Auth.Disabled {
+		return fmt.Errorf("%s: server.auth.jwtSecret is required -- it signs every token, or set server.auth.disabled to run without a login", c.origin())
 	}
 	names, prefixes := map[string]bool{}, map[string]bool{}
 	for i, b := range c.Backends {

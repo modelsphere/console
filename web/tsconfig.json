@@ -15,7 +15,13 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
-    "paths": { "@/*": ["./src/*"], "@swiss/*": ["./src/modules/swiss/*"] }
+    // The more specific pattern wins, so the ui kit resolves separately from the
+    // rest of the module. tsconfig.shadcn.json checks the other one.
+    "paths": {
+      "@/*": ["./src/*"],
+      "@swiss/components/ui/*": ["./src/modules/swiss/components/ui/rise/*"],
+      "@swiss/*": ["./src/modules/swiss/*"]
+    }
   },
   "include": ["src", "vite.config.ts", "tailwind.config.ts"]
 }

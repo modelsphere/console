@@ -22,12 +22,23 @@ func identityFrom(ctx context.Context) *iam.Identity {
 	return id
 }
 
+// anonymousAdmin is the caller every request carries when auth.disabled is set.
+// It is a synthetic identity, deliberately not a User CRD: nothing is looked up,
+// so the mode works on a cluster where the iam CRDs were never installed.
+// system:masters is what the authorizer short-circuits on, so the whole RBAC
+// path stays wired up and simply always answers yes.
+var anonymousAdmin = &iam.Identity{Name: "admin", Groups: []string{"system:masters"}}
+
 // authenticate verifies the token on every request and stashes the caller in
 // context. Public paths pass through anonymously; a guarded /api/* path with no
 // valid token is rejected with a JSON 401 so the SPA's fetch layer sees an
 // error envelope rather than the login HTML.
 func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.cfg.Server.Auth.Disabled {
+			next.ServeHTTP(w, r.WithContext(withIdentity(r.Context(), anonymousAdmin)))
+			return
+		}
 		if s.signer != nil {
 			if tok := bearerToken(r); tok != "" {
 				if id, err := s.signer.Verify(tok); err == nil {
@@ -46,7 +57,8 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 
 func (s *Server) requirePasswordReset(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/") || isPasswordResetPath(r) {
+		// There is no seeded password to rotate when nobody logs in.
+		if s.cfg.Server.Auth.Disabled || !strings.HasPrefix(r.URL.Path, "/api/") || isPasswordResetPath(r) {
 			next.ServeHTTP(w, r)
 			return
 		}

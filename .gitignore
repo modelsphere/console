@@ -4,7 +4,12 @@
 *.db
 *.db-*
 
-# Frontend build artefacts (web/dist ships a placeholder; real builds overwrite it)
+# Frontend build artefacts. web/dist is committed empty: the build output is
+# content-hashed, so committing it means a rewritten bundle in every UI diff,
+# and the Dockerfile rebuilds it regardless. .gitkeep is what //go:embed needs
+# to find, so `go build` works without node.
+/web/dist/*
+!/web/dist/.gitkeep
 /web/node_modules/
 /web/vendor/*/*/node_modules/
 /web/*.tsbuildinfo
@@ -19,3 +24,6 @@
 
 # Locally packaged Helm charts
 /dist/
+
+# Second UI-kit build (npm run build:shadcn); only web/dist is embedded.
+web/dist-shadcn/

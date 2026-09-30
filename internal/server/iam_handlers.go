@@ -56,6 +56,19 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
 		return
 	}
+	// The anonymous administrator is not a User CRD, so there is nothing to
+	// read and no password state to report. authDisabled tells the shell to
+	// skip the login screen and hide the logout it cannot honour.
+	if s.cfg.Server.Auth.Disabled {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"name": id.Name, "groups": id.Groups,
+			"isAdmin":              true,
+			"permissions":          []string{"*"},
+			"requirePasswordReset": false,
+			"authDisabled":         true,
+		})
+		return
+	}
 	u, err := s.store.GetUser(r.Context(), id.Name)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
@@ -71,6 +84,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"isAdmin":              id.IsSystemMaster(),
 		"permissions":          permissions,
 		"requirePasswordReset": u.RequiresPasswordReset(),
+		"authDisabled":         false,
 	})
 }
 

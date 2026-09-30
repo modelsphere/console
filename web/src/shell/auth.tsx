@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, clearToken, getToken, login as apiLogin, type Me } from "@/shell/api";
+import { api, clearToken, login as apiLogin, type Me } from "@/shell/api";
 
 interface AuthState {
   me: Me | null;
@@ -14,13 +14,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // On mount, if a token is present, resolve the current user. A stale or
-  // invalid token simply resolves to logged-out.
+  // On mount, ask who the caller is. A stale or invalid token simply resolves
+  // to logged-out -- and so does no token at all, except when console runs
+  // with auth disabled, where the probe succeeds and nobody sees a login page.
   useEffect(() => {
-    if (!getToken()) {
-      setLoading(false);
-      return;
-    }
     api
       .me()
       .then(setMe)
@@ -40,6 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearToken();
     setMe(null);
   };
+
 
   return <AuthContext.Provider value={{ me, loading, login, logout }}>{children}</AuthContext.Provider>;
 }

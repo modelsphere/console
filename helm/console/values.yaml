@@ -23,6 +23,17 @@ service:
 # Identity signing. jwtSecret is generated on first install if left empty, and
 # kept in a Secret. Share it with Rise Global to make an upgrade seamless.
 auth:
+  # Run with no login at all: every request is the local administrator, and the
+  # authorizer allows it everything. For a laptop, a demo, or a single-tenant
+  # cluster that is already behind something else.
+  #
+  # Nothing in the stack authorises anything when this is set -- a backend
+  # behind console trusts console's RBAC, so disabling it here removes the only
+  # check there was. Do not expose such an install on a shared network.
+  #
+  # The administrator below is still seeded and the signing secret is still
+  # generated, so setting this back to false restores a working login.
+  disabled: false
   jwtSecret: ""       # empty => generated once and stored in the Secret
   issuer: "https://console.modelsphere.local"
   tokenTTL: 24h
@@ -30,6 +41,9 @@ auth:
 # Zero-config login: helm seeds this admin User CRD (P1). encryptedPassword is a
 # bcrypt hash baked at packaging time; the operator changes the password on
 # first login. groups:[system:masters] makes the authorizer allow everything.
+# Seeded even when auth.disabled is set -- nothing signs in then, but the User
+# is what makes turning the login back on a one-value change rather than a
+# rescue. Dropping it from the manifest would have helm delete it.
 admin:
   username: admin
   # bcrypt of the default password `P@88w0rd`. Change on first login, or set a

@@ -35,7 +35,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-# web/dist ships a placeholder so `go build` works without node; the real build
+# web/dist is committed empty so `go build` works without node; the real build
 # lands here and is what gets embedded.
 COPY --from=web /src/web/dist ./web/dist
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
