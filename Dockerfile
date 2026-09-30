@@ -1,11 +1,12 @@
 # console: the BFF, with the SPA embedded in it.
 #
-# Three stages: the UI is compiled into the Go binary, so the web build has to
-# finish before the Go build starts, and neither toolchain belongs in the
-# runtime image. Debian-based build stages match the Debian-derived runtime and
-# remove a class of musl-vs-glibc "works on my builder" differences.
+# Three stages, because the UI is compiled into the Go binary -- the web build
+# has to finish before the Go build starts, and neither toolchain belongs in the
+# runtime image. Everything is built here from source: .dockerignore keeps the
+# host's node_modules and web/dist out of the context.
 #
-# The web stage is a static Vite build that lands in web/dist.
+# Debian-based build stages match the Debian-derived runtime and remove a class
+# of musl-vs-glibc "works on my builder" differences.
 
 # Package indexes are build args, so a build that cannot reach the public ones
 # can point at a mirror: --build-arg NPM_REGISTRY=https://registry.npmmirror.com
@@ -16,14 +17,15 @@ ARG GOPROXY=https://proxy.golang.org,direct
 # --- 1. the SPA ------------------------------------------------------------
 FROM node:24-bookworm-slim AS web
 ARG NPM_REGISTRY
+
 WORKDIR /src/web
-# The private @riseaicloud/* registry auth is passed as a build secret, never
-# baked into a layer: --mount=type=secret,id=npmrc,target=/src/web/.npmrc
+# Manifests first: this layer is cached until a dependency actually changes,
+# which is most of the build time. @riseaicloud/* resolve to file:./vendor/...,
+# so the vendored packages are part of the manifests.
 COPY web/package.json web/package-lock.json ./
-# @riseaicloud/* resolve to file:./vendor/..., so the install needs them present.
 COPY web/vendor ./vendor
-RUN --mount=type=secret,id=npmrc,target=/src/web/.npmrc \
-    npm ci --no-audit --no-fund --registry "$NPM_REGISTRY"
+RUN npm ci --no-audit --no-fund --registry "$NPM_REGISTRY"
+
 COPY web/ ./
 RUN npm run build
 
@@ -31,14 +33,29 @@ RUN npm run build
 FROM golang:1.26 AS build
 ARG GOPROXY
 ENV GOPROXY=$GOPROXY
+# auto: -mod=vendor when the context carries vendor/modules.txt, else -mod=mod.
+ARG GO_MOD_MODE=auto
+
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+# No separate `go mod download` layer: whether to download at all is only known
+# once vendor/ is in, and a vendored build must not reach the network.
+
 COPY . .
 # web/dist is committed empty so `go build` works without node; the real build
 # lands here and is what gets embedded.
 COPY --from=web /src/web/dist ./web/dist
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
+
+RUN set -eu ; \
+    mod="${GO_MOD_MODE}"; \
+    if [ "${mod}" = "auto" ]; then \
+        if [ -f vendor/modules.txt ]; then mod=vendor; else mod=mod; fi; \
+    fi; \
+    echo "building with -mod=${mod}"; \
+    if [ "${mod}" != "vendor" ]; then go mod download; fi; \
+    CGO_ENABLED=0 GOOS=linux go build \
+      -trimpath -mod="${mod}" \
+      -ldflags="-s -w" \
       -o /out/console ./cmd/console
 
 # --- 3. runtime ------------------------------------------------------------

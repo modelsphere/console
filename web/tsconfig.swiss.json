@@ -1,0 +1,16 @@
+// The swiss build: swissd's standalone shell, the shadcn kit, the standalone
+// host. Both builds must keep the same export surface in lib/host/* and
+// components/ui/*, and only a typecheck of each says so.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"],
+      "@swiss/lib/host": ["./src/modules/swiss/lib/host/standalone.ts"],
+      "@swiss/components/ui/*": ["./src/modules/swiss/components/ui/shadcn/*"],
+      "@swiss/*": ["./src/modules/swiss/*"]
+    }
+  },
+  "include": ["src/modules/swiss", "src/vite-env.d.ts"],
+  "exclude": ["src/modules/swiss/index.tsx", "src/modules/swiss/lib/host/console.ts", "src/modules/swiss/components/ui/rise"]
+}

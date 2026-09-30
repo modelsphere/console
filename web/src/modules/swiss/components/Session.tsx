@@ -1,5 +1,5 @@
 import { createContext, use, useEffect } from "react";
-import { Navigate, useLocation } from "@swiss/lib/host";
+import { loginPath, Navigate, useLocation } from "@swiss/lib/host";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { api, onUnauthorized, type Session } from "@swiss/lib/api";
 import { ErrorState, Loading } from "@swiss/components/States";
@@ -43,8 +43,9 @@ export function Gate({ children }: { children: React.ReactNode }) {
   if (session.isPending) return <Loading what="the session" />;
   if (session.error) return <ErrorState what="the session" error={session.error} />;
 
-  // console is the login; a swissd behind it must run with server.auth.disabled.
+  // Under console there is no swiss login, so a swissd behind it must run with server.auth.disabled.
   if (!session.data.authenticated) {
+    if (loginPath) return <Navigate to={loginPath} replace state={{ from: pathname }} />;
     return <ErrorState what="swissd" error={new Error("swissd asks for its own login; run it with server.auth.disabled behind console")} />;
   }
   if (!session.data.initialized && !pathname.endsWith("/setup")) {

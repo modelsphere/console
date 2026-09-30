@@ -25,5 +25,27 @@
 # Locally packaged Helm charts
 /dist/
 
-# Second UI-kit build (npm run build:shadcn); only web/dist is embedded.
-web/dist-shadcn/
+/web/dist-swiss/
+# Created by https://www.toptal.com/developers/gitignore/api/tags
+# Edit at https://www.toptal.com/developers/gitignore?templates=tags
+
+### Tags ###
+# Ignore tags created by etags, ctags, gtags (GNU global) and cscope
+TAGS
+.TAGS
+!TAGS/
+tags
+.tags
+!tags/
+gtags.files
+GTAGS
+GRTAGS
+GPATH
+GSYMS
+cscope.files
+cscope.out
+cscope.in.out
+cscope.po.out
+
+
+# End of https://www.toptal.com/developers/gitignore/api/tags

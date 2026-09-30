@@ -1,7 +1,5 @@
-// The one file that binds swiss's pages to where they run. In the console it
-// points at the shell; in standalone swiss the same names re-export
-// react-router and window.fetch unchanged. Everything else in this module is a
-// copy of swiss/web/src.
+// Binds swiss's pages to the console shell. lib/host/standalone.ts is the other
+// binding (swissd serving them itself); both export the same names.
 import { createElement, type ComponentProps } from "react";
 import {
   Link as RRLink,
@@ -23,6 +21,9 @@ export function apiPath(path: string): string {
 }
 
 export const hostFetch: typeof fetch = (input, init) => apiFetch(String(input), init);
+
+// console is the login; there is no swiss one to send an unauthenticated caller to.
+export const loginPath: string | null = null;
 
 // Swiss links are written as absolute app paths ("/catalog"). Under the console
 // they are relative to the module's mount point.

@@ -15,10 +15,11 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
-    // The more specific pattern wins, so the ui kit resolves separately from the
-    // rest of the module. tsconfig.shadcn.json checks the other one.
+    // The more specific pattern wins, so the host and the ui kit resolve
+    // separately from the rest of the module. tsconfig.swiss.json checks the other build.
     "paths": {
       "@/*": ["./src/*"],
+      "@swiss/lib/host": ["./src/modules/swiss/lib/host/console.ts"],
       "@swiss/components/ui/*": ["./src/modules/swiss/components/ui/rise/*"],
       "@swiss/*": ["./src/modules/swiss/*"]
     }

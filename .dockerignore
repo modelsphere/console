@@ -1,8 +1,25 @@
-# Installed and built inside the image; the host copies would only bloat the
-# context and shadow what the build stages produce.
-.git
-.scratch
-/console
+# The build needs source only. node_modules is reinstalled from the lockfile in
+# the web stage, and dist is produced there -- copying either in would make the
+# image depend on whatever happened to be on the builder's disk.
 web/node_modules
 web/vendor/*/*/node_modules
+web/dist
+web/dist-swiss
 web/*.tsbuildinfo
+**/.npmrc
+.git
+.gitignore
+.scratch
+*.md
+docs/
+helm/
+examples/
+Dockerfile
+.dockerignore
+/dist
+/console
+/console.yaml
+/console.local.yaml
+/console-image.yaml
+**/*.db
+**/*.db-*

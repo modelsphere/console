@@ -1,8 +1,9 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, type Plugin, type ProxyOptions } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { HttpProxyAgent } from "http-proxy-agent";
 
 // emptyOutDir wipes dist on every build, and that takes the .gitkeep with it --
 // the one file //go:embed all:dist needs in a fresh checkout. Losing it is
@@ -20,37 +21,51 @@ function keepDistEmbeddable(): Plugin {
   };
 }
 
-// The SPA is served by console from web/dist, same-origin, so /api, /oauth are
-// proxied to the running BFF in dev.
+// One source, two builds. The swiss pages are the same files in both; only the
+// entry and two aliases differ:
 //
-// UI_KIT picks which set of components the swiss module's pages compile against:
-// `rise` (the default) adapts them onto @riseaicloud/ui, `shadcn` uses the ones
-// swiss ships. The pages are the same files either way -- they import
-// @swiss/components/ui/*, and only this alias decides where that lands. The
-// shell is Rise in both builds; this swaps the module, not console's chrome.
-const uiKit = process.env.UI_KIT === "shadcn" ? "shadcn" : "rise";
+// | mode             | entry                        | @swiss/lib/host | @swiss/components/ui | /api goes to            | out          |
+// |------------------|------------------------------|-----------------|----------------------|-------------------------|--------------|
+// | (default)        | index.html, console shell    | console.ts      | rise                 | console, :8080          | dist/        |
+// | `--mode swiss`   | modules/swiss/standalone     | standalone.ts   | shadcn               | swissd, $SWISSD         | dist-swiss/  |
+const src = path.resolve(import.meta.dirname, "src");
+const swissDir = path.join(src, "modules/swiss");
 
-export default defineConfig({
-  plugins: [react(), tailwindcss(), keepDistEmbeddable()],
-  resolve: {
-    alias: {
-      // Longest prefix first: vite tries these in order.
-      "@swiss/components/ui": path.resolve(
-        import.meta.dirname,
-        `src/modules/swiss/components/ui/${uiKit}`,
-      ),
-      "@swiss": path.resolve(import.meta.dirname, "src/modules/swiss"),
-      "@": path.resolve(import.meta.dirname, "src"),
+const egressProxy = process.env.http_proxy ?? process.env.HTTP_PROXY;
+// const remote = 'http://127.0.0.1:8080';
+const remote = process.env.SWISSD ?? 'http://172.28.44.16:32326';
+// const remote = 'http://172.26.6.11:31488';
+
+export default defineConfig(({ mode }) => {
+  const swiss = mode === "swiss";
+  const proxy: Record<string, string | ProxyOptions> = swiss
+    ? // swissd's own login: its session cookie is host-only and plain-http here, so it rides the proxy.
+      {
+        "/api": {
+          target: remote,
+          changeOrigin: true,
+          agent: egressProxy ? new HttpProxyAgent(egressProxy) : undefined,
+        },
+      }
+    : { "/api": "http://localhost:8080", "/oauth": "http://localhost:8080" };
+  return {
+    root: swiss ? path.join(swissDir, "standalone") : undefined,
+    plugins: [react(), tailwindcss(), ...(swiss ? [] : [keepDistEmbeddable()])],
+    resolve: {
+      // First match wins, so the specific ones go before @swiss.
+      alias: [
+        { find: /^@swiss\/lib\/host$/, replacement: path.join(swissDir, "lib/host", swiss ? "standalone.ts" : "console.ts") },
+        { find: "@swiss/components/ui", replacement: path.join(swissDir, "components/ui", swiss ? "shadcn" : "rise") },
+        { find: "@swiss", replacement: swissDir },
+        { find: "@", replacement: src },
+      ],
     },
-  },
-  server: {
-    proxy: {
-      "/api": "http://localhost:8080",
-      "/oauth": "http://localhost:8080",
+    server: { proxy },
+    build: {
+      outDir: path.resolve(import.meta.dirname, swiss ? "dist-swiss" : "dist"),
+      emptyOutDir: true,
+      // swissd embeds this bundle in a binary pulled on every rollout; keep growth noticed.
+      chunkSizeWarningLimit: swiss ? 400 : undefined,
     },
-  },
-  build: {
-    outDir: "dist",
-    emptyOutDir: true,
-  },
+  };
 });
