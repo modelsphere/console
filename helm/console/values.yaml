@@ -1,5 +1,6 @@
 image:
-  # Published by CI with the chart (.github/workflows/publish.yml).
+  # The OCI chart (oci://ghcr.io/modelsphere/charts/console) uses this GHCR image. The
+  # copy in the modelsphere helm-charts repo uses 4pdosc/console on Docker Hub instead.
   repository: ghcr.io/modelsphere/console
   tag: ""            # defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent

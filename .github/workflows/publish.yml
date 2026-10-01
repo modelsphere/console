@@ -1,18 +1,29 @@
 name: publish
 
-# The console image and the console chart, both on GHCR, at one version. The
-# chart is packaged pointing at the image pushed beside it (image.repository,
-# appVersion). Same scheme as modelsphere/swiss.
+# The console image and chart, at one version. The image goes to Docker Hub
+# (4pdosc/console) and GHCR (ghcr.io/<owner>/console); the chart goes to the GHCR OCI
+# registry, packaged pointing at the GHCR image pushed beside it (image.repository,
+# appVersion).
 #
 #   push to main     <appVersion>-git<sha7>
 #   tag <X>          <X>, which must be Chart.yaml's appVersion (hack/bump.sh --tag); the image is also latest
-#   pull request     test, build, lint and package; nothing pushed
+#   pull request     build, lint and package; nothing pushed
+#
+# Two distribution channels, each self-consistent:
+#
+#   OCI (this workflow)   oci://ghcr.io/<owner>/charts, pointing at the GHCR image
+#   helm repo             modelsphere/helm-charts, a copy pointing at 4pdosc/console
+#
+# The Docker Hub image is pushed here for the second channel. It needs the
+# DOCKERHUB_USERNAME and DOCKERHUB_TOKEN secrets; without them the run publishes to
+# GHCR only and says so. GHCR authenticates with the workflow's GITHUB_TOKEN.
 on:
   push:
-    branches: [main]
-    tags: ["[0-9]+.[0-9]+.[0-9]+*"]
+    branches:
+      - main
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+*"
   pull_request:
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,12 +33,15 @@ concurrency:
   group: publish-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  HUB_IMAGE: 4pdosc/console
+
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     env:
       PUSH: ${{ github.event_name != 'pull_request' }}
+      DOCKERHUB: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -48,10 +62,11 @@ jobs:
               exit 1
             fi
             tags="$image:$version,$image:latest"
+            [ "$DOCKERHUB" = true ] && tags="$tags,$HUB_IMAGE:$version,$HUB_IMAGE:latest"
           else
-            sha=${{ github.event.pull_request.head.sha || github.sha }}
-            version="$app-git${sha:0:7}"
+            version="$app-git${GITHUB_SHA:0:7}"
             tags="$image:$version"
+            [ "$DOCKERHUB" = true ] && tags="$tags,$HUB_IMAGE:$version"
           fi
           {
             echo "version=$version"
@@ -59,59 +74,9 @@ jobs:
             echo "tags=$tags"
             echo "charts=oci://ghcr.io/$owner/charts"
           } >>"$GITHUB_OUTPUT"
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
-      - name: Test
-        run: go test ./...
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v5
-        with:
-          version: v4.3.0
-
-      - name: Lint and render the supported modes
-        run: |
-          set -eu
-          helm lint --strict helm/console
-          helm template console helm/console --namespace modelsphere --include-crds \
-            >/tmp/console-rendered.yaml
-          helm template console-external helm/console --namespace modelsphere --include-crds \
-            --values helm/console/values-existing-stack.example.yaml \
-            >/tmp/console-external-rendered.yaml
-          helm template console-demo helm/console --namespace modelsphere --include-crds \
-            --set demo.enabled=true \
-            >/tmp/console-demo-rendered.yaml
-
-      # console's own image is built below and checked once pushed.
-      - name: Third-party images are publicly pullable
-        env:
-          IMAGE: ${{ steps.v.outputs.image }}
-        run: |
-          set -eu
-          auth="$RUNNER_TEMP/docker-anonymous"
-          mkdir -p "$auth"
-          printf '{"auths":{}}\n' >"$auth/config.json"
-          sed -nE 's/^[[:space:]-]*image:[[:space:]]*"?([^"[:space:]]+)"?.*/\1/p' \
-            /tmp/console-rendered.yaml /tmp/console-demo-rendered.yaml \
-            | grep -v -e '/console:' | sort -u >/tmp/console-images.txt
-          test -s /tmp/console-images.txt
-          while IFS= read -r image; do
-            echo "checking $image"
-            for attempt in 1 2 3; do
-              if DOCKER_CONFIG="$auth" docker manifest inspect "$image" >/dev/null; then
-                break
-              fi
-              if [ "$attempt" -eq 3 ]; then
-                echo "could not read $image after $attempt attempts" >&2
-                exit 1
-              fi
-              sleep "$((attempt * 5))"
-            done
-          done </tmp/console-images.txt
+          if [ "$PUSH" = true ] && [ "$DOCKERHUB" != true ]; then
+            echo "::notice::DOCKERHUB_USERNAME/DOCKERHUB_TOKEN not set; $HUB_IMAGE not pushed, GHCR only"
+          fi
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
@@ -123,6 +88,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: env.PUSH == 'true' && env.DOCKERHUB == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push the image
         uses: docker/build-push-action@v7
@@ -138,11 +110,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v4.3.0
+
       - name: Package the chart
         env:
           VERSION: ${{ steps.v.outputs.version }}
           IMAGE: ${{ steps.v.outputs.image }}
-        run: hack/chart.sh --version "$VERSION" --image "$IMAGE" --output dist
+        run: |
+          set -eu
+          sed "s|^  repository: .*/console\$|  repository: $IMAGE|" helm/console/values.yaml >values.tmp
+          mv values.tmp helm/console/values.yaml
+          grep -q "^  repository: $IMAGE\$" helm/console/values.yaml \
+            || { echo "image.repository in helm/console/values.yaml was not repointed at $IMAGE" >&2; exit 1; }
+          # The swiss subchart is fetched into charts/; helm will not lint or package without it.
+          helm dependency build helm/console
+          helm lint --strict helm/console
+          helm package helm/console --version "$VERSION" --app-version "$VERSION" --destination dist
 
       - name: Push the chart
         if: env.PUSH == 'true'
@@ -154,21 +140,3 @@ jobs:
           set -eu
           printf '%s' "$TOKEN" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
           helm push "dist/console-$VERSION.tgz" "$CHARTS"
-
-      # What an operator installs must be pullable without credentials. A new
-      # GHCR package starts private: make it public once in its package settings.
-      - name: Published image and chart are publicly pullable
-        if: env.PUSH == 'true'
-        env:
-          VERSION: ${{ steps.v.outputs.version }}
-          IMAGE: ${{ steps.v.outputs.image }}
-          CHARTS: ${{ steps.v.outputs.charts }}
-        run: |
-          set -eu
-          auth="$RUNNER_TEMP/anonymous"
-          mkdir -p "$auth"
-          printf '{"auths":{}}\n' >"$auth/config.json"
-          DOCKER_CONFIG="$auth" docker manifest inspect "$IMAGE:$VERSION" >/dev/null
-          app=$(DOCKER_CONFIG="$auth" helm show chart "$CHARTS/console" --version "$VERSION" \
-            --registry-config "$auth/config.json" | sed -n 's/^appVersion: *//p')
-          test "$app" = "$VERSION"

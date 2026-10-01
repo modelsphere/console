@@ -405,6 +405,13 @@ export const api = {
     get<ReleaseStatus>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/status`,
     ),
+  // The ModelRoute, LLMScaler and LLMSLORequirement the release rendered, read
+  // live. Each one reports on its own: a CRD swissd may not read is an error on
+  // that object, not on the page.
+  objects: (ns: string, release: string) =>
+    get<ReleaseObjects>(
+      `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/objects`,
+    ),
   revisions: (ns: string, release: string) =>
     get<RevisionsResponse>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/revisions`,
@@ -546,6 +553,132 @@ export interface ReleaseStatus {
   // Written beside the release on every apply. The only thing that can say an
   // apply was started and never finished -- helm reports the last one that did.
   planStatus?: PlanStatus;
+}
+
+export interface ObjectRef {
+  apiVersion: string;
+  kind: string;
+  namespace: string;
+  name: string;
+}
+
+export interface Condition {
+  type: string;
+  status: "True" | "False" | "Unknown";
+  reason?: string;
+  message?: string;
+  lastTransitionTime?: string;
+  observedGeneration?: number;
+}
+
+export interface LiveObject<Spec = Record<string, unknown>, Status = Record<string, unknown>> {
+  generation?: number;
+  created?: string;
+  spec?: Spec;
+  status?: Status;
+}
+
+// Exactly one of live, missing and error says what reading the object found.
+export interface ObjectResult {
+  ref: ObjectRef;
+  live?: LiveObject;
+  missing?: boolean;
+  error?: string;
+}
+
+export interface ReleaseObjects {
+  objects: ObjectResult[];
+}
+
+// routing.modelsphere.dev ModelRoute: autoconfig keeps openresty's peers and
+// CART's workers in step with the backends it discovers.
+export interface ModelRoutePeer {
+  use: "cart" | "backend" | "backend-svc";
+  priority?: number;
+  maxConcurrency?: number;
+  maxConcurrencyFromBackend?: boolean;
+  probePath?: string;
+}
+
+export interface ModelRouteSpec {
+  modelType?: "llm" | "video";
+  discovery?: { service?: string; selector?: string; port?: number; includeNotReady?: boolean };
+  nginx?: {
+    route?: string;
+    outputConfigMap?: string;
+    service?: string;
+    selector?: string;
+    peers?: ModelRoutePeer[];
+    values?: Record<string, string>;
+  };
+  cart?: {
+    service?: string;
+    selector?: string;
+    port?: number;
+    outputConfigMap?: string;
+    outputKey?: string;
+    maxLoad?: number;
+  };
+  monitor?: { outputConfigMap?: string; model?: string; gpuType?: string };
+  slo?: { name?: string };
+}
+
+export interface ModelRouteStatus {
+  ready?: boolean;
+  backends?: number;
+  cartPeers?: number;
+  lastSyncTime?: string;
+  observedGeneration?: number;
+  conditions?: Condition[];
+  orphanRouteKeys?: string[];
+}
+
+// autoscaling.modelsphere.dev LLMScaler: the replica count, from PromQL
+// (Prometheus) or a decision server (Custom).
+export interface LLMScalerSpec {
+  targetRef?: { apiVersion?: string; kind?: string; name?: string };
+  metricProvider?: "Prometheus" | "Custom";
+  serverAddress?: string;
+  minReplicas?: number;
+  maxReplicas?: number;
+  metrics?: { name?: string; query: string; target: string }[];
+  customProvider?: { serviceId?: string; path?: string; namespace?: string };
+  scaleDown?: {
+    behavior?: string;
+    stabilizationWindowSeconds?: number;
+    maxStepReplicas?: number;
+    deletionCostQuery?: string;
+  };
+  syncPeriodSeconds?: number;
+  preemption?: { enable?: boolean; priorityClass?: string };
+}
+
+export interface LLMScalerStatus {
+  currentReplicas?: number;
+  desiredReplicas?: number;
+  conditions?: Condition[];
+}
+
+// inference.modelsphere.dev LLMSLORequirement, as applied. The SLO card edits
+// it through slo-api; this is the object itself.
+export interface SLORange {
+  contextLengthRangeLow: number;
+  contextLengthRangeHigh?: number;
+  metrics: SLOMetric[];
+}
+
+export interface SLOObjective {
+  default?: { metrics?: SLOMetric[] };
+  ranges?: SLORange[];
+}
+
+export interface LLMSLORequirementSpec {
+  serviceId: string;
+  priority?: number;
+  minimumDeployment?: { type?: string; value?: number };
+  maximumDeployment?: { type?: string; value?: number };
+  ttft?: SLOObjective;
+  otps?: SLOObjective;
 }
 
 // The wire format a check speaks. The values are the server's; the labels the

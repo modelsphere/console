@@ -88,7 +88,7 @@ export function ProfileForm({
         >
           <Catalogs value={catalogs} onChange={setCatalogs} configured={configuredCatalog} />
         </Field>
-        <Field label="Chart repo" hint="e.g. oci://harbor.example.com/charts. Empty means a local chart path.">
+        <Field label="Chart repo" hint="An https helm repo or oci:// registry, e.g. https://modelsphere.github.io/helm-charts. Empty means a local chart path.">
           <Input
             value={value.chartRepo ?? ""}
             onChange={(e) => set("chartRepo", e.target.value)}
@@ -345,7 +345,7 @@ function Catalogs({
             className="min-w-0 flex-1 font-mono text-xs"
             value={c.url}
             onChange={(e) => patch(i, { url: e.target.value })}
-            placeholder="https://models.example.com/swiss-catalog/"
+            placeholder="https://modelsphere.github.io/model-catalog/"
             aria-label="catalog url"
           />
           {/* At most one default: checking one clears the others. */}

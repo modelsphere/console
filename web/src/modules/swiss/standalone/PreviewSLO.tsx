@@ -80,16 +80,16 @@ export function PreviewSLO() {
         </p>
       </div>
       <Case title="Configured">
-        <SLOCard namespace="modelforge" release="full" canEdit />
+        <SLOCard namespace="models" release="full" canEdit />
       </Case>
       <Case title="As the chart installs it">
-        <SLOCard namespace="modelforge" release="thin" canEdit />
+        <SLOCard namespace="models" release="thin" canEdit />
       </Case>
       <Case title="No requirement registered">
-        <SLOCard namespace="modelforge" release="none" canEdit />
+        <SLOCard namespace="models" release="none" canEdit />
       </Case>
       <Case title="Read-only swissd">
-        <SLOCard namespace="modelforge" release="full" canEdit={false} />
+        <SLOCard namespace="models" release="full" canEdit={false} />
       </Case>
     </div>
   );

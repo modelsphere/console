@@ -16,6 +16,7 @@ import { Login } from "./Login";
 import { Setup } from "@swiss/routes/Setup";
 import { PreviewDeploySettings } from "./PreviewDeploySettings";
 import { PreviewSLO } from "./PreviewSLO";
+import { PreviewRelease } from "./PreviewRelease";
 import { Gate } from "@swiss/components/Session";
 import { ToastProvider } from "@swiss/components/ui/toast";
 import "./index.css";
@@ -46,6 +47,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="preview/deploy-settings" element={<PreviewDeploySettings />} />
             )}
             {import.meta.env.DEV && <Route path="preview/slo" element={<PreviewSLO />} />}
+            {import.meta.env.DEV && <Route path="preview/release/*" element={<PreviewRelease />} />}
             <Route
               path="setup"
               element={

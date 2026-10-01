@@ -45,6 +45,9 @@ export interface Form {
   serviceId: string;
   localPath: string;
   scaler: boolean;
+  // The LLMScaler's bounds. Empty leaves the chart's own.
+  scalerMin: string;
+  scalerMax: string;
   replicaCount: string;
   route: string;
   // image is repository:tag for this deploy alone. Empty is the site's answer,
@@ -83,6 +86,8 @@ export const EMPTY: Form = {
   serviceId: "",
   localPath: "",
   scaler: true,
+  scalerMin: "",
+  scalerMax: "",
   replicaCount: "",
   route: "",
   image: "",
@@ -142,6 +147,11 @@ export function DeploySettings({
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       onChange({ [k]: e.target.value } as Partial<Form>);
   const toggle = (k: keyof Form) => (v: boolean) => onChange({ [k]: v } as Partial<Form>);
+  // Replica counts: a digit that is not typed cannot be negative, so the field
+  // refuses the sign rather than a submit refusing the form.
+  const count =
+    (k: "replicaCount" | "scalerMin" | "scalerMax") => (e: React.ChangeEvent<HTMLInputElement>) =>
+      onChange({ [k]: e.target.value.replace(/\D/g, "") } as Partial<Form>);
   const on = effective(form);
 
   return (
@@ -227,15 +237,36 @@ export function DeploySettings({
 
           <Row
             label="Autoscale"
-            note="on by default — an LLMScaler owns the replica count, bounds included"
+            note="on by default — an LLMScaler owns the replica count between min and max; empty keeps the chart's bounds"
             toggle={
               <Switch checked={form.scaler} onChange={toggle("scaler")} label="autoscale" />
             }
           >
-            {!form.scaler && (
+            {form.scaler ? (
+              <div className="flex w-full min-w-0 items-center gap-2">
+                <Input
+                  value={form.scalerMin}
+                  onChange={count("scalerMin")}
+                  inputMode="numeric"
+                  aria-label="minimum replicas"
+                  placeholder="min"
+                  className="min-w-0 flex-1"
+                />
+                <span className="shrink-0 text-xs text-muted-foreground">to</span>
+                <Input
+                  value={form.scalerMax}
+                  onChange={count("scalerMax")}
+                  inputMode="numeric"
+                  aria-label="maximum replicas"
+                  placeholder="max"
+                  className="min-w-0 flex-1"
+                />
+                <span className="shrink-0 text-xs text-muted-foreground">replicas</span>
+              </div>
+            ) : (
               <Input
                 value={form.replicaCount}
-                onChange={set("replicaCount")}
+                onChange={count("replicaCount")}
                 inputMode="numeric"
                 aria-label="replicas"
                 placeholder="replicas"
@@ -1266,7 +1297,7 @@ export function imageOf(
 
 // splitImage turns what was typed into the two values the chart takes. The last
 // colon separates the tag only when it comes after the last slash:
-// harbor.example.com:5000/sglang is a registry port, not a tag.
+// registry.example.com:5000/sglang is a registry port, not a tag.
 //
 // Only repository and tag. A digest pin is not expressible here on purpose --
 // it would need a third field and the plan editor already takes one.
@@ -1298,7 +1329,10 @@ export function planRequest(
   // that applies is sent: a fixed count under a live scaler is two answers to
   // one question, and the scaler wins at a time nobody chose.
   if (f.scaler) {
-    overrides.scaler = { enabled: true };
+    const scaler: Record<string, unknown> = { enabled: true };
+    if (num(f.scalerMin) !== undefined) scaler.minReplicas = num(f.scalerMin);
+    if (num(f.scalerMax) !== undefined) scaler.maxReplicas = num(f.scalerMax);
+    overrides.scaler = scaler;
   } else {
     overrides.scaler = { enabled: false };
     if (num(f.replicaCount) !== undefined) overrides.replicaCount = num(f.replicaCount);
@@ -1428,6 +1462,8 @@ export function formFromPlan(plan: Plan): Form {
     serviceId: str("serviceId"),
     localPath: str("model.localPath"),
     scaler: bool("scaler.enabled"),
+    scalerMin: str("scaler.minReplicas"),
+    scalerMax: str("scaler.maxReplicas"),
     // The product sits under the vendor's own label key, so find it by suffix
     // rather than guessing which vendor this variant was built for.
     gpuProducts: gpuProductsOf(o),

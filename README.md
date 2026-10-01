@@ -2,11 +2,15 @@
 
 <p align="center">
   <a href="https://github.com/modelsphere/console/actions/workflows/publish.yml"><img alt="publish" src="https://github.com/modelsphere/console/actions/workflows/publish.yml/badge.svg"></a>
-  <a href="https://github.com/modelsphere/console/pkgs/container/console"><img alt="image" src="https://img.shields.io/badge/image-ghcr.io%2Fmodelsphere%2Fconsole-2496ED?logo=docker&logoColor=white"></a>
-  <a href="https://github.com/modelsphere/console/pkgs/container/charts%2Fconsole"><img alt="chart" src="https://img.shields.io/badge/chart-oci%3A%2F%2Fghcr.io%2Fmodelsphere%2Fcharts%2Fconsole-0F1689?logo=helm&logoColor=white"></a>
+  <a href="https://github.com/modelsphere/console/pkgs/container/console"><img alt="Image" src="https://img.shields.io/badge/image-ghcr.io%2Fmodelsphere%2Fconsole-2496ED?logo=docker&logoColor=white"></a>
+  <a href="https://hub.docker.com/r/4pdosc/console"><img alt="Docker Hub" src="https://img.shields.io/badge/docker%20hub-4pdosc%2Fconsole-2496ED?logo=docker&logoColor=white"></a>
+  <a href="https://github.com/modelsphere/console/pkgs/container/charts%2Fconsole"><img alt="Chart" src="https://img.shields.io/badge/chart-oci%3A%2F%2Fghcr.io%2Fmodelsphere%2Fcharts%2Fconsole-0F1689?logo=helm&logoColor=white"></a>
   <a href="go.mod"><img alt="Go" src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white"></a>
   <a href="web/package.json"><img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black"></a>
   <a href="helm/console/README.md"><img alt="Docs" src="https://img.shields.io/badge/docs-install%20guide-blue"></a>
+  <a href="helm/console/Chart.yaml"><img alt="Version" src="https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmodelsphere%2Fconsole%2Fmain%2Fhelm%2Fconsole%2FChart.yaml&query=%24.appVersion&label=version&color=blue"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/modelsphere/console"></a>
+  <a href="https://github.com/modelsphere/console/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/modelsphere/console?style=flat&logo=github"></a>
 </p>
 
 ## Overview
@@ -122,15 +126,9 @@ To run against a cluster from a workstation, copy `examples/console.yaml` to `co
 
 `web/dist` is committed empty, so `go build` works without Node but serves no UI until `npm run build` has run. The image build (`Dockerfile`) does both.
 
-Images and charts:
+Images and charts. CI (`.github/workflows/publish.yml`) publishes both on every push to main and every tag: the image to `ghcr.io/modelsphere/console` and `4pdosc/console` on Docker Hub, the chart to `oci://ghcr.io/modelsphere/charts/console`. The OCI chart pulls the GHCR image; charts in the [modelsphere helm repo](https://github.com/modelsphere/helm-charts) are the other channel and pull from Docker Hub.
 
-| Command | Output |
-|---|---|
-| `CONSOLE_REGISTRY=<registry>/<org> hack/image.sh` | builds and pushes an image of your own (`--no-push` builds only) |
-| `hack/chart.sh --output ./dist` | packages the chart as `console-<appVersion>-git<sha7>.tgz`, with the script CI uses |
-| `hack/bump.sh patch --tag` | bumps the version and tags it; pushing the tag publishes a release |
-
-CI ([`publish`](.github/workflows/publish.yml)) publishes `ghcr.io/modelsphere/console` and `oci://ghcr.io/modelsphere/charts/console` at one version for every commit on `main` and every release tag, the same scheme as Swiss.
+`hack/bump.sh patch --tag` bumps the version and tags it; pushing the tag publishes a release. The older install, image and chart scripts are kept, unmaintained, in `hack/legacy/`.
 
 Before contributing, read [`CONTRIBUTING.md`](CONTRIBUTING.md): issues, branches, Conventional Commits, pull requests and review. The full developer guide is in [`docs/development/`](docs/development/README.md); comment and doc style in [`AGENTS.md`](AGENTS.md).
 
