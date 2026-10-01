@@ -25,6 +25,15 @@ metadata:
   name: {{ .Values.admin.username }}
   labels:
     {{- include "console.labels" . | nindent 4 }}
+{{- if $existing }}
+{{- /* Seeded already: console owns the password and the reset flag now. */}}
+{{- with dig "metadata" "annotations" "iam.theriseunion.io/require-password-reset" "" $existing }}
+  annotations:
+    iam.theriseunion.io/require-password-reset: {{ . | quote }}
+{{- end }}
+spec:
+  {{- toYaml $existing.spec | nindent 2 }}
+{{- else }}
 {{- if .Values.admin.requirePasswordReset }}
   annotations:
     iam.theriseunion.io/require-password-reset: "true"
@@ -35,5 +44,6 @@ spec:
   groups:
     - system:masters
   encryptedPassword: {{ .Values.admin.encryptedPassword | default "$2b$12$Q44Y0B99hoByZY.6v30jl.D83rXFbSpOfh8iWLbndLZBEjFAZwaeO" | quote }}
+{{- end }}
 {{- end }}
 {{- end }}

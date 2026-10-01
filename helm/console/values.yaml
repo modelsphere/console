@@ -49,6 +49,8 @@ admin:
   username: admin
   # bcrypt of the default password `P@88w0rd`. Change on first login, or set a
   # different hash here: htpasswd -bnBC 12 "" '<pw>' | tr -d ':\n'
+  # This and requirePasswordReset only seed the first install; an upgrade keeps
+  # the User's password and reset flag as they are in the cluster.
   encryptedPassword: "$2b$12$Q44Y0B99hoByZY.6v30jl.D83rXFbSpOfh8iWLbndLZBEjFAZwaeO"
   # Require the seeded administrator to change its password after first login.
   # Set false when encryptedPassword already contains an operator-chosen secret.
