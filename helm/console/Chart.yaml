@@ -12,6 +12,6 @@ keywords: [console, llm, inference, portal]
 # render this chart until it has run, even with swiss.enabled off.
 dependencies:
   - name: swiss
-    version: 0.6.0
+    version: 0.6.1-git1af417b
     repository: oci://ghcr.io/modelsphere/charts
     condition: swiss.enabled
