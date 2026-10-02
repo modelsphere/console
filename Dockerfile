@@ -15,7 +15,7 @@ ARG NPM_REGISTRY=https://registry.npmjs.org
 ARG GOPROXY=https://proxy.golang.org,direct
 
 # --- 1. the SPA ------------------------------------------------------------
-FROM node:24-bookworm-slim AS web
+FROM node:26-bookworm-slim AS web
 ARG NPM_REGISTRY
 
 WORKDIR /src/web
