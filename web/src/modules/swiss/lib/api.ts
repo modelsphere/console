@@ -393,6 +393,10 @@ export const api = {
       pathTemplate?: string;
       imageRepository?: Record<string, string>;
     }>(`/api/catalog/${encodeURIComponent(name)}` + query({ version, catalog })),
+  // The chart versions a variant's chart.version allows, newest first. A pinned
+  // variant has its one; a range lists the chart repository, which can fail.
+  chartVersions: (name: string, opts: { catalog?: string; version?: string; variant?: string }) =>
+    get<ChartVersions>(`/api/catalog/${encodeURIComponent(name)}/chart-versions` + query(opts)),
   nodes: () => get<NodesResponse>("/api/nodes"),
   profile: () => get<ProfileResponse>("/api/profile"),
   runs: (f: RunFilter = {}) => {
@@ -444,6 +448,13 @@ export const api = {
     put<ProfileResponse>("/api/profile", body),
 };
 
+export interface ChartVersions {
+  chart: string;
+  range: string;
+  variant: string;
+  versions: string[];
+}
+
 export interface Plan {
   apiVersion: string;
   release: { name: string; namespace: string };
@@ -454,6 +465,8 @@ export interface Plan {
     catalogName?: string;
     ref?: string;
     model: string;
+    // Model identity across catalogs. Absent from plans written before it was recorded.
+    hf?: string;
     version?: string;
     digest?: string;
     variant: string;
@@ -489,7 +502,8 @@ export interface ApplyResult {
 }
 
 export interface PlanRequest {
-  // The configured catalog to compose from; an upgrade stays on its own.
+  // The configured catalog to compose from. An upgrade naming none stays on its
+  // own; naming another moves it there, if the model there is the same one.
   catalog?: string;
   model?: string;
   fromRelease?: string;
@@ -507,6 +521,9 @@ export interface PlanRequest {
   // profile's own setting. helm creates the namespace; this is the plan saying
   // it may.
   createNamespace?: boolean;
+  // Must fall in the variant's chart.version. Empty keeps a running release's
+  // chart while in range, else takes the newest.
+  chartVersion?: string;
 }
 
 export interface Pod {

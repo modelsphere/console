@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { ArrowRight, ChevronLeft, TriangleAlert } from "lucide-react";
-import { api, deployApi, type ApplyResult, type DiffResult, type Plan } from "@swiss/lib/api";
+import {
+  api,
+  deployApi,
+  type ApplyResult,
+  type ChartVersions,
+  type DiffResult,
+  type Plan,
+} from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
-import { Field } from "@swiss/components/ui/input";
+import { Field, Input } from "@swiss/components/ui/input";
 import {
   DeploySettings,
   EMPTY,
@@ -17,6 +24,7 @@ import {
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
+import { movableCatalogs } from "@swiss/lib/upgrade";
 
 export function Upgrade() {
   const { namespace = "", release = "" } = useParams();
@@ -28,6 +36,9 @@ export function Upgrade() {
   const rollbackTo = Number(params.get("rollback")) || 0;
   const [version, setVersion] = useState("");
   const [variant, setVariant] = useState("");
+  // "" stays on the release's own catalog; the server's default for both.
+  const [targetCatalog, setTargetCatalog] = useState("");
+  const [chartVersion, setChartVersion] = useState("");
 
   const current = useQuery({
     queryKey: ["release-plan", namespace, release],
@@ -45,23 +56,42 @@ export function Upgrade() {
   });
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes });
-  // An upgrade stays on the catalog the release belongs to -- swissd refuses
-  // any other -- so there is nothing to choose, only a name to find, the way
-  // swissd finds it.
   const catalogs = cluster.data?.catalogs ?? [];
   const recorded = current.data?.source;
   const releaseCatalog = recorded ? catalogOfRelease(catalogs, recorded) : undefined;
-  const catalog = useQuery({
-    queryKey: ["catalog", releaseCatalog],
-    queryFn: () => api.catalog(releaseCatalog),
-    enabled: !!releaseCatalog,
+  const catalogName = targetCatalog || releaseCatalog;
+  const moving = !!targetCatalog && targetCatalog !== releaseCatalog;
+  const indexes = useQueries({
+    queries: catalogs.map((c) => ({
+      queryKey: ["catalog", c.name],
+      queryFn: () => api.catalog(c.name),
+      enabled: !rollbackTo,
+    })),
   });
+  const modelIn = (name?: string) =>
+    indexes[catalogs.findIndex((c) => c.name === name)]?.data?.index.models.find(
+      (m) => m.name === recorded?.model,
+    );
+  const { hf, movable } = movableCatalogs(catalogs, recorded ?? {}, releaseCatalog, (c) => modelIn(c)?.source.hf);
   // For the model path default, which is the site's template resolved against
   // this model's hf -- the same value the deploy page shows.
   const entry = useQuery({
-    queryKey: ["model", releaseCatalog, current.data?.source.model ?? "", version],
-    queryFn: () => api.model(current.data!.source.model, version || undefined, releaseCatalog),
-    enabled: !!current.data && !!releaseCatalog,
+    queryKey: ["model", catalogName, current.data?.source.model ?? "", version],
+    queryFn: () => api.model(current.data!.source.model, version || undefined, catalogName),
+    enabled: !!current.data && !!catalogName,
+  });
+  const model = modelIn(catalogName);
+  const versions = model?.versions.map((v) => v.version) ?? [];
+  const variants = model?.versions.find((v) => v.version === (version || model.latest))?.variants ?? [];
+  const keptVariant = variant || recorded?.variant || "";
+  const variantMissing = !!model && !variants.some((v) => v.id === keptVariant);
+  const chartVersions = useQuery({
+    queryKey: ["chart-versions", catalogName, recorded?.model, version, keptVariant],
+    queryFn: () =>
+      api.chartVersions(recorded!.model, { catalog: catalogName, version: version || undefined, variant: keptVariant }),
+    enabled: !!recorded && !!catalogName && !variantMissing && !rollbackTo,
+    // A registry that refuses is not going to change its mind in a second.
+    retry: false,
   });
 
   const [form, setForm] = useState<Form>(EMPTY);
@@ -97,6 +127,8 @@ export function Upgrade() {
           model: current.data!.source.model,
           version: version || undefined,
           variant: variant || undefined,
+          catalog: moving ? targetCatalog : undefined,
+          chartVersion: chartVersion || undefined,
           // The server carries forward anything the form does not cover, so a
           // value set once from a flag survives the upgrade instead of being
           // dropped by a form that never knew about it.
@@ -129,9 +161,6 @@ export function Upgrade() {
   // What the pipeline acts on: a composed plan on an upgrade, the archive on a
   // rollback. Nothing else about the page differs.
   const target = rollbackTo ? (archived.data ?? null) : plan;
-  const model = catalog.data?.index.models.find((m) => m.name === cur.source.model);
-  const versions = model?.versions.map((v) => v.version) ?? [];
-  const variants = model?.versions.find((v) => v.version === (version || model.latest))?.variants ?? [];
 
   if (!cluster.data?.allowDeploy) {
     return (
@@ -180,8 +209,8 @@ export function Upgrade() {
               {recorded?.catalogName ? (
                 <p className="mt-1 text-muted-foreground">
                   It was deployed from catalog <code>{recorded.catalogName}</code>, which this site no
-                  longer lists. An upgrade stays on a release's catalog, so add it back to the site
-                  profile's catalogs to upgrade. Rollbacks still work.
+                  longer lists. Add it back to the site profile, or upgrade from another catalog with
+                  the same model below. Rollbacks still work.
                 </p>
               ) : (
                 <p className="mt-1 text-muted-foreground">
@@ -192,8 +221,8 @@ export function Upgrade() {
                       (it records <code className="break-all">{recorded.catalog}</code>)
                     </>
                   )}
-                  , and there is no default to stand in. Mark one catalog default in the site profile to
-                  upgrade it from there. Rollbacks still work.
+                  , and there is no default to stand in. Mark one catalog default in the site profile,
+                  or upgrade from another catalog with the same model below. Rollbacks still work.
                 </p>
               )}
             </div>
@@ -206,33 +235,72 @@ export function Upgrade() {
           <CardHeader>
             <CardTitle className="text-base">Catalog target</CardTitle>
             <p className="text-sm text-muted-foreground">
-              The model version and variant this upgrade composes against. Engine flags, probes
-              and the image move with them — that is what an upgrade is for.
+              The catalog, model version, variant and chart this upgrade composes against. Engine
+              flags, probes and the image move with them — that is what an upgrade is for.
             </p>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
+            {(catalogs.length > 1 || !releaseCatalog) && (
+              <Field label="Catalog" hint={catalogHint(releaseCatalog, recorded?.catalogName, hf, movable)}>
+                <Select
+                  value={targetCatalog}
+                  onChange={(v) => {
+                    setTargetCatalog(v);
+                    setVersion("");
+                    setVariant("");
+                    setChartVersion("");
+                    reset();
+                  }}
+                  options={movable}
+                  emptyLabel={releaseCatalog ? `keep ${releaseCatalog}` : "choose a catalog"}
+                />
+              </Field>
+            )}
             <Field label="Model version" hint={`deployed: ${cur.source.version ?? "unpinned"}`}>
               <Select
                 value={version}
                 onChange={(v) => {
                   setVersion(v);
+                  setChartVersion("");
                   reset();
                 }}
                 options={versions}
                 emptyLabel="latest"
               />
             </Field>
-            <Field label="Variant" hint={`deployed: ${cur.source.variant}`}>
+            <Field
+              label="Variant"
+              hint={
+                variantMissing
+                  ? `${catalogName} has no variant ${keptVariant} in this version — pick one`
+                  : `deployed: ${cur.source.variant}`
+              }
+            >
               <Select
                 value={variant}
                 onChange={(v) => {
                   setVariant(v);
+                  setChartVersion("");
                   reset();
                 }}
-                options={variants.map((v) => v.id)}
+                // A move keeps the engine: swissd refuses another one under the release's route.
+                options={variants.map((v) => ({
+                  value: v.id,
+                  label: moving && v.engine !== cur.engine ? `${v.id} (${v.engine}, not ${cur.engine})` : v.id,
+                  disabled: moving && v.engine !== cur.engine,
+                }))}
                 emptyLabel={`keep ${cur.source.variant}`}
               />
             </Field>
+            <ChartVersionField
+              running={cur.chart}
+              list={chartVersions}
+              value={chartVersion}
+              onChange={(v) => {
+                setChartVersion(v);
+                reset();
+              }}
+            />
           </CardContent>
         </Card>
       )}
@@ -276,7 +344,14 @@ export function Upgrade() {
         onDiff={setDiff}
         onApplied={setApplied}
       >
-        {target && <WhatMoves current={cur} proposed={target} rollback={rollbackTo > 0} />}
+        {target && (
+          <WhatMoves
+            current={cur}
+            currentCatalog={cur.source.catalogName ?? releaseCatalog}
+            proposed={target}
+            rollback={rollbackTo > 0}
+          />
+        )}
       </Pipeline>
     </div>
   );
@@ -290,10 +365,12 @@ export function Upgrade() {
 // to what is coming back.
 function WhatMoves({
   current,
+  currentCatalog,
   proposed,
   rollback,
 }: {
   current: Plan;
+  currentCatalog?: string;
   proposed: Plan;
   rollback?: boolean;
 }) {
@@ -305,6 +382,7 @@ function WhatMoves({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
+        <Change label="Catalog" from={currentCatalog} to={proposed.source.catalogName ?? currentCatalog} />
         <Change label="Model version" from={current.source.version} to={proposed.source.version} />
         <Change
           label="Chart"
@@ -344,29 +422,101 @@ function Change({ label, from, to }: { label: string; from?: string; to?: string
   );
 }
 
+function catalogHint(own: string | undefined, recordedName: string | undefined, hf: string | undefined, movable: string[]) {
+  const from = `deployed from ${own ?? recordedName ?? "an unlisted catalog"}`;
+  if (!hf) return `${from} · its model's HF repo is unknown, so no other catalog can be offered`;
+  if (movable.length === 0) return `${from} · no other catalog has ${hf}`;
+  return `${from} · offered: catalogs with ${hf}`;
+}
+
+// Empty means swissd's default: the running chart while the catalog's range
+// allows it, else the newest in range.
+function ChartVersionField({
+  running,
+  list,
+  value,
+  onChange,
+}: {
+  running: Plan["chart"];
+  list: UseQueryResult<ChartVersions>;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  if (list.error) {
+    return (
+      <Field label="Chart version" hint={`could not list versions: ${list.error.message}`}>
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value.trim())}
+          placeholder={`keep ${running.version} if in range`}
+        />
+      </Field>
+    );
+  }
+  const d = list.data;
+  if (!d) {
+    return (
+      <Field label="Chart version" hint={list.isFetching ? "listing versions…" : `deployed: ${running.version}`}>
+        <Select value="" onChange={onChange} options={[]} emptyLabel={`${running.name}-${running.version}`} disabled />
+      </Field>
+    );
+  }
+  const pinned = d.versions.length === 1 && d.versions[0] === d.range;
+  const keep = running.name === d.chart && d.versions.includes(running.version);
+  const emptyLabel = keep
+    ? `keep ${running.version}`
+    : !d.versions[0]
+      ? "none in range"
+      : pinned
+        ? `${d.versions[0]} (pinned)`
+        : `newest: ${d.versions[0]}`;
+  return (
+    <Field
+      label="Chart version"
+      hint={`${pinned ? "pinned by the catalog" : `catalog allows ${d.range}`} · deployed: ${running.version}`}
+    >
+      <Select
+        value={value}
+        onChange={onChange}
+        options={pinned ? [] : d.versions}
+        emptyLabel={emptyLabel}
+        disabled={pinned}
+      />
+    </Field>
+  );
+}
+
+type Option = string | { value: string; label: string; disabled?: boolean };
+
 function Select({
   value,
   onChange,
   options,
   emptyLabel,
+  disabled,
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: string[];
+  options: Option[];
   emptyLabel: string;
+  disabled?: boolean;
 }) {
   return (
     <select
-      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+      className="w-full rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-60"
       value={value}
+      disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
     >
       <option value="">{emptyLabel}</option>
-      {options.map((o) => (
-        <option key={o} value={o}>
-          {o}
-        </option>
-      ))}
+      {options.map((o) => {
+        const opt = typeof o === "string" ? { value: o, label: o } : o;
+        return (
+          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+            {opt.label}
+          </option>
+        );
+      })}
     </select>
   );
 }

@@ -1320,7 +1320,14 @@ export function effective(f: Form) {
 
 export function planRequest(
   f: Form,
-  opts: { model: string; version?: string; variant?: string; fromRelease?: string; catalog?: string },
+  opts: {
+    model: string;
+    version?: string;
+    variant?: string;
+    fromRelease?: string;
+    catalog?: string;
+    chartVersion?: string;
+  },
 ): PlanRequest {
   const overrides: Record<string, unknown> = {};
   const on = effective(f);
@@ -1417,6 +1424,7 @@ export function planRequest(
     catalog: opts.catalog || undefined,
     model: opts.model,
     fromRelease: opts.fromRelease,
+    chartVersion: opts.chartVersion || undefined,
     version: opts.version || undefined,
     editsYAML: f.edits.trim() || undefined,
     gpuProducts: f.gpuProducts.length ? f.gpuProducts : undefined,
