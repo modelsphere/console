@@ -260,8 +260,8 @@ Not there yet:
   on swissd's `/api/deployments`.
 - **swiss's panels are English.** They are swiss's, and swiss's pages have no
   Chinese yet.
-- **Cluster resources needs a recent swissd.** An older one (0.5.6, as on the
-  daocloud-ce test cluster) has no `/objects`: the tab says so, and the install
+- **Cluster resources needs a recent swissd.** An older one (0.5.6, for one) has no
+  `/objects`: the tab says so, and the install
   track reports the route and scaler as unreadable rather than absent.
 
 ## Backends
