@@ -1,0 +1,180 @@
+{
+  "group": {
+    "模型服务": "Model Serving"
+  },
+  "menu": {
+    "index": "Inference Services"
+  },
+  "list": {
+    "title": "Inference Services",
+    "description": "The models swiss deployed, each serving an OpenAI-compatible endpoint. Deploy, upgrade and roll back in the model deployment wizard.",
+    "deploy": "Deploy a model",
+    "empty": "No inference services yet",
+    "columns": {
+      "name": "Name / Model",
+      "state": "State",
+      "namespace": "Namespace",
+      "route": "Route",
+      "chart": "Chart",
+      "revision": "Revision",
+      "updated": "Updated",
+      "catalog": "Catalog"
+    },
+    "behind": "Behind catalog",
+    "untracked": "Untracked"
+  },
+  "actions": {
+    "detail": "Details",
+    "upgrade": "Upgrade",
+    "versions": "Versions",
+    "uninstall": "Uninstall",
+    "check": "Health check",
+    "rollback": "Roll back to this",
+    "values": "View values",
+    "viewAll": "All",
+    "openInSwiss": "Open in model deployment"
+  },
+  "disabled": {
+    "readOnly": "This swissd is read-only: turn on both server.allowDeploy and rbac.allowDeploy",
+    "untracked": "A release with no plan beside it cannot be upgraded here",
+    "current": "This is already the current revision"
+  },
+  "state": {
+    "deployed": "Deployed",
+    "serving": "Serving",
+    "loading": "Loading",
+    "applying": "Applying",
+    "failed": "Failed",
+    "uninstalling": "Uninstalling",
+    "notInstalled": "Not installed",
+    "noPods": "No pods",
+    "unknown": "Unknown",
+    "other": "{raw}"
+  },
+  "uninstall": {
+    "title": "Uninstall inference service",
+    "description": "Runs helm uninstall: the model stops serving, its pods are deleted, and the plan beside the release is removed (the audit log keeps the record). Installing it again reloads the weights, which takes 20–40 minutes.",
+    "planError": "The release is gone, but its plan ConfigMap was not removed: {error}"
+  },
+  "detail": {
+    "back": "Inference Services",
+    "untracked": "Untracked: there is no plan beside this release",
+    "fields": {
+      "namespace": "Namespace",
+      "model": "Model",
+      "chart": "Chart",
+      "instances": "Instances",
+      "state": "State",
+      "catalog": "Catalog",
+      "revision": "Revision",
+      "route": "Route",
+      "helm": "Helm status",
+      "updated": "Updated",
+      "drift": "Catalog drift",
+      "note": "Change note"
+    },
+    "notFound": "No helm release here. Nothing has been installed under this name."
+  },
+  "tabs": {
+    "overview": "Overview",
+    "instances": "Instances",
+    "resources": "Cluster resources",
+    "check": "Health check",
+    "slo": "SLO",
+    "versions": "Versions",
+    "runs": "Activity",
+    "plan": "Plan"
+  },
+  "overview": {
+    "basic": "Basic information",
+    "install": "Install progress",
+    "access": "Access",
+    "recent": "Recent activity",
+    "recentHint": "Last {n}",
+    "noRuns": "No activity yet",
+    "noStore": "This swissd has no database, so the activity log is empty",
+    "applyingHint": "An apply was started and never recorded a result. It may still be running, or swissd may have been restarted mid-apply.",
+    "coldLoad": "A cold load takes 20–40 minutes. A pod that is scheduled and not ready has most likely been reading weights, not failing."
+  },
+  "steps": {
+    "applied": {
+      "label": "Applied",
+      "failed": "The last apply failed",
+      "applying": "Applying",
+      "revision": "Revision {n}",
+      "notInstalled": "Not installed"
+    },
+    "pods": {
+      "label": "Pods ready",
+      "none": "No pods yet",
+      "ready": "{ready} of {total} ready"
+    },
+    "route": {
+      "label": "Routed",
+      "none": "No ModelRoute",
+      "unreadable": "Unreadable",
+      "deleted": "ModelRoute deleted",
+      "ready": "{n} backends {route}",
+      "notReady": "Not ready · {n} backends"
+    },
+    "scaler": {
+      "label": "Scaling",
+      "none": "Fixed replicas",
+      "unreadable": "Unreadable",
+      "deleted": "LLMScaler deleted",
+      "failing": "{reason}",
+      "noDecision": "No decision yet",
+      "scaling": "{cur} → {want} replicas",
+      "steady": "{n} replicas, steady"
+    }
+  },
+  "instances": {
+    "columns": {
+      "name": "Name",
+      "phase": "Phase",
+      "ready": "Ready",
+      "restarts": "Restarts",
+      "node": "Node",
+      "age": "Age"
+    },
+    "ready": "Ready",
+    "notReady": "Loading",
+    "empty": "No pods yet"
+  },
+  "versions": {
+    "title": "Revision history",
+    "hint": "Roll back in the model deployment wizard: review the diff, then confirm.",
+    "columns": {
+      "revision": "Revision",
+      "model": "Model",
+      "chart": "Chart",
+      "time": "Time",
+      "actor": "By",
+      "note": "Change note"
+    },
+    "current": "Current",
+    "empty": "No revisions",
+    "supplied": "Supplied values",
+    "all": "All values, merged",
+    "suppliedError": "Reading the supplied values failed: {error}"
+  },
+  "runs": {
+    "columns": {
+      "time": "Started",
+      "action": "Action",
+      "result": "Result",
+      "revision": "Revision",
+      "actor": "By",
+      "note": "Note"
+    },
+    "failed": "Failed",
+    "changed": "Changed",
+    "unchanged": "No change",
+    "output": "Output",
+    "empty": "No activity yet"
+  },
+  "plan": {
+    "title": "Plan",
+    "description": "What this release was composed from, read from the ConfigMap beside it."
+  }
+}
