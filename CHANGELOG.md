@@ -15,6 +15,7 @@ chart's `appVersion`; the image and chart are released together under it.
 - Dependabot for Go modules, npm, GitHub Actions and the Dockerfile.
 - English install guide for the chart; the Chinese one is kept as `helm/console/README.zh-CN.md`.
 - Contributor guide, issue and PR templates, security policy (#12).
+- Inference services (`/inferences`): swissd's releases in Rise Global's model service layout -- a resource table with a name/model cell, a state dot and a row menu, and a detail page with a header card over tabs (overview, instances, cluster resources, health check, SLO, versions, activity, plan). `/swiss` is unchanged; deploy, upgrade and roll back still open its wizards.
 
 ### Changed
 - Shell, access control, Playground and router pages use `@modelsphere/ui` in Rise Global's current look: page banner, resource tables with search and pagination, deletes confirmed by typing the name. The swiss module's components follow.
@@ -28,6 +29,7 @@ chart's `appVersion`; the image and chart are released together under it.
 
 ### Fixed
 - An empty Playground chat names the selected model (#13).
+- The sidebar keeps a module's group open on its pages without a menu entry, such as a deployment's detail page.
 
 ### Security
 - `golang.org/x/crypto` 0.47.0 → 0.57.0 and `golang.org/x/net` 0.49.0 → 0.59.0, for the advisories Dependabot reported against them. Console uses only `bcrypt` from `x/crypto`; most of the advisories are in `ssh`.

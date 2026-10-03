@@ -96,7 +96,7 @@ unchanged. Moving either one moves both.
 ## Modules
 
 The console is a shell plus compile-time modules. A module is a feature area
-(iam, swiss, playground, router, later container management); the shell owns everything
+(iam, swiss, inferences, playground, router, later container management); the shell owns everything
 around it.
 
 | Owned by | What |
@@ -122,10 +122,11 @@ export const swissModule: ConsoleModule = {
 
 Rules:
 
-- A module imports from `@/shell` only, never from a file under it or from another module.
+- A module imports from `@/shell` only, never from a file under it or from another module. One exception: `inferences` builds on swiss (see "The inferences module").
 - `permission` is a UI permission (a Role's `uiPermissions`); it guards the route and hides the menu entry.
 - Links go through `useModulePath()`: `p("catalog")` → `/swiss/catalog`. A leading `/` is still relative to the module.
 - API calls go through `apiFetch` (drop-in `fetch` with the session) or `request<T>` (JSON helper).
+- The sidebar opens the group of the module the current path is mounted under (`activeGroupTitle`), so a page with no menu entry -- a detail page -- still keeps its module's group open.
 - `validateModules` rejects duplicate ids/basePaths, shell-reserved paths and ids (`common`, `shell`: they are i18n namespaces) and pages declared twice at startup.
 - Text goes through `useT()` (see "i18n"); the declaration's `title` and menu labels stay Chinese.
 
@@ -221,6 +222,47 @@ The shell is Rise in both builds. The flag swaps the module, not console's
 chrome, and is there for the case where a Rise component reads wrong on a deploy
 page -- the tables are the likely one, since Rise's `TableHead`/`TableCell` are
 `h-12 px-4` against swiss's `h-10 px-3`.
+
+### The inferences module
+
+`/inferences` is a second view on swissd beside the swiss module, laid out the
+way Rise Global's model service pages are: a resource table of releases
+(`/inferences`), and a detail page with a header card over tabs
+(`/inferences/:release/details?namespace=…&tab=…`) instead of every panel
+stacked down the page. `/swiss` is unchanged; both read the same swissd.
+
+| Part | Where it comes from |
+|---|---|
+| list, header card, tabs, overview, instances, versions, activity | `web/src/modules/inferences/`, on `@modelsphere/ui` |
+| state, tabs, install track, revisions joined with runs | `modules/inferences/lib.ts`, pure and tested |
+| API client and types | `@swiss/lib/api` |
+| cluster resources, health check, SLO, plan panels | swiss's own components (`ReleaseObjects`, `Endpoint`, `SLOCard`, `Provenance`) |
+| deploy, upgrade, roll back | links to swiss's wizards under `/swiss` |
+| uninstall | `ConfirmDialog`, typed to confirm |
+
+It is the one module that imports another. The API client and the panels are
+swiss's domain, and a copy would be a second implementation of the same thing
+drifting from the first; the layout is what this module owns. The cost:
+`inferences` cannot be installed without the swiss module.
+
+swiss's components resolve their `/…` links against the module they render in,
+so they render in swiss's context: `SwissScope` wraps every page in swiss's
+`Gate` under swiss's `ModuleProvider` (its redirect to setup is swiss's page) and
+puts this module's context back for the page; `InSwiss` does the same around
+each embedded panel. The shell exports `ModuleProvider` for this.
+
+Not there yet:
+
+- **Logs and events tabs.** swissd has no endpoint for either; adding them is a
+  swissd change and starts with a design proposal (`AGENTS.md`).
+- **Search on the list.** swissd pages its list (at most 100 a page) and takes no
+  query; filtering one page on the client would miss the others. It needs `?q=`
+  on swissd's `/api/deployments`.
+- **swiss's panels are English.** They are swiss's, and swiss's pages have no
+  Chinese yet.
+- **Cluster resources needs a recent swissd.** An older one (0.5.6, as on the
+  daocloud-ce test cluster) has no `/objects`: the tab says so, and the install
+  track reports the route and scaler as unreadable rather than absent.
 
 ## Backends
 
