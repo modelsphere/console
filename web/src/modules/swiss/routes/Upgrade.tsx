@@ -2,7 +2,16 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { ArrowRight, ChevronLeft, TriangleAlert } from "lucide-react";
-import { api, deployApi, type ApplyResult, type DiffResult, type Plan } from "@swiss/lib/api";
+import {
+  api,
+  deployApi,
+  type ApplyResult,
+  type DiffResult,
+  type IndexVariant,
+  type Node,
+  type Plan,
+  type Tuning,
+} from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
 import {
@@ -19,6 +28,8 @@ import { CatalogBadge, releaseCatalog as catalogOfRelease } from "@swiss/compone
 import { movableCatalogs } from "@swiss/lib/upgrade";
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { VariantCard } from "@swiss/components/VariantCard";
+import { Dialog } from "@swiss/components/ui/dialog";
+import { gpuCount } from "@swiss/lib/gpu";
 import { Button } from "@swiss/components/ui/button";
 import { comparison, formatUplift, reportLink, variantKind, workloadSummary } from "@swiss/lib/catalog";
 
@@ -35,6 +46,7 @@ export function Upgrade() {
   // "" stays on the release's own catalog; the server's default for both.
   const [targetCatalog, setTargetCatalog] = useState("");
   const [chartVersion, setChartVersion] = useState("");
+  const [picking, setPicking] = useState(false);
 
   const current = useQuery({
     queryKey: ["release-plan", namespace, release],
@@ -155,9 +167,16 @@ export function Upgrade() {
 
   const cur = current.data;
   const targetVersion = version || model?.latest;
-  const cmp = targetVersion ? comparison(variants, targetVersion, model?.tuning) : null;
   const site = indexes[catalogs.findIndex((c) => c.name === catalogName)]?.data?.index.site;
-  const report = cmp && model ? reportLink(site, model.name, cmp.report) : undefined;
+  const optimized = targetVersion ? comparison(variants, targetVersion, model?.tuning) : null;
+  const report = optimized && model ? reportLink(site, model.name, optimized.report) : undefined;
+  const keptInfo = variants.find((v) => v.id === keptVariant);
+  const pickVariant = (id: string) => {
+    setVariant(id === cur.source.variant ? "" : id);
+    setChartVersion("");
+    setPicking(false);
+    reset();
+  };
   const chart = chartVersionChoice({
     running: cur.chart,
     list: chartVersions,
@@ -293,16 +312,26 @@ export function Upgrade() {
               hint="Parallelism and hardware. Moving to another catalog keeps the engine, so variants on another one are disabled."
               from={cur.source.variant}
               changing={!!variant && variant !== cur.source.variant}
-              caption={
-                variantMissing
-                  ? `${catalogName} has no ${keptVariant} in this version: pick a variant below.`
-                  : "Chosen from the variants below."
-              }
-              tone={variantMissing ? "warning" : "muted"}
+              caption={variantMissing ? `${catalogName} has no ${keptVariant} in this version: choose another.` : undefined}
+              tone="warning"
             >
-              <div className="flex h-9 items-center gap-2 rounded-md border bg-muted/30 px-3 font-mono text-sm">
-                {keptVariant}
-                {!variant && <span className="font-sans text-xs text-muted-foreground">kept</span>}
+              <div className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
+                <span className="truncate font-mono">{keptVariant}</span>
+                {keptInfo && (
+                  <span className="hidden truncate text-xs text-muted-foreground sm:inline">
+                    {keptInfo.engine} · {gpuCount(keptInfo.requires)}
+                  </span>
+                )}
+                {!variant && <Badge variant="muted">kept</Badge>}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="ml-auto h-7"
+                  disabled={variants.length === 0}
+                  onClick={() => setPicking(true)}
+                >
+                  Change…
+                </Button>
               </div>
             </TargetRow>
             <TargetRow
@@ -319,52 +348,39 @@ export function Upgrade() {
         </Card>
       )}
 
-      {!rollbackTo && variants.length > 0 && (
-        <div>
-          <h2 className="mb-2 text-sm font-medium">
-            Variants{targetVersion && ` in v${targetVersion}`}
-            {catalogs.length > 1 && catalogName && ` · ${catalogName}`}
-          </h2>
-          <div className="grid gap-3 md:grid-cols-2">
-            {variants.map((v) => {
-              const deployed = !moving && v.id === cur.source.variant;
-              const otherEngine = moving && v.engine !== cur.engine;
-              const pick = () => {
-                setVariant(v.id === cur.source.variant ? "" : v.id);
-                setChartVersion("");
-                reset();
-              };
-              return (
-                <VariantCard
-                  key={v.id}
-                  v={v}
-                  kind={variantKind(v, model?.tuning)}
-                  uplift={
-                    cmp?.optimized === v.id && cmp.uplift != null
-                      ? formatUplift(cmp.uplift) + (cmp.version !== targetVersion ? ` on v${cmp.version}` : "")
-                      : undefined
-                  }
-                  upliftTitle={cmp?.optimized === v.id && cmp.workloads.length ? workloadSummary(cmp) : undefined}
-                  report={cmp?.optimized === v.id ? report : undefined}
-                  workloads={cmp?.optimized === v.id && cmp.workloads.length ? cmp.workloads : undefined}
-                  nodes={nodes.data?.nodes}
-                  tags={deployed && <Badge variant="outline">deployed</Badge>}
-                  selected={v.id === keptVariant}
-                  disabled={otherEngine ? `Runs on ${v.engine}; a catalog move keeps ${cur.engine}` : undefined}
-                  action={
-                    v.id === keptVariant ? (
-                      <Badge variant="success">Selected</Badge>
-                    ) : (
-                      <Button size="sm" variant="outline" disabled={otherEngine} onClick={pick}>
-                        Select
-                      </Button>
-                    )
-                  }
-                />
-              );
-            })}
-          </div>
-        </div>
+      {!rollbackTo && (
+        <Dialog
+          open={picking}
+          onClose={() => setPicking(false)}
+          title="Choose a variant"
+          subtitle={
+            <>
+              {cur.source.model}
+              {targetVersion && ` v${targetVersion}`}
+              {catalogs.length > 1 && catalogName && ` · ${catalogName}`}
+              {moving && ` · a catalog move keeps ${cur.engine}`}
+            </>
+          }
+          footer={
+            variant && (
+              <Button variant="outline" size="sm" onClick={() => pickVariant(cur.source.variant)}>
+                Keep {cur.source.variant}
+              </Button>
+            )
+          }
+        >
+          <VariantChoices
+            variants={variants}
+            current={cur}
+            moving={moving}
+            selected={keptVariant}
+            onPick={pickVariant}
+            tuning={model?.tuning}
+            version={targetVersion}
+            report={report}
+            nodes={nodes.data?.nodes}
+          />
+        </Dialog>
       )}
 
       {/* The same form as the deploy page, seeded from the release. Editing it
@@ -415,6 +431,69 @@ export function Upgrade() {
           />
         )}
       </Pipeline>
+    </div>
+  );
+}
+
+// The cards the model page shows, as an upgrade's choice: the deployed one
+// tagged, the chosen one ringed, and on a catalog move the variants on another
+// engine dimmed, since swissd refuses them.
+export function VariantChoices({
+  variants,
+  current,
+  moving,
+  selected,
+  onPick,
+  tuning,
+  version,
+  report,
+  nodes,
+}: {
+  variants: IndexVariant[];
+  current: Plan;
+  moving: boolean;
+  selected: string;
+  onPick: (id: string) => void;
+  tuning?: Tuning[];
+  version?: string;
+  report?: string;
+  nodes?: Node[];
+}) {
+  const cmp = version ? comparison(variants, version, tuning) : null;
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {variants.map((v) => {
+        const otherEngine = moving && v.engine !== current.engine;
+        const optimized = cmp?.optimized === v.id;
+        return (
+          <VariantCard
+            key={v.id}
+            v={v}
+            kind={variantKind(v, tuning)}
+            uplift={
+              optimized && cmp.uplift != null
+                ? formatUplift(cmp.uplift) + (cmp.version !== version ? ` on v${cmp.version}` : "")
+                : undefined
+            }
+            upliftTitle={optimized && cmp.workloads.length ? workloadSummary(cmp) : undefined}
+            report={optimized ? report : undefined}
+            workloads={optimized && cmp.workloads.length ? cmp.workloads : undefined}
+            nodes={nodes}
+            tags={!moving && v.id === current.source.variant && <Badge variant="outline">deployed</Badge>}
+            selected={v.id === selected}
+            disabled={otherEngine ? `Runs on ${v.engine}; a catalog move keeps ${current.engine}` : undefined}
+            action={
+              v.id === selected ? (
+                <Badge variant="success">Selected</Badge>
+              ) : (
+                <Button size="sm" variant="outline" disabled={otherEngine} onClick={() => onPick(v.id)}>
+                  Select
+                </Button>
+              )
+            }
+          />
+        );
+      })}
     </div>
   );
 }

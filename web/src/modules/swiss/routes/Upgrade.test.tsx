@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
-import { Upgrade } from "./Upgrade";
+import { Upgrade, VariantChoices } from "./Upgrade";
+import type { Plan } from "@swiss/lib/api";
 import { ModuleProvider } from "@/shell/module";
 
 const variant = (id: string, engine: string, extra = {}) => ({
@@ -19,6 +20,49 @@ const index = (hf: string) => ({
         variant("b", "vllm"), variant("c", "sglang", { description: "tuned" })] },
       { version: "1.0.0", path: "p", digest: "d", variants: [variant("a", "sglang")] },
     ] }] },
+});
+
+const deployed = {
+  apiVersion: "v1", release: { name: "qwen", namespace: "models" },
+  source: { catalogName: "public", model: "m", hf: "org/m", version: "1.0.0", variant: "a", digest: "sha256:0123456789abcdef0123" },
+  chart: { name: "sglang", version: "0.7.1" }, engine: "sglang", profile: "prod", layers: {}, hash: "h",
+} as Plan;
+
+const cards = (moving: boolean, selected: string) => {
+  const m = index("org/m").index.models[0];
+  const html = renderToString(
+    <ModuleProvider module={{ id: "swiss", title: "s", basePath: "/swiss", pages: [] }}>
+      <MemoryRouter>
+        <VariantChoices
+          variants={m.versions[0].variants}
+          current={deployed}
+          moving={moving}
+          selected={selected}
+          onPick={() => {}}
+          tuning={m.tuning}
+          version="1.1.0"
+          report="https://site.example/models/m/perf.html"
+          nodes={[{ Name: "n1", GPUProduct: "H100", GPUs: 8, Schedulable: true } as never]}
+        />
+      </MemoryRouter>
+    </ModuleProvider>,
+  );
+  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+};
+
+describe("VariantChoices", () => {
+  it("shows what the model page shows, with the deployed and chosen variants marked", () => {
+    const text = cards(false, "a");
+    for (const want of ["deployed", "Selected", "optimized +40%", "Report", "Docs", "TP2 on H100", "1 matching node", "Select"]) {
+      expect(text).toContain(want);
+    }
+  });
+
+  it("dims variants on another engine when moving catalogs", () => {
+    const text = cards(true, "a");
+    expect(text).toContain("Runs on vllm; a catalog move keeps sglang");
+    expect(text).not.toContain("deployed");
+  });
 });
 
 describe("Upgrade page", () => {
@@ -48,8 +92,10 @@ describe("Upgrade page", () => {
     );
     const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
     for (const want of ["Upgrade target", "keep public", "latest (1.1.0)", "keep 0.7.1", "Catalog allows &gt;=0.7.1",
-      "Variants in v1.1.0", "deployed", "Selected", "optimized +40%", "Report", "Docs", "1 matching node"]) {
+      "sglang · 2 GPU", "kept", "Change…"]) {
       expect(text).toContain(want);
     }
+    // The cards live in the dialog, closed until Change… is pressed.
+    expect(text).not.toContain("Choose a variant");
   });
 });
