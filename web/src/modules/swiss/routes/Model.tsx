@@ -1,25 +1,12 @@
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { useQuery } from "@tanstack/react-query";
-import { ChartColumn, ChevronLeft, ExternalLink } from "lucide-react";
-import { api, type Node, type Variant } from "@swiss/lib/api";
-import { Badge } from "@swiss/components/ui/badge";
-import {
-  type Kind,
-  comparison,
-  formatUplift,
-  httpLink,
-  reportLink,
-  UPLIFT_HELP,
-  variantKind,
-  workloadSummary,
-} from "@swiss/lib/catalog";
-import { gpuCount, matchesVendor, vendorLabel } from "@swiss/lib/gpu";
-import { Button, buttonVariants } from "@swiss/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
+import { ChevronLeft } from "lucide-react";
+import { api } from "@swiss/lib/api";
+import { comparison, formatUplift, reportLink, variantKind, workloadSummary } from "@swiss/lib/catalog";
+import { Button } from "@swiss/components/ui/button";
 import { ErrorState, Loading } from "@swiss/components/States";
-import { WorkloadList } from "@swiss/components/Uplift";
+import { VariantCard } from "@swiss/components/VariantCard";
 import { CatalogBadge, CatalogGate, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
-import { cn } from "@swiss/lib/utils";
 
 export function Model() {
   const { name = "" } = useParams();
@@ -114,9 +101,17 @@ export function Model() {
               report={cmp?.optimized === v.id ? report : undefined}
               workloads={cmp?.optimized === v.id && cmp.workloads.length ? cmp.workloads : undefined}
               nodes={nodes.data?.nodes}
-              model={e.name}
-              version={version}
-              catalog={selected}
+              action={
+                <Link
+                  to={withCatalog(
+                    `/deploy/${encodeURIComponent(e.name)}?variant=${encodeURIComponent(v.id)}` +
+                      (version ? `&version=${encodeURIComponent(version)}` : ""),
+                    selected,
+                  )}
+                >
+                  <Button size="sm">Deploy</Button>
+                </Link>
+              }
             />
           ))}
         </div>
@@ -125,10 +120,6 @@ export function Model() {
   );
 }
 
-// A variant is a hardware and parallelism decision, so the card shows whether
-// this cluster can actually run it. Surfacing the fit check at selection time
-// beats discovering it at apply time, and far beats discovering it as an OOM
-// forty minutes into a load.
 function VersionPicker({
   name,
   current,
@@ -161,135 +152,6 @@ function VersionPicker({
       </span>
     </div>
   );
-}
-
-function VariantCard({
-  v,
-  kind,
-  uplift,
-  upliftTitle,
-  report,
-  workloads,
-  nodes,
-  model,
-  version,
-  catalog,
-}: {
-  v: Variant;
-  kind: Kind;
-  // The headline, "+58%", with "on v1.0.0" when measured on another version.
-  // Which workload it is for is on the line below, with the others.
-  uplift?: string;
-  upliftTitle?: string;
-  // The tuned variant's perf report, on the catalog's site.
-  report?: string;
-  workloads?: { name: string; uplift: number }[];
-  nodes?: Node[];
-  model: string;
-  version: string;
-  catalog: string;
-}) {
-  const fit = fitness(v, nodes);
-  const link = httpLink(v.link);
-  return (
-    <Card className="flex h-full flex-col">
-      <CardHeader className="flex-row items-start justify-between gap-3">
-        <div className="space-y-1">
-          <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-            {v.id}
-            {v.default && <Badge variant="muted">default</Badge>}
-            {kind.optimized && (
-              <Badge variant="success" title={upliftTitle ? `${upliftTitle}. ${UPLIFT_HELP}` : UPLIFT_HELP}>
-                optimized{uplift && ` ${uplift}`}
-              </Badge>
-            )}
-            {kind.baseline && <Badge variant="outline">baseline</Badge>}
-            <Badge variant="outline">{v.engine}</Badge>
-          </CardTitle>
-          {workloads && (
-            <p className="text-xs leading-6 text-muted-foreground" title={UPLIFT_HELP}>
-              vs baseline: <WorkloadList workloads={workloads} />
-            </p>
-          )}
-          {v.description && <p className="text-sm text-muted-foreground">{v.description}</p>}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {report && (
-            <a
-              href={report}
-              target="_blank"
-              rel="noreferrer"
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
-            >
-              <ChartColumn className="size-3.5 text-muted-foreground" />
-              <span>Report</span>
-            </a>
-          )}
-          {link && (
-            <a
-              href={link}
-              target="_blank"
-              rel="noreferrer"
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
-            >
-              <ExternalLink className="size-3.5 text-muted-foreground" />
-              <span>Docs</span>
-            </a>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-2 text-sm">
-        <div className="text-muted-foreground">
-          {gpuCount(v.requires)}
-          {" · "}
-          {vendorLabel(v.requires.vendor)}
-          {" · "}
-          {v.requires.topology ?? "single-node"}
-          {v.requires.rdma && " · RDMA"}
-          {" · "}
-          chart {v.chart.name}-{v.chart.version}
-        </div>
-        <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-          Runs on
-          {v.requires.gpuProduct?.length ? (
-            v.requires.gpuProduct.map((p) => (
-              <Badge key={p} variant="outline">{p}</Badge>
-            ))
-          ) : (
-            <Badge variant="outline">any {vendorLabel(v.requires.vendor)}</Badge>
-          )}
-        </div>
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t pt-3">
-          {fit && <Badge variant={fit.ok ? "success" : "warning"}>{fit.text}</Badge>}
-          <Link
-            to={withCatalog(
-              `/deploy/${encodeURIComponent(model)}?variant=${encodeURIComponent(v.id)}` +
-                (version ? `&version=${encodeURIComponent(version)}` : ""),
-              catalog,
-            )}
-            className="ml-auto"
-          >
-            <Button size="sm">Deploy</Button>
-          </Link>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function fitness(v: Variant, nodes?: Node[]): { ok: boolean; text: string } | null {
-  if (!nodes) return null;
-  const matching = nodes.filter(
-    (n) =>
-      n.Schedulable &&
-      n.GPUs >= v.requires.gpus &&
-      matchesVendor(v.requires.vendor, n) &&
-      (!v.requires.gpuProduct?.length || v.requires.gpuProduct.includes(n.GPUProduct)),
-  );
-  const needed = v.requires.nodes ?? 1;
-  return matching.length >= needed
-    ? { ok: true, text: `${matching.length} matching node${matching.length === 1 ? "" : "s"}` }
-    : { ok: false, text: `needs ${needed}, ${matching.length} matching` };
 }
 
 function Field({ label, value }: { label: string; value: string }) {
