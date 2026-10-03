@@ -14,3 +14,8 @@ export function movableCatalogs(
   if (!hf) return { movable: [] };
   return { hf, movable: catalogs.map((c) => c.name).filter((n) => n !== own && hfIn(n) === hf) };
 }
+
+// A bare version is a pin, as swissd reads one (strict semver, no "v"); anything else is a range.
+export function isChartRange(spec: string): boolean {
+  return !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/.test(spec.trim());
+}

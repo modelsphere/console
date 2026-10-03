@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogInfo } from "@swiss/lib/api";
-import { movableCatalogs } from "./upgrade";
+import { isChartRange, movableCatalogs } from "./upgrade";
 
 const catalogs: CatalogInfo[] = [
   { name: "public", url: "https://p", source: "https://p/index.json", default: true },
@@ -36,5 +36,14 @@ describe("movableCatalogs", () => {
   it("offers every same-model catalog when the own one is unlisted", () => {
     const got = movableCatalogs(catalogs, { catalogName: "gone", hf: "Qwen/Qwen3" }, undefined, hfIn);
     expect(got.movable).toEqual(["public", "internal"]);
+  });
+});
+
+describe("isChartRange", () => {
+  it("reads a bare version as a pin and anything else as a range", () => {
+    for (const pin of ["0.7.1", "0.8.0-rc1", "1.0.0+build.1"]) expect(isChartRange(pin)).toBe(false);
+    for (const range of ["v0.7.1", ">=0.7.1", "^0.7.1", "~0.7", "0.7.x", ">=0.7.1 <0.9.0", "^0.7 || ^0.8"]) {
+      expect(isChartRange(range)).toBe(true);
+    }
   });
 });

@@ -1,18 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
-import { useMutation, useQueries, useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { ArrowRight, ChevronLeft, TriangleAlert } from "lucide-react";
-import {
-  api,
-  deployApi,
-  type ApplyResult,
-  type ChartVersions,
-  type DiffResult,
-  type Plan,
-} from "@swiss/lib/api";
+import { api, deployApi, type ApplyResult, type DiffResult, type Plan } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
-import { Field, Input } from "@swiss/components/ui/input";
 import {
   DeploySettings,
   EMPTY,
@@ -25,6 +17,7 @@ import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
 import { movableCatalogs } from "@swiss/lib/upgrade";
+import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 
 export function Upgrade() {
   const { namespace = "", release = "" } = useParams();
@@ -158,6 +151,16 @@ export function Upgrade() {
   }
 
   const cur = current.data;
+  const targetVersion = version || model?.latest;
+  const chart = chartVersionChoice({
+    running: cur.chart,
+    list: chartVersions,
+    value: chartVersion,
+    onChange: (v) => {
+      setChartVersion(v);
+      reset();
+    },
+  });
   // What the pipeline acts on: a composed plan on an upgrade, the archive on a
   // rollback. Nothing else about the page differs.
   const target = rollbackTo ? (archived.data ?? null) : plan;
@@ -233,15 +236,21 @@ export function Upgrade() {
       {!rollbackTo && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Catalog target</CardTitle>
+            <CardTitle className="text-base">Upgrade target</CardTitle>
             <p className="text-sm text-muted-foreground">
-              The catalog, model version, variant and chart this upgrade composes against. Engine
-              flags, probes and the image move with them — that is what an upgrade is for.
+              Every row starts on what is deployed. Engine flags, probes and the image follow the
+              model version and variant.
             </p>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
+          <CardContent className="divide-y pt-0">
             {(catalogs.length > 1 || !releaseCatalog) && (
-              <Field label="Catalog" hint={catalogHint(releaseCatalog, recorded?.catalogName, hf, movable)}>
+              <TargetRow
+                label="Catalog"
+                hint="Another catalog is offered only when its model has the same HF repo: the same model id elsewhere may be different weights."
+                from={releaseCatalog ?? recorded?.catalogName ?? "unlisted"}
+                changing={moving}
+                caption={catalogCaption(hf, movable)}
+              >
                 <Select
                   value={targetCatalog}
                   onChange={(v) => {
@@ -253,10 +262,15 @@ export function Upgrade() {
                   }}
                   options={movable}
                   emptyLabel={releaseCatalog ? `keep ${releaseCatalog}` : "choose a catalog"}
+                  disabled={movable.length === 0}
                 />
-              </Field>
+              </TargetRow>
             )}
-            <Field label="Model version" hint={`deployed: ${cur.source.version ?? "unpinned"}`}>
+            <TargetRow
+              label="Model version"
+              from={cur.source.version ?? "unpinned"}
+              changing={!!targetVersion && targetVersion !== cur.source.version}
+            >
               <Select
                 value={version}
                 onChange={(v) => {
@@ -265,16 +279,16 @@ export function Upgrade() {
                   reset();
                 }}
                 options={versions}
-                emptyLabel="latest"
+                emptyLabel={model?.latest ? `latest (${model.latest})` : "latest"}
               />
-            </Field>
-            <Field
+            </TargetRow>
+            <TargetRow
               label="Variant"
-              hint={
-                variantMissing
-                  ? `${catalogName} has no variant ${keptVariant} in this version — pick one`
-                  : `deployed: ${cur.source.variant}`
-              }
+              hint="Parallelism and hardware. Moving to another catalog keeps the engine, so variants on another one are disabled."
+              from={cur.source.variant}
+              changing={!!variant && variant !== cur.source.variant}
+              caption={variantMissing ? `${catalogName} has no ${keptVariant} in this version: pick a variant.` : undefined}
+              tone="warning"
             >
               <Select
                 value={variant}
@@ -283,24 +297,24 @@ export function Upgrade() {
                   setChartVersion("");
                   reset();
                 }}
-                // A move keeps the engine: swissd refuses another one under the release's route.
                 options={variants.map((v) => ({
                   value: v.id,
-                  label: moving && v.engine !== cur.engine ? `${v.id} (${v.engine}, not ${cur.engine})` : v.id,
+                  label: moving && v.engine !== cur.engine ? `${v.id} (${v.engine})` : v.id,
                   disabled: moving && v.engine !== cur.engine,
                 }))}
                 emptyLabel={`keep ${cur.source.variant}`}
               />
-            </Field>
-            <ChartVersionField
-              running={cur.chart}
-              list={chartVersions}
-              value={chartVersion}
-              onChange={(v) => {
-                setChartVersion(v);
-                reset();
-              }}
-            />
+            </TargetRow>
+            <TargetRow
+              label="Chart version"
+              hint="Left on keep, the running chart stays while the catalog allows it; otherwise the newest it allows is taken."
+              from={cur.chart.version}
+              changing={!!chart.resolved && chart.resolved !== cur.chart.version}
+              caption={chart.caption}
+              tone={chart.tone}
+            >
+              {chart.control}
+            </TargetRow>
           </CardContent>
         </Card>
       )}
@@ -422,103 +436,10 @@ function Change({ label, from, to }: { label: string; from?: string; to?: string
   );
 }
 
-function catalogHint(own: string | undefined, recordedName: string | undefined, hf: string | undefined, movable: string[]) {
-  const from = `deployed from ${own ?? recordedName ?? "an unlisted catalog"}`;
-  if (!hf) return `${from} · its model's HF repo is unknown, so no other catalog can be offered`;
-  if (movable.length === 0) return `${from} · no other catalog has ${hf}`;
-  return `${from} · offered: catalogs with ${hf}`;
-}
-
-// Empty means swissd's default: the running chart while the catalog's range
-// allows it, else the newest in range.
-function ChartVersionField({
-  running,
-  list,
-  value,
-  onChange,
-}: {
-  running: Plan["chart"];
-  list: UseQueryResult<ChartVersions>;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  if (list.error) {
-    return (
-      <Field label="Chart version" hint={`could not list versions: ${list.error.message}`}>
-        <Input
-          value={value}
-          onChange={(e) => onChange(e.target.value.trim())}
-          placeholder={`keep ${running.version} if in range`}
-        />
-      </Field>
-    );
-  }
-  const d = list.data;
-  if (!d) {
-    return (
-      <Field label="Chart version" hint={list.isFetching ? "listing versions…" : `deployed: ${running.version}`}>
-        <Select value="" onChange={onChange} options={[]} emptyLabel={`${running.name}-${running.version}`} disabled />
-      </Field>
-    );
-  }
-  const pinned = d.versions.length === 1 && d.versions[0] === d.range;
-  const keep = running.name === d.chart && d.versions.includes(running.version);
-  const emptyLabel = keep
-    ? `keep ${running.version}`
-    : !d.versions[0]
-      ? "none in range"
-      : pinned
-        ? `${d.versions[0]} (pinned)`
-        : `newest: ${d.versions[0]}`;
-  return (
-    <Field
-      label="Chart version"
-      hint={`${pinned ? "pinned by the catalog" : `catalog allows ${d.range}`} · deployed: ${running.version}`}
-    >
-      <Select
-        value={value}
-        onChange={onChange}
-        options={pinned ? [] : d.versions}
-        emptyLabel={emptyLabel}
-        disabled={pinned}
-      />
-    </Field>
-  );
-}
-
-type Option = string | { value: string; label: string; disabled?: boolean };
-
-function Select({
-  value,
-  onChange,
-  options,
-  emptyLabel,
-  disabled,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: Option[];
-  emptyLabel: string;
-  disabled?: boolean;
-}) {
-  return (
-    <select
-      className="w-full rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-60"
-      value={value}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      <option value="">{emptyLabel}</option>
-      {options.map((o) => {
-        const opt = typeof o === "string" ? { value: o, label: o } : o;
-        return (
-          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-            {opt.label}
-          </option>
-        );
-      })}
-    </select>
-  );
+function catalogCaption(hf: string | undefined, movable: string[]) {
+  if (!hf) return "Its model's HF repo is unknown, so no other catalog can be offered.";
+  if (movable.length === 0) return `No other catalog has ${hf}.`;
+  return undefined;
 }
 
 function Back({ namespace }: { namespace: string }) {

@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, TriangleAlert } from "lucide-react";
 import { api, deployApi, type ApplyResult, type DiffResult, type Plan } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
-import { Card, CardContent } from "@swiss/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
 import { DeploySettings, EMPTY, imageOf, planRequest, type Form } from "@swiss/components/DeploySettings";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, CatalogGate, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
+import { chartVersionChoice, TargetRow } from "@swiss/components/ChartVersion";
+import { isChartRange } from "@swiss/lib/upgrade";
 
 export function Deploy() {
   const { name = "" } = useParams();
@@ -27,6 +29,16 @@ export function Deploy() {
   });
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes });
+  const chartVariant = model.data?.entry.variants.find((v) => v.id === variantId) ?? model.data?.entry.variants[0];
+  const chartRange = !!chartVariant && isChartRange(chartVariant.chart.version);
+  const chartVersions = useQuery({
+    queryKey: ["chart-versions", catalog, name, version, chartVariant?.id],
+    queryFn: () => api.chartVersions(name, { catalog, version: version || undefined, variant: chartVariant?.id }),
+    enabled: chartRange,
+    retry: false,
+  });
+  const [chartVersion, setChartVersion] = useState("");
+  useEffect(() => setChartVersion(""), [catalog, name, version, variantId]);
 
   const [form, setForm] = useState<Form>({ ...EMPTY, serviceId: name });
   // serviceId is the identity everything else is named after: the helm release,
@@ -51,7 +63,9 @@ export function Deploy() {
 
   const planM = useMutation({
     mutationFn: () =>
-      deployApi.plan(planRequest(form, { model: name, version, variant: variantId, catalog })),
+      deployApi.plan(
+        planRequest(form, { model: name, version, variant: variantId, catalog, chartVersion: chartVersion || undefined }),
+      ),
     // The previous plan is superseded the moment a recompose starts. Dropping
     // it here rather than on the way back means a failed compose leaves
     // nothing to act on, instead of a stale plan the error message sits behind.
@@ -73,6 +87,14 @@ export function Deploy() {
   if (model.error) return <ErrorState what={name} error={model.error} />;
 
   const entry = model.data.entry;
+  const chart = chartVersionChoice({
+    list: chartVersions,
+    value: chartVersion,
+    onChange: (v) => {
+      setChartVersion(v);
+      update({});
+    },
+  });
   const variant = entry.variants.find((v) => v.id === variantId) ?? entry.variants[0];
 
   if (!cluster.data?.allowDeploy) {
@@ -100,11 +122,35 @@ export function Deploy() {
           {variant.requires.nodes && variant.requires.nodes > 1
             ? ` × ${variant.requires.nodes} nodes`
             : ""}{" "}
-          · chart {variant.chart.name}-{variant.chart.version}
+          · chart {variant.chart.name}
+          {chartRange ? ` ${variant.chart.version}` : `-${variant.chart.version}`}
         </p>
       </div>
 
       {planM.error && <ErrorState what="the request" error={planM.error} />}
+
+      {chartRange && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Chart version</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              This model's catalog allows a range of {variant.chart.name} charts. The plan records the
+              exact version installed, and later upgrades keep it until asked to move.
+            </p>
+          </CardHeader>
+          <CardContent className="divide-y pt-0">
+            <TargetRow
+              label="Chart version"
+              hint="Left on the default, the newest version the catalog allows is installed."
+              changing={!!chartVersion}
+              caption={chart.caption}
+              tone={chart.tone}
+            >
+              {chart.control}
+            </TargetRow>
+          </CardContent>
+        </Card>
+      )}
 
       {/* The settings are the page. Plan, diff and apply are what is done with
           them, so they sit below as tabs rather than holding the form inside
