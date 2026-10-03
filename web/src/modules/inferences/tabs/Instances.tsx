@@ -34,7 +34,7 @@ export function Instances({ status: s }: { status: ReleaseStatus }) {
     <div className="space-y-3">
       {s.total > 0 && s.ready < s.total && <p className="text-sm text-muted-foreground">{t("overview.coldLoad")}</p>}
       {s.warning && <p className="text-sm text-warning">{s.warning}</p>}
-      <ResourceTable<Pod> data={s.pods} columns={columns} rowKey="name" emptyTitle={t("instances.empty")} />
+      <ResourceTable<Pod> showColumnToggle={false} data={s.pods} columns={columns} rowKey="name" emptyTitle={t("instances.empty")} />
     </div>
   );
 }

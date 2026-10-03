@@ -50,6 +50,7 @@ export function Runs({ namespace, release }: { namespace: string; release: strin
 
   return (
     <ResourceTable<Run>
+      showColumnToggle={false}
       title={t("tabs.runs")}
       titleActions={
         <Button variant="outline" size="sm" onClick={() => navigate(swissLinks(swissBase).runs(namespace, release))}>

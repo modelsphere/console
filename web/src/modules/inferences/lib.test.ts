@@ -141,6 +141,13 @@ describe("installSteps", () => {
     const steps = installSteps(status(), route({ ready: true }) as never, {});
     expect(steps[2]).toEqual({ key: "route", state: "ok", detail: "ready", params: { n: 2, route: "/qwen/" } });
   });
+  it("does not claim there is no route when the objects could not be read", () => {
+    const steps = installSteps(status(), {}, {}, true);
+    expect(steps.slice(2).map((s) => [s.state, s.detail])).toEqual([
+      ["wait", "unreadable"],
+      ["wait", "unreadable"],
+    ]);
+  });
   it("calls a deleted ModelRoute bad", () => {
     expect(installSteps(status(), route({ missing: true }) as never, {})[2]!.state).toBe("bad");
   });

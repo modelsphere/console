@@ -32,6 +32,7 @@ export function Overview({
   status: s,
   plan,
   objects,
+  objectsUnreadable,
   onAllRuns,
 }: {
   namespace: string;
@@ -39,6 +40,7 @@ export function Overview({
   status: ReleaseStatus;
   plan?: Plan;
   objects?: ObjectResult[];
+  objectsUnreadable: boolean;
   onAllRuns: () => void;
 }) {
   const t = useT();
@@ -57,6 +59,7 @@ export function Overview({
     s,
     pick<ModelRouteSpec, ModelRouteStatus>(objects, "ModelRoute"),
     pick<LLMScalerSpec, LLMScalerStatus>(objects, "LLMScaler"),
+    objectsUnreadable,
   );
   const catalog = source && [source.catalogName ?? source.catalog, source.ref].filter(Boolean).join(" @ ");
 

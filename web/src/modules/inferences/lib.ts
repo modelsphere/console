@@ -140,11 +140,24 @@ type Picked<Spec, Status> = { result?: ObjectResult; spec?: Spec; status?: Statu
 // with the words moved to the module's strings. Applied says what helm did;
 // the other three say what the controllers made of it -- a release can be
 // applied with ready pods and still serve nobody, because nothing routed to it.
+//
+// objectsUnreadable: the objects read failed as a whole (an older swissd has no
+// such endpoint). Then nothing is known about the route or the scaler, and
+// saying "no ModelRoute" would be a claim the page cannot back.
 export function installSteps(
   s: ReleaseStatus,
   route: Picked<ModelRouteSpec, ModelRouteStatus>,
   scaler: Picked<LLMScalerSpec, LLMScalerStatus>,
+  objectsUnreadable = false,
 ): Step[] {
+  if (objectsUnreadable) {
+    return [
+      appliedStep(s, s.planStatus),
+      podsStep(s),
+      { key: "route", state: "wait", detail: "unreadable" },
+      { key: "scaler", state: "wait", detail: "unreadable" },
+    ];
+  }
   return [appliedStep(s, s.planStatus), podsStep(s), routeStep(route), scalerStep(scaler)];
 }
 

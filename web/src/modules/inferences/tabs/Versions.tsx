@@ -60,6 +60,7 @@ export function Versions({ namespace, release, canRollBack }: { namespace: strin
 
   return (
     <ResourceTable<RevisionRow>
+      showColumnToggle={false}
       title={t("versions.title")}
       titleSummary={t("versions.hint")}
       data={rows}

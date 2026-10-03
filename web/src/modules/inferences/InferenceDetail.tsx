@@ -155,7 +155,7 @@ export function InferenceDetail() {
         </TabsList>
 
         <TabsContent value="overview">
-          <Overview namespace={namespace} release={release} status={s} plan={plan.data} objects={objects.data?.objects} onAllRuns={() => setTab("runs")} />
+          <Overview namespace={namespace} release={release} status={s} plan={plan.data} objects={objects.data?.objects} objectsUnreadable={objects.isError} onAllRuns={() => setTab("runs")} />
         </TabsContent>
         <TabsContent value="instances">
           <Instances status={s} />
