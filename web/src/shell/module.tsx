@@ -95,6 +95,9 @@ export interface NavItem {
 export interface NavGroup {
   title?: string;
   ns?: string;
+  // The module's mount point: every page below it belongs to this group, menu
+  // entry or not (a detail page has none).
+  basePath?: string;
   items: NavItem[];
 }
 
@@ -113,7 +116,15 @@ export function navGroups(modules: ConsoleModule[], has: (permission: string) =>
         icon: p.menu!.icon,
         end: p.path === "",
       }));
-    if (items.length) groups.push({ title: m.title, ns: m.id, items });
+    if (items.length) groups.push({ title: m.title, ns: m.id, basePath: m.basePath, items });
   }
   return groups;
+}
+
+// activeGroupTitle is the group holding the current page: the module it is
+// mounted under. Matching menu entries alone misses a module's pages that have
+// none -- /inferences/x/details is under /inferences, whose index entry only
+// matches exactly.
+export function activeGroupTitle(groups: NavGroup[], pathname: string): string | undefined {
+  return groups.find((g) => g.title && g.basePath && (pathname === g.basePath || pathname.startsWith(g.basePath + "/")))?.title;
 }

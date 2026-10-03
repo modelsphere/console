@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Boxes } from "lucide-react";
-import { joinPath, navGroups, validateModules, type ConsoleModule } from "@/shell/module";
+import { activeGroupTitle, joinPath, navGroups, validateModules, type ConsoleModule } from "@/shell/module";
 
 const mod = (over: Partial<ConsoleModule> = {}): ConsoleModule => ({
   id: "swiss",
@@ -80,6 +80,15 @@ describe("navGroups", () => {
 
   it("hides pages the user lacks permission for", () => {
     expect(labels((p) => p === "roles.view")[1]).toEqual(["访问控制", ["角色@/iam/roles"]]);
+  });
+
+  it("opens the module a page is mounted under, menu entry or not", () => {
+    const groups = navGroups([iam, mod()], () => true);
+    expect(activeGroupTitle(groups, "/swiss")).toBe("模型部署");
+    expect(activeGroupTitle(groups, "/swiss/deployments/ns/r")).toBe("模型部署");
+    expect(activeGroupTitle(groups, "/iam/users/alice")).toBe("访问控制");
+    expect(activeGroupTitle(groups, "/swissx")).toBeUndefined();
+    expect(activeGroupTitle(groups, "/")).toBeUndefined();
   });
 
   it("drops a module whose every menu page is hidden", () => {

@@ -17,7 +17,7 @@ import { usePermissions } from "@/shell/permissions";
 import { ChangePasswordDialog } from "@/shell/ChangePasswordDialog";
 import { PreferencesPanel } from "@/shell/PreferencesPanel";
 import { useLayout } from "@/shell/preferences";
-import { navGroups, type ConsoleModule, type NavGroup, type NavItem } from "@/shell/module";
+import { activeGroupTitle, navGroups, type ConsoleModule, type NavGroup, type NavItem } from "@/shell/module";
 import { LOCALES, navLabel, useLocale, useT } from "@/shell/i18n";
 
 // The console shell in Rise Global's layouts, picked in the preferences panel.
@@ -225,16 +225,12 @@ const itemSize = (board: boolean) => (board ? "py-2.5 font-medium" : "py-2");
 const ITEM_IDLE = "text-foreground/80 hover:bg-accent hover:text-foreground";
 const ITEM_ACTIVE = "bg-primary/10 text-primary";
 
-function isUnder(pathname: string, item: NavItem): boolean {
-  return item.end ? pathname === item.to : pathname === item.to || pathname.startsWith(item.to + "/");
-}
-
 // Accordion like Global's sidebar: one group open at a time, starting with the
 // group that holds the current page.
 function Sidebar({ groups, collapsed, board = false }: { groups: NavGroup[]; collapsed: boolean; board?: boolean }) {
   const { pathname } = useLocation();
   const t = useT("shell");
-  const activeGroup = groups.find((g) => g.title && g.items.some((i) => isUnder(pathname, i)))?.title;
+  const activeGroup = activeGroupTitle(groups, pathname);
   const [open, setOpen] = useState<string | undefined>(activeGroup ?? groups.find((g) => g.title)?.title);
   const shown = open ?? activeGroup;
   // Navigating into another module (a link, the back button) opens its group.
