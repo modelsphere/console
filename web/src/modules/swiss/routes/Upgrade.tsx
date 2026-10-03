@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
-import { ArrowRight, ChevronLeft, TriangleAlert } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronsUpDown, TriangleAlert } from "lucide-react";
 import {
   api,
   deployApi,
@@ -315,7 +315,13 @@ export function Upgrade() {
               caption={variantMissing ? `${catalogName} has no ${keptVariant} in this version: choose another.` : undefined}
               tone="warning"
             >
-              <div className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
+              <button
+                type="button"
+                disabled={variants.length === 0}
+                onClick={() => setPicking(true)}
+                aria-haspopup="dialog"
+                className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-3 text-left text-sm hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-1 disabled:cursor-not-allowed disabled:opacity-60"
+              >
                 <span className="truncate font-mono">{keptVariant}</span>
                 {keptInfo && (
                   <span className="hidden truncate text-xs text-muted-foreground sm:inline">
@@ -323,16 +329,8 @@ export function Upgrade() {
                   </span>
                 )}
                 {!variant && <Badge variant="muted">kept</Badge>}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="ml-auto h-7"
-                  disabled={variants.length === 0}
-                  onClick={() => setPicking(true)}
-                >
-                  Change…
-                </Button>
-              </div>
+                <ChevronsUpDown className="ml-auto size-4 shrink-0 text-muted-foreground" aria-hidden />
+              </button>
             </TargetRow>
             <TargetRow
               label="Chart version"

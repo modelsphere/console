@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, CircleX, TriangleAlert } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { ChartVersions, Plan } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
@@ -25,19 +25,25 @@ export function TargetRow({
   children: React.ReactNode;
 }) {
   const upgrade = from !== undefined;
+  const Icon = tone === "destructive" ? CircleX : TriangleAlert;
   return (
     <div
       className={cn(
-        "grid gap-x-3 gap-y-1 py-2.5 sm:items-center",
+        "relative -mx-3 grid gap-x-3 gap-y-1 px-3 py-2.5 sm:items-center",
         upgrade ? "sm:grid-cols-[11rem_minmax(0,10rem)_1rem_minmax(0,1fr)]" : "sm:grid-cols-[11rem_minmax(0,1fr)]",
+        changing && "bg-success/5",
       )}
     >
+      {changing && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-success" aria-hidden />}
       <HoverHint text={hint}>
         <span className="text-sm font-medium">{label}</span>
       </HoverHint>
       {upgrade && (
         <>
-          <span className="truncate font-mono text-sm text-muted-foreground" title={from}>
+          <span
+            className="w-fit max-w-full truncate rounded-md bg-muted px-2 py-0.5 font-mono text-xs text-foreground/80"
+            title={from}
+          >
             {from || "—"}
           </span>
           <ArrowRight
@@ -47,19 +53,21 @@ export function TargetRow({
         </>
       )}
       <div className="min-w-0">
-        <div className={cn("rounded-md", changing && "ring-1 ring-success/50")}>{children}</div>
-        {caption && (
-          <p
-            className={cn(
-              "mt-1 text-xs leading-snug",
-              tone === "muted" && "text-muted-foreground",
-              tone === "warning" && "text-warning",
-              tone === "destructive" && "text-destructive",
-            )}
-          >
-            {caption}
-          </p>
-        )}
+        {children}
+        {caption &&
+          (tone === "muted" ? (
+            <p className="mt-1 text-xs leading-snug text-muted-foreground">{caption}</p>
+          ) : (
+            <p
+              className={cn(
+                "mt-1.5 flex items-start gap-1.5 rounded-md px-2 py-1.5 text-xs leading-snug",
+                tone === "warning" ? "bg-warning/10 text-warning" : "bg-destructive/10 text-destructive",
+              )}
+            >
+              <Icon className="mt-px size-3.5 shrink-0" aria-hidden />
+              <span className="min-w-0 break-words">{caption}</span>
+            </p>
+          ))}
       </div>
     </div>
   );

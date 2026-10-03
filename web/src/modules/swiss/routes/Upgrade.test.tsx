@@ -92,10 +92,10 @@ describe("Upgrade page", () => {
     );
     const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
     for (const want of ["Upgrade target", "keep public", "latest (1.1.0)", "keep 0.7.1", "Catalog allows &gt;=0.7.1",
-      "sglang · 2 GPU", "kept", "Change…"]) {
+      "sglang · 2 GPU", "kept"]) {
       expect(text).toContain(want);
     }
-    // The cards live in the dialog, closed until Change… is pressed.
+    // The cards live in the dialog, closed until the variant field is clicked.
     expect(text).not.toContain("Choose a variant");
   });
 });
