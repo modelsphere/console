@@ -30,6 +30,7 @@ import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
 import { Dialog } from "@swiss/components/ui/dialog";
 import { Field, Input } from "@swiss/components/ui/input";
+import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { Provenance } from "@swiss/components/Provenance";
 import { ReleaseObjects, pick, useReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { AccessPoint } from "@swiss/components/Endpoint";
@@ -55,6 +56,7 @@ export function DeploymentDetail() {
     retry: false,
   });
   const objects = useReleaseObjects(namespace, release);
+  const [driftOpen, setDriftOpen] = useState(false);
   const sloRef = useRef<HTMLDivElement>(null);
   const [sloFlash, setSloFlash] = useState(false);
 
@@ -122,6 +124,29 @@ export function DeploymentDetail() {
           )}
         </div>
       </div>
+
+      {s.drift && (
+        <button
+          type="button"
+          onClick={() => setDriftOpen(true)}
+          className="flex w-full items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-left text-sm text-warning hover:bg-warning/15"
+        >
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+          <span className="min-w-0 flex-1">{s.drift}</span>
+          <span className="shrink-0 underline">Show diff</span>
+        </button>
+      )}
+      <CatalogModelDiff
+        open={driftOpen}
+        onClose={() => setDriftOpen(false)}
+        model={plan.data?.source.model}
+        version={plan.data?.source.version}
+        variant={plan.data?.source.variant}
+        catalog={plan.data?.source.catalogName}
+        engine={plan.data?.engine}
+        chart={plan.data?.chart}
+        deployed={plan.data?.layers.catalog}
+      />
 
       <InstallStatus status={s} objects={objects.data?.objects} />
 

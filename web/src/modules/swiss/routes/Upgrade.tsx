@@ -27,6 +27,7 @@ import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
 import { movableCatalogs } from "@swiss/lib/upgrade";
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
+import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { VariantCard } from "@swiss/components/VariantCard";
 import { Dialog } from "@swiss/components/ui/dialog";
 import { gpuCount } from "@swiss/lib/gpu";
@@ -47,6 +48,7 @@ export function Upgrade() {
   const [targetCatalog, setTargetCatalog] = useState("");
   const [chartVersion, setChartVersion] = useState("");
   const [picking, setPicking] = useState(false);
+  const [driftOpen, setDriftOpen] = useState(false);
 
   const current = useQuery({
     queryKey: ["release-plan", namespace, release],
@@ -167,6 +169,10 @@ export function Upgrade() {
 
   const cur = current.data;
   const targetVersion = version || model?.latest;
+  // A move is a different catalog's entry, not a republish of this one.
+  const digestWarn = moving
+    ? undefined
+    : republishWarning(cur.source, model?.versions, targetVersion, variant || cur.source.variant);
   const site = indexes[catalogs.findIndex((c) => c.name === catalogName)]?.data?.index.site;
   const optimized = targetVersion ? comparison(variants, targetVersion, model?.tuning) : null;
   const report = optimized && model ? reportLink(site, model.name, optimized.report) : undefined;
@@ -295,6 +301,9 @@ export function Upgrade() {
               label="Model version"
               from={cur.source.version ?? "unpinned"}
               changing={!!targetVersion && targetVersion !== cur.source.version}
+              caption={digestWarn}
+              onCaptionClick={digestWarn ? () => setDriftOpen(true) : undefined}
+              tone={digestWarn ? "warning" : "muted"}
             >
               <Select
                 value={version}
@@ -345,6 +354,17 @@ export function Upgrade() {
           </CardContent>
         </Card>
       )}
+      <CatalogModelDiff
+        open={driftOpen && !!digestWarn}
+        onClose={() => setDriftOpen(false)}
+        model={cur.source.model}
+        version={cur.source.version}
+        variant={cur.source.variant}
+        catalog={releaseCatalog}
+        engine={cur.engine}
+        chart={cur.chart}
+        deployed={cur.layers?.catalog}
+      />
 
       {!rollbackTo && (
         <Dialog
@@ -431,6 +451,25 @@ export function Upgrade() {
       </Pipeline>
     </div>
   );
+}
+
+// The catalog republished the version this release is on. Only while the
+// target stays on that version and variant: picking another version is a
+// different upgrade, and the index already carries the digest to compare.
+function republishWarning(
+  source: Plan["source"],
+  versions: { version: string; digest: string; variants: { id: string }[] }[] | undefined,
+  targetVersion: string | undefined,
+  variant: string,
+): string | undefined {
+  if (!source.digest || !source.version || !targetVersion || targetVersion !== source.version || !versions) {
+    return;
+  }
+  const published = versions.find((v) => v.version === targetVersion);
+  if (!published || published.digest === source.digest || !published.variants.some((v) => v.id === variant)) {
+    return;
+  }
+  return `version ${targetVersion} variant ${variant}: upstream digest changed since this was deployed`;
 }
 
 // The cards the model page shows, as an upgrade's choice: the deployed one

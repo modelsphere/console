@@ -149,7 +149,7 @@ export interface CatalogResponse {
 }
 
 export interface Variant extends IndexVariant {
-  image?: { repository: string; tag: string };
+  image?: { repository: string; tag: string; digest?: string };
   values?: Record<string, unknown>;
 }
 
@@ -567,6 +567,9 @@ export interface ReleaseStatus {
   authHeader?: string;
   authPrefix?: string;
   warning?: string;
+  // The catalog republished this release's version and variant under a new
+  // entry digest. A warning: upgrade is still allowed. Absent from the list.
+  drift?: string;
   // Written beside the release on every apply. The only thing that can say an
   // apply was started and never finished -- helm reports the last one that did.
   planStatus?: PlanStatus;

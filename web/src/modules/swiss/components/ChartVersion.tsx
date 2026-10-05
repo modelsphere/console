@@ -13,6 +13,7 @@ export function TargetRow({
   from,
   changing,
   caption,
+  onCaptionClick,
   tone = "muted",
   children,
 }: {
@@ -21,6 +22,7 @@ export function TargetRow({
   from?: string;
   changing?: boolean;
   caption?: React.ReactNode;
+  onCaptionClick?: () => void;
   tone?: "muted" | "warning" | "destructive";
   children: React.ReactNode;
 }) {
@@ -57,6 +59,21 @@ export function TargetRow({
         {caption &&
           (tone === "muted" ? (
             <p className="mt-1 text-xs leading-snug text-muted-foreground">{caption}</p>
+          ) : onCaptionClick ? (
+            <button
+              type="button"
+              onClick={onCaptionClick}
+              className={cn(
+                "mt-1.5 flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-xs leading-snug",
+                tone === "warning" ? "bg-warning/10 text-warning hover:bg-warning/15" : "bg-destructive/10 text-destructive",
+              )}
+            >
+              <Icon className="mt-px size-3.5 shrink-0" aria-hidden />
+              <span className="min-w-0 break-words">
+                {caption}
+                <span className="mt-1 block underline">Show diff</span>
+              </span>
+            </button>
           ) : (
             <p
               className={cn(
