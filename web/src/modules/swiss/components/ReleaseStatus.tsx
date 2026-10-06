@@ -13,16 +13,20 @@ export function ReleaseStatus({
   release,
   stats = true,
   access = true,
+  poll = true,
 }: {
   namespace: string;
   release: string;
   stats?: boolean;
   access?: boolean;
+  // Off where the page already polls this release's status.
+  poll?: boolean;
 }) {
   const status = useQuery({
     queryKey: ["status", namespace, release],
     queryFn: () => api.status(namespace, release),
-    refetchInterval: 10_000,
+    refetchInterval: poll ? 10_000 : false,
+    refetchOnWindowFocus: poll,
   });
 
   if (status.isPending) return <Loading what="status" />;

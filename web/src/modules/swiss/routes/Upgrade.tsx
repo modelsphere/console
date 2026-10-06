@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
-import { ArrowRight, ChevronLeft, ChevronsUpDown, TriangleAlert } from "lucide-react";
+import { ArrowRight, Check, ChevronLeft, ChevronsUpDown, TriangleAlert, Undo2 } from "lucide-react";
 import {
   api,
   deployApi,
@@ -382,7 +382,7 @@ export function Upgrade() {
           footer={
             variant && (
               <Button variant="outline" size="sm" onClick={() => pickVariant(cur.source.variant)}>
-                Keep {cur.source.variant}
+                <Undo2 className="size-4" /> Keep {cur.source.variant}
               </Button>
             )
           }
@@ -524,7 +524,7 @@ export function VariantChoices({
                 <Badge variant="success">Selected</Badge>
               ) : (
                 <Button size="sm" variant="outline" disabled={otherEngine} onClick={() => onPick(v.id)}>
-                  Select
+                  <Check className="size-4" /> Select
                 </Button>
               )
             }

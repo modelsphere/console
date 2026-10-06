@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Loader2, Save } from "lucide-react";
 import { api, type SiteProfile } from "@swiss/lib/api";
 import { Button } from "@swiss/components/ui/button";
 import { ErrorState } from "@swiss/components/States";
@@ -90,7 +91,15 @@ export function ProfileEditor({
           onClick={() => save.mutate()}
           disabled={save.isPending || (mode === "yaml" ? !yaml.trim() : !form.name.trim())}
         >
-          {save.isPending ? "Saving…" : submitLabel}
+          {save.isPending ? (
+            <>
+              <Loader2 className="size-4 animate-spin" /> Saving…
+            </>
+          ) : (
+            <>
+              <Save className="size-4" /> {submitLabel}
+            </>
+          )}
         </Button>
         {save.isSuccess && !save.isPending && (
           <span className="text-sm text-success">Saved. swissd composes against it now.</span>

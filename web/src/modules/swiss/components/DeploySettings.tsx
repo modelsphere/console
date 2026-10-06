@@ -1242,7 +1242,7 @@ function AddSetting({
                 disabled={!custom.trim() || !!customError}
                 onClick={() => add(custom.trim())}
               >
-                Add
+                <Plus className="size-4" /> Add
               </Button>
             </div>
             <p className={cn("text-xs leading-snug", customError ? "text-warning" : "text-muted-foreground")}>

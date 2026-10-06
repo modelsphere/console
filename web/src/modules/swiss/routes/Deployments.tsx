@@ -1,18 +1,21 @@
 import { useState } from "react";
 import { Link } from "@swiss/lib/host";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, Plus, Settings2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type Deployment } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent } from "@swiss/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@swiss/components/ui/table";
+import { SLODialog, type SLOTarget } from "@swiss/components/SLOCard";
 import { Empty, ErrorState, Loading } from "@swiss/components/States";
 
 const PER_PAGE = 25;
 
 export function Deployments() {
   const [page, setPage] = useState(1);
+  const [slo, setSlo] = useState<SLOTarget | null>(null);
+  const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
   const { data, isPending, error } = useQuery({
     queryKey: ["deployments", page],
     queryFn: () => api.deployments(page, PER_PAGE),
@@ -76,7 +79,7 @@ export function Deployments() {
             </TableHeader>
             <TableBody>
               {rows.map((d) => (
-                <Row key={`${d.namespace}/${d.release}`} d={d} />
+                <Row key={`${d.namespace}/${d.release}`} d={d} onConfigureSLO={() => setSlo(d)} />
               ))}
             </TableBody>
           </Table>
@@ -108,11 +111,13 @@ export function Deployments() {
           </div>
         </div>
       )}
+
+      <SLODialog target={slo} canEdit={!!cluster.data?.allowDeploy} onClose={() => setSlo(null)} />
     </div>
   );
 }
 
-function Row({ d }: { d: Deployment }) {
+function Row({ d, onConfigureSLO }: { d: Deployment; onConfigureSLO: () => void }) {
   return (
     <TableRow>
       <TableCell className="font-medium">
@@ -140,12 +145,21 @@ function Row({ d }: { d: Deployment }) {
       <TableCell>
         <StatusBadge status={d.status} />
       </TableCell>
-      <TableCell className="text-right">
-        <Link to={`/deployments/${encodeURIComponent(d.namespace)}/${encodeURIComponent(d.release)}`}>
-          <Button size="sm" variant="outline">
-            Details
-          </Button>
-        </Link>
+      <TableCell>
+        <div className="flex items-center justify-end gap-2">
+          {/* Applied is when the chart has created the requirement; whether
+              this release has one at all, the popup asks slo-api. */}
+          {d.phase === "applied" && (
+            <Button size="sm" variant="outline" title="Configure SLO" onClick={onConfigureSLO}>
+              <Settings2 className="size-4" /> SLO
+            </Button>
+          )}
+          <Link to={`/deployments/${encodeURIComponent(d.namespace)}/${encodeURIComponent(d.release)}`}>
+            <Button size="sm" variant="outline">
+              <Eye className="size-4" /> Details
+            </Button>
+          </Link>
+        </div>
       </TableCell>
     </TableRow>
   );

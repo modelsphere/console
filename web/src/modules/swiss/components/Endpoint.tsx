@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Check as CheckIcon, CircleCheck, CircleX, Copy, ExternalLink, Globe, KeyRound, Loader2 } from "lucide-react";
+import { Check as CheckIcon, CircleCheck, CircleX, Copy, ExternalLink, Globe, KeyRound, Loader2, Send } from "lucide-react";
 import {
   api,
   deployApi,
@@ -313,7 +313,15 @@ function HealthCheck({ namespace, release }: { namespace: string; release: strin
       <AuthFields value={auth} onChange={setAuth} />
 
       <Button onClick={() => run.mutate()} disabled={run.isPending}>
-        {run.isPending ? "Asking the model…" : "Send request"}
+        {run.isPending ? (
+          <>
+            <Loader2 className="size-4 animate-spin" /> Asking the model…
+          </>
+        ) : (
+          <>
+            <Send className="size-4" /> Send request
+          </>
+        )}
       </Button>
 
       {run.error && <ErrorState what="the health check" error={run.error} />}

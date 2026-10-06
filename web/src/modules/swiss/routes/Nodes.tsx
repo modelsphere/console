@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Search, TriangleAlert } from "lucide-react";
+import { ChevronDown, ChevronRight, FunnelX, Search, TriangleAlert } from "lucide-react";
 import { api, type GPUPod, type Node, type NodeCondition } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
@@ -216,7 +216,7 @@ export function Nodes() {
               <span className="text-sm text-muted-foreground tabular-nums">{visible.length} nodes</span>
               {dirty && (
                 <Button variant="ghost" size="sm" onClick={clear}>
-                  Clear
+                  <FunnelX className="size-4" /> Clear
                 </Button>
               )}
             </div>

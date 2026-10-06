@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Navigate } from "@swiss/lib/host";
 import { useQuery } from "@tanstack/react-query";
+import { Check, Pencil } from "lucide-react";
 import { api } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
@@ -45,7 +46,15 @@ export function SiteProfile() {
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => setEditing(!editing)}>
-          {editing ? "Done" : "Edit"}
+          {editing ? (
+            <>
+              <Check className="size-4" /> Done
+            </>
+          ) : (
+            <>
+              <Pencil className="size-4" /> Edit
+            </>
+          )}
         </Button>
       </div>
 

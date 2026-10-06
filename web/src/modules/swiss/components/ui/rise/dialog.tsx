@@ -27,8 +27,8 @@ export function Dialog({
   onClose: () => void;
   title: React.ReactNode;
   subtitle?: React.ReactNode;
-  // sm for a confirmation; lg (the default) holds a diff.
-  size?: "sm" | "lg";
+  // sm for a confirmation, md for a form; lg (the default) holds a diff.
+  size?: "sm" | "md" | "lg";
   // Pinned below the scrolling body: the action lives here, so it stays on
   // screen no matter how long the diff is. A button that scrolls away is a
   // button nobody trusts they have found.
@@ -46,7 +46,7 @@ export function Dialog({
         className={cn(
           "flex max-h-[calc(100vh-2rem)] w-full flex-col gap-0 overflow-hidden p-0",
           // sm: as well, or the kit's sm:max-w-sm wins from the sm breakpoint up.
-          size === "sm" ? "max-w-md sm:max-w-md" : "max-w-5xl sm:max-w-5xl",
+          size === "sm" ? "max-w-md sm:max-w-md" : size === "md" ? "max-w-2xl sm:max-w-2xl" : "max-w-5xl sm:max-w-5xl",
         )}
       >
         <DialogHeader className="gap-0 border-b p-4 text-left">

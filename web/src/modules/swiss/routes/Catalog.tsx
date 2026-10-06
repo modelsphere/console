@@ -1,7 +1,7 @@
 import { Fragment, createContext, useContext, useMemo, useState } from "react";
 import { Link, useSearchParams } from "@swiss/lib/host";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, ChartColumn, ExternalLink, LayoutGrid, Search, Table2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChartColumn, ExternalLink, Eye, LayoutGrid, Rocket, RotateCcw, Search, Table2 } from "lucide-react";
 import { api, type IndexVariant } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button, buttonVariants } from "@swiss/components/ui/button";
@@ -324,7 +324,7 @@ function Toolbar({
         </select>
         <ViewSwitch view={f.view} onChange={(view) => set({ view })} />
         <Button variant="ghost" size="sm" onClick={reset}>
-          Reset
+          <RotateCcw className="size-4" /> Reset
         </Button>
       </div>
     </div>
@@ -561,7 +561,7 @@ function ModelCard({ f, set }: { f: Facets; set: Update }) {
         <DeployButton f={f} />
         <Link to={withCatalog(`/catalog/${encodeURIComponent(m.name)}`, catalog)}>
           <Button size="sm" variant="ghost">
-            Details
+            <Eye className="size-4" /> Details
           </Button>
         </Link>
         {report && (
@@ -745,14 +745,16 @@ function DeployButton({ f }: { f: Facets }) {
   if (only) {
     return (
       <Link to={deployTo(m.name, only.id, catalog)}>
-        <Button size="sm">Deploy</Button>
+        <Button size="sm">
+          <Rocket className="size-4" /> Deploy
+        </Button>
       </Link>
     );
   }
   return (
     <>
       <Button size="sm" onClick={() => setChoosing(true)}>
-        Deploy
+        <Rocket className="size-4" /> Deploy
       </Button>
       <Dialog
         open={choosing}
@@ -798,7 +800,9 @@ function DeployButton({ f }: { f: Facets }) {
                       </a>
                     )}
                     <Link to={deployTo(m.name, v.id, catalog)}>
-                      <Button size="sm">Deploy</Button>
+                      <Button size="sm">
+                        <Rocket className="size-4" /> Deploy
+                      </Button>
                     </Link>
                   </div>
                 </div>

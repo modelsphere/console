@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, X } from "lucide-react";
-import { deployApi, type SLOBound, type SLOConfig, type SLOMetric, type SLOSection } from "@swiss/lib/api";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { Loader2, Plus, RotateCcw, Save, X } from "lucide-react";
+import { deployApi, type ObjectResult, type SLOBound, type SLOConfig, type SLOMetric, type SLOSection } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
+import { Dialog } from "@swiss/components/ui/dialog";
 import { HoverHint } from "@swiss/components/ui/hint";
 import { Input } from "@swiss/components/ui/input";
 import { Switch } from "@swiss/components/ui/switch";
@@ -22,15 +23,7 @@ const TYPES = ["avg", "p50", "p80", "p90", "p95", "p99"];
 // stores priority as high or normal and no tier in between, a save merges so
 // only Reset clears a field, and it never creates a requirement — so with none
 // installed there is nothing here to edit.
-export function SLOCard({
-  namespace,
-  release,
-  canEdit,
-}: {
-  namespace: string;
-  release: string;
-  canEdit: boolean;
-}) {
+function useSLOForm(namespace: string, release: string, onSaved?: () => void) {
   const qc = useQueryClient();
   const slo = useQuery({
     queryKey: ["slo", namespace, release],
@@ -39,29 +32,36 @@ export function SLOCard({
   });
   const [form, setForm] = useState<Draft | null>(null);
 
+  // Wait out a refetch: a popup opened a second time starts from the cache,
+  // and a draft seeded from it would save over whatever changed since.
   useEffect(() => {
-    if (!slo.data || form) return;
+    if (!slo.data || slo.isFetching || form) return;
     setForm(draftOf(slo.data));
-  }, [slo.data, form]);
+  }, [slo.data, slo.isFetching, form]);
 
-  // The outcome goes to a toast rather than into the card: a save is the one
+  const written = (next: SLOConfig) => {
+    qc.setQueryData(["slo", namespace, release], next);
+    setForm(draftOf(next));
+    void followWrite(qc, namespace, release);
+  };
+
+  // The outcome goes to a toast rather than into the form: a save is the one
   // thing here that reaches the cluster, and it should say so where it is seen
-  // even if the card has scrolled away by the time the server answers.
+  // even if the form has scrolled away or closed by the time the server answers.
   const toast = useToast();
   const save = useMutation({
     mutationFn: () => deployApi.saveSLO(namespace, release, editOf(form!)),
     onSuccess: (next) => {
-      qc.setQueryData(["slo", namespace, release], next);
-      setForm(draftOf(next));
+      written(next);
       toast.success(`SLO saved for ${next.route || release}.`);
+      onSaved?.();
     },
     onError: (e) => toast.error(`SLO not saved: ${messageOf(e)}`),
   });
   const reset = useMutation({
     mutationFn: () => deployApi.resetSLO(namespace, release),
     onSuccess: (next) => {
-      qc.setQueryData(["slo", namespace, release], next);
-      setForm(draftOf(next));
+      written(next);
       toast.success(`SLO for ${next.route || release} reset to the CRD defaults.`);
     },
     onError: (e) => toast.error(`SLO not reset: ${messageOf(e)}`),
@@ -71,132 +71,292 @@ export function SLOCard({
   // already on the object is a write nobody asked for, and on a requirement
   // parked at a tier this API cannot express it would quietly flatten it.
   const stored = useMemo(() => (slo.data ? draftOf(slo.data) : null), [slo.data]);
-
-  if (slo.isPending || !form) return <Loading what="SLO" />;
-  if (slo.error) return <ErrorState what="SLO" error={slo.error} />;
-
-  const data = slo.data!;
-  const name = data.route || release;
-  const busy = save.isPending || reset.isPending;
-  // Nothing to edit until the requirement exists: this API only ever patches.
-  const editable = canEdit && data.found;
   const changed = JSON.stringify(form) !== JSON.stringify(stored);
+  return { slo, form, setForm, save, reset, changed, busy: save.isPending || reset.isPending };
+}
+
+type SLOForm = ReturnType<typeof useSLOForm>;
+
+const FOLLOW_MS = [0, 1000, 2000, 3000, 4000];
+
+// The cluster resources panel reads the LLMSLORequirement itself, and its 15s
+// poll is too slow to show an edit. Refetch now, and keep refetching for a few
+// seconds until the spec moves: the first read can still land before it does.
+async function followWrite(qc: QueryClient, namespace: string, release: string) {
+  const queryKey = ["objects", namespace, release];
+  const spec = () =>
+    JSON.stringify(
+      qc.getQueryData<{ objects?: ObjectResult[] }>(queryKey)?.objects?.find((o) => o.ref.kind === "LLMSLORequirement")?.live
+        ?.spec,
+    );
+  const before = spec();
+  // Anything not on screen just refetches when it next mounts.
+  await qc.invalidateQueries({ queryKey, refetchType: "none" });
+  for (const ms of FOLLOW_MS) {
+    if (ms) await new Promise((r) => setTimeout(r, ms));
+    if (!qc.getQueryCache().find({ queryKey, type: "active" })) return;
+    await qc.refetchQueries({ queryKey, type: "active" });
+    if (spec() !== before) return;
+  }
+}
+
+export function SLOCard({
+  namespace,
+  release,
+  canEdit,
+}: {
+  namespace: string;
+  release: string;
+  canEdit: boolean;
+}) {
+  const f = useSLOForm(namespace, release);
+  const { slo, form } = f;
+
+  if (!form) return slo.error ? <ErrorState what="SLO" error={slo.error} /> : <Loading what="SLO" />;
+
+  const name = slo.data?.route || release;
 
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <HoverHint
-            text={`What the scaler reads to size ${name}: the latency and throughput it has to hold, and the replica bounds it may move between. A save sends only the fields that have a value, so emptying one leaves what is stored untouched; Reset returns every field to the CRD defaults.`}
-          >
+          <HoverHint text={hintOf(name)}>
             <CardTitle className="text-base">SLO</CardTitle>
           </HoverHint>
-          {!data.found && <Badge variant="warning">not registered</Badge>}
-          {data.found && !canEdit && <Badge variant="muted">read-only</Badge>}
-          {data.found && form.highPriority && <Badge variant="success">high priority</Badge>}
+          <SLOBadges f={f} canEdit={canEdit} />
         </div>
         {canEdit && (
           <div className="flex shrink-0 gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => reset.mutate()}
-              disabled={busy || !data.found}
-              title="Return every field to the CRD defaults"
-            >
-              {reset.isPending ? "Resetting…" : "Reset"}
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => save.mutate()}
-              disabled={busy || !editable || !changed || !canSave(form)}
-            >
-              {save.isPending ? "Saving…" : "Save"}
-            </Button>
+            <ResetButton f={f} />
+            <SaveButton f={f} canEdit={canEdit} />
           </div>
         )}
       </CardHeader>
 
       <CardContent className="divide-y pt-0">
-        {!data.found && (
-          <p className="pb-4 text-sm text-muted-foreground">
-            The chart creates this requirement at install — the SLO API only edits one that exists.
-          </p>
-        )}
-
-        <Row label="Priority" hint="High is CRD priority 10, normal 0. The SLO API stores no tier in between, so 1..9 can only be set on the CR itself.">
-          <div className="flex h-9 items-center gap-2.5">
-            <Switch
-              checked={form.highPriority}
-              disabled={!editable}
-              onChange={(highPriority) => setForm({ ...form, highPriority })}
-              label="high priority"
-            />
-            <span className={cn("text-sm", !form.highPriority && "text-muted-foreground")}>
-              {form.highPriority ? "high" : "normal"}
-            </span>
-          </div>
-        </Row>
-
-        <Row
-          label="Bounds"
-          hint="The floor the scaler never goes below and the ceiling it never passes. The floor counts replicas or concurrency; the ceiling is always replicas. An empty ceiling leaves the stored value alone — only Reset clears it."
-        >
-          <div className="flex items-center gap-2">
-            <Select
-              value={form.minType}
-              disabled={!editable}
-              options={["replica", "concurrency"]}
-              className="w-32"
-              onChange={(minType) => setForm({ ...form, minType })}
-            />
-            <Input
-              value={form.minValue}
-              disabled={!editable}
-              inputMode="numeric"
-              placeholder="min"
-              aria-label="minimum value"
-              className="min-w-0 flex-1"
-              onChange={(e) => setForm({ ...form, minValue: e.target.value })}
-            />
-            <span className="shrink-0 text-xs text-muted-foreground">to</span>
-            <Input
-              value={form.maxValue}
-              disabled={!editable}
-              inputMode="numeric"
-              placeholder="none"
-              aria-label="maximum replicas"
-              className="min-w-0 flex-1"
-              onChange={(e) => setForm({ ...form, maxValue: e.target.value })}
-            />
-            <span className="w-8 shrink-0" aria-hidden />
-          </div>
-        </Row>
-
-        <Row label="TTFT" hint="Time to first token, in seconds. A ceiling: a percentile above it is a violation, and the scaler adds capacity.">
-          <Metrics
-            label="TTFT"
-            unit="s"
-            rows={form.ttft}
-            disabled={!editable}
-            onChange={(ttft) => setForm({ ...form, ttft })}
-          />
-        </Row>
-
-        <Row label="OTPS" hint="Output tokens per second, per request. A floor: a percentile below it is a violation, and the scaler adds capacity.">
-          <Metrics
-            label="OTPS"
-            unit="tok/s"
-            rows={form.otps}
-            disabled={!editable}
-            onChange={(otps) => setForm({ ...form, otps })}
-          />
-        </Row>
-
-        {/* A write's outcome is a toast now. Repeating it in the card would
-            report the same refusal twice, in two places, with two lifetimes. */}
+        <SLOFields f={f} canEdit={canEdit} />
       </CardContent>
     </Card>
+  );
+}
+
+export interface SLOTarget {
+  namespace: string;
+  release: string;
+}
+
+// The same form as SLOCard, as a popup: editing the SLO is an action on the
+// release, not a section of its page. Save closes it; Reset keeps it open so
+// the defaults it put back can be read.
+export function SLODialog({
+  target,
+  canEdit,
+  onClose,
+}: {
+  target: SLOTarget | null;
+  canEdit: boolean;
+  onClose: () => void;
+}) {
+  if (!target) return null;
+  return <SLODialogBody key={`${target.namespace}/${target.release}`} {...target} canEdit={canEdit} onClose={onClose} />;
+}
+
+function SLODialogBody({
+  namespace,
+  release,
+  canEdit,
+  onClose,
+}: SLOTarget & { canEdit: boolean; onClose: () => void }) {
+  const f = useSLOForm(namespace, release, onClose);
+  const { slo, form } = f;
+  const ready = !!form;
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      size="md"
+      title={
+        <HoverHint text={hintOf(slo.data?.route || release)}>
+          <span>Configure SLO</span>
+        </HoverHint>
+      }
+      subtitle={
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-medium text-foreground">{release}</span>
+          <Badge variant="outline">{namespace}</Badge>
+          {ready && <SLOBadges f={f} canEdit={canEdit} />}
+        </div>
+      }
+      footer={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>{canEdit && ready && <ResetButton f={f} />}</div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>
+              {canEdit ? "Cancel" : "Close"}
+            </Button>
+            {canEdit && ready && <SaveButton f={f} canEdit={canEdit} />}
+          </div>
+        </div>
+      }
+    >
+      {!form ? (
+        slo.error ? <ErrorState what="SLO" error={slo.error} /> : <Loading what="SLO" />
+      ) : (
+        <div className="-my-3 divide-y">
+          <SLOFields f={f} canEdit={canEdit} />
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+function hintOf(name: string) {
+  return `What the scaler reads to size ${name}: the latency and throughput it has to hold, and the replica bounds it may move between. A save sends only the fields that have a value, so emptying one leaves what is stored untouched; Reset returns every field to the CRD defaults.`;
+}
+
+function SLOBadges({ f, canEdit }: { f: SLOForm; canEdit: boolean }) {
+  const data = f.slo.data;
+  if (!data) return null;
+  return (
+    <>
+      {!data.found && <Badge variant="warning">not registered</Badge>}
+      {data.found && !canEdit && <Badge variant="muted">read-only</Badge>}
+      {data.found && f.form?.highPriority && <Badge variant="success">high priority</Badge>}
+    </>
+  );
+}
+
+function ResetButton({ f }: { f: SLOForm }) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => f.reset.mutate()}
+      disabled={f.busy || !f.slo.data?.found}
+      title="Return every field to the CRD defaults"
+    >
+      {f.reset.isPending ? (
+        <>
+          <Loader2 className="size-4 animate-spin" /> Resetting…
+        </>
+      ) : (
+        <>
+          <RotateCcw className="size-4" /> Reset
+        </>
+      )}
+    </Button>
+  );
+}
+
+function SaveButton({ f, canEdit }: { f: SLOForm; canEdit: boolean }) {
+  // Nothing to edit until the requirement exists: this API only ever patches.
+  const editable = canEdit && !!f.slo.data?.found;
+  return (
+    <Button
+      size="sm"
+      onClick={() => f.save.mutate()}
+      disabled={f.busy || !editable || !f.changed || !f.form || !canSave(f.form)}
+    >
+      {f.save.isPending ? (
+        <>
+          <Loader2 className="size-4 animate-spin" /> Saving…
+        </>
+      ) : (
+        <>
+          <Save className="size-4" /> Save
+        </>
+      )}
+    </Button>
+  );
+}
+
+function SLOFields({ f, canEdit }: { f: SLOForm; canEdit: boolean }) {
+  const form = f.form!;
+  const setForm = f.setForm;
+  const found = !!f.slo.data?.found;
+  const editable = canEdit && found;
+
+  return (
+    <>
+      {!found && (
+        <p className="pb-4 text-sm text-muted-foreground">
+          The chart creates this requirement at install — the SLO API only edits one that exists.
+        </p>
+      )}
+
+      <Row label="Priority" hint="High is CRD priority 10, normal 0. The SLO API stores no tier in between, so 1..9 can only be set on the CR itself.">
+        <div className="flex h-9 items-center gap-2.5">
+          <Switch
+            checked={form.highPriority}
+            disabled={!editable}
+            onChange={(highPriority) => setForm({ ...form, highPriority })}
+            label="high priority"
+          />
+          <span className={cn("text-sm", !form.highPriority && "text-muted-foreground")}>
+            {form.highPriority ? "high" : "normal"}
+          </span>
+        </div>
+      </Row>
+
+      <Row
+        label="Bounds"
+        hint="The floor the scaler never goes below and the ceiling it never passes. The floor counts replicas or concurrency; the ceiling is always replicas. An empty ceiling leaves the stored value alone — only Reset clears it."
+      >
+        <div className="flex items-center gap-2">
+          <Select
+            value={form.minType}
+            disabled={!editable}
+            options={["replica", "concurrency"]}
+            className="w-32"
+            onChange={(minType) => setForm({ ...form, minType })}
+          />
+          <Input
+            value={form.minValue}
+            disabled={!editable}
+            inputMode="numeric"
+            placeholder="min"
+            aria-label="minimum value"
+            className="min-w-0 flex-1"
+            onChange={(e) => setForm({ ...form, minValue: e.target.value })}
+          />
+          <span className="shrink-0 text-xs text-muted-foreground">to</span>
+          <Input
+            value={form.maxValue}
+            disabled={!editable}
+            inputMode="numeric"
+            placeholder="none"
+            aria-label="maximum replicas"
+            className="min-w-0 flex-1"
+            onChange={(e) => setForm({ ...form, maxValue: e.target.value })}
+          />
+          <span className="w-8 shrink-0" aria-hidden />
+        </div>
+      </Row>
+
+      <Row label="TTFT" hint="Time to first token, in seconds. A ceiling: a percentile above it is a violation, and the scaler adds capacity.">
+        <Metrics
+          label="TTFT"
+          unit="s"
+          rows={form.ttft}
+          disabled={!editable}
+          onChange={(ttft) => setForm({ ...form, ttft })}
+        />
+      </Row>
+
+      <Row label="OTPS" hint="Output tokens per second, per request. A floor: a percentile below it is a violation, and the scaler adds capacity.">
+        <Metrics
+          label="OTPS"
+          unit="tok/s"
+          rows={form.otps}
+          disabled={!editable}
+          onChange={(otps) => setForm({ ...form, otps })}
+        />
+      </Row>
+
+      {/* A write's outcome is a toast. Repeating it here would report the
+          same refusal twice, in two places, with two lifetimes. */}
+    </>
   );
 }
 

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "@swiss/lib/host";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -9,7 +9,7 @@ import {
   CircleX,
   History,
   Loader2,
-  Target,
+  Settings2,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
@@ -35,7 +35,7 @@ import { Provenance } from "@swiss/components/Provenance";
 import { ReleaseObjects, pick, useReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { AccessPoint } from "@swiss/components/Endpoint";
 import { ReleaseStatus } from "@swiss/components/ReleaseStatus";
-import { SLOCard } from "@swiss/components/SLOCard";
+import { SLODialog } from "@swiss/components/SLOCard";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { cn, timeAgo } from "@swiss/lib/utils";
 
@@ -46,7 +46,7 @@ export function DeploymentDetail() {
   const status = useQuery({
     queryKey: ["status", namespace, release],
     queryFn: () => api.status(namespace, release),
-    refetchInterval: 15_000,
+    refetchOnWindowFocus: false,
   });
   // A release swiss did not deploy has no plan beside it. That is the untracked
   // row, and it is not an error here -- the page just shows less.
@@ -55,21 +55,32 @@ export function DeploymentDetail() {
     queryFn: () => api.releasePlan(namespace, release),
     retry: false,
   });
-  const objects = useReleaseObjects(namespace, release);
+  const objects = useReleaseObjects(namespace, release, false);
   const [driftOpen, setDriftOpen] = useState(false);
-  const sloRef = useRef<HTMLDivElement>(null);
-  const [sloFlash, setSloFlash] = useState(false);
+  const [sloOpen, setSloOpen] = useState(false);
+  const qc = useQueryClient();
+  // One loop for what the page keeps current, so the cards move together.
+  // Paused while the tab is hidden, and caught up the moment it is shown.
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      for (const key of ["status", "objects"])
+        qc.refetchQueries({ queryKey: [key, namespace, release], type: "active" }, { cancelRefetch: false });
+    };
+    const id = setInterval(tick, 15_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [qc, namespace, release]);
 
   if (status.isPending) return <Loading what={release} />;
   if (status.error) return <ErrorState what={release} error={status.error} />;
 
   const s = status.data;
   const showSLO = s.planStatus?.phase === "applied" && sloEnabled(plan.data);
-  const jumpToSLO = () => {
-    sloRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setSloFlash(true);
-    setTimeout(() => setSloFlash(false), 1500);
-  };
+  const openSLO = () => setSloOpen(true);
 
   return (
     <div className="space-y-5">
@@ -98,8 +109,8 @@ export function DeploymentDetail() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {showSLO && (
-            <Button size="sm" variant="outline" onClick={jumpToSLO}>
-              <Target className="size-4" /> Configure SLO
+            <Button size="sm" variant="outline" onClick={openSLO}>
+              <Settings2 className="size-4" /> Configure SLO
             </Button>
           )}
           {/* Revisions are rows in the log now: an applied revision and the
@@ -150,21 +161,14 @@ export function DeploymentDetail() {
 
       <InstallStatus status={s} objects={objects.data?.objects} />
 
-      <ReleaseObjects namespace={namespace} release={release} />
+      <ReleaseObjects namespace={namespace} release={release} onConfigureSLO={showSLO ? openSLO : undefined} />
+      <SLODialog
+        target={sloOpen && showSLO ? { namespace, release } : null}
+        canEdit={!!cluster.data?.allowDeploy}
+        onClose={() => setSloOpen(false)}
+      />
 
-      {showSLO && (
-        <div
-          ref={sloRef}
-          className={cn(
-            "scroll-mt-16 rounded-xl transition-shadow duration-500",
-            sloFlash && "ring-2 ring-primary ring-offset-2 ring-offset-background",
-          )}
-        >
-          <SLOCard namespace={namespace} release={release} canEdit={!!cluster.data?.allowDeploy} />
-        </div>
-      )}
-
-      <ReleaseStatus namespace={namespace} release={release} stats={false} access={false} />
+      <ReleaseStatus namespace={namespace} release={release} stats={false} access={false} poll={false} />
 
       {plan.data && (
         <Card>

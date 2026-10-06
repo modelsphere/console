@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, TriangleAlert } from "lucide-react";
+import { CircleCheck, FlaskConical, Layers, Loader2, Rocket, TriangleAlert, Undo2 } from "lucide-react";
 import { api, deployApi, type ApplyResult, type DiffResult, type Plan } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
@@ -192,6 +192,13 @@ export function Pipeline({
           }}
           disabled={composeDisabled || composing}
         >
+          {composing ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : rollbackTo ? (
+            <Undo2 className="size-4" />
+          ) : (
+            <Layers className="size-4" />
+          )}
           {composing
             ? "Composing…"
             : rollbackTo
@@ -448,6 +455,7 @@ function Action({
         <div className="ml-auto">
           {!dryRunDone ? (
             <Button onClick={onDryRun} disabled={diffPending}>
+              {diffPending ? <Loader2 className="size-4 animate-spin" /> : <FlaskConical className="size-4" />}
               {diffPending ? "Running…" : known ? `${actionLabel} (dry run)` : "Dry run"}
             </Button>
           ) : (
@@ -456,6 +464,13 @@ function Action({
               onClick={onApply}
               disabled={!canApply || applyPending}
             >
+              {applyPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : rollbackTo ? (
+                <Undo2 className="size-4" />
+              ) : (
+                <Rocket className="size-4" />
+              )}
               {applyPending ? "Submitting…" : actionLabel}
             </Button>
           )}

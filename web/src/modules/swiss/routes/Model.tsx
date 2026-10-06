@@ -1,6 +1,6 @@
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Rocket } from "lucide-react";
 import { api } from "@swiss/lib/api";
 import { comparison, formatUplift, reportLink, variantKind, workloadSummary } from "@swiss/lib/catalog";
 import { Button } from "@swiss/components/ui/button";
@@ -109,7 +109,9 @@ export function Model() {
                     selected,
                   )}
                 >
-                  <Button size="sm">Deploy</Button>
+                  <Button size="sm">
+                    <Rocket className="size-4" /> Deploy
+                  </Button>
                 </Link>
               }
             />

@@ -24,7 +24,7 @@ export interface Toaster {
   error: (text: string) => void;
 }
 
-const SUCCESS_MS = 3500;
+const SUCCESS_MS = 6000;
 
 const Ctx = createContext<Toaster | null>(null);
 
@@ -39,18 +39,34 @@ export function useToast(): Toaster {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<Item[]>([]);
   const nextId = useRef(0);
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
   const dismiss = useCallback((id: number) => {
+    clearTimeout(timers.current.get(id));
+    timers.current.delete(id);
     setItems((list) => list.filter((t) => t.id !== id));
   }, []);
+
+  // A pointer on a success holds it: someone reading it has not finished yet.
+  const hold = useCallback((id: number) => {
+    clearTimeout(timers.current.get(id));
+    timers.current.delete(id);
+  }, []);
+  const release = useCallback(
+    (id: number) => {
+      hold(id);
+      timers.current.set(id, setTimeout(() => dismiss(id), SUCCESS_MS));
+    },
+    [dismiss, hold],
+  );
 
   const push = useCallback(
     (kind: Kind, text: string) => {
       const id = ++nextId.current;
       setItems((list) => [...list, { id, kind, text }]);
-      if (kind === "success") setTimeout(() => dismiss(id), SUCCESS_MS);
+      if (kind === "success") release(id);
     },
-    [dismiss],
+    [release],
   );
 
   const api = useMemo<Toaster>(
@@ -64,14 +80,24 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <Ctx.Provider value={api}>
       {children}
-      {createPortal(<Viewport items={items} onDismiss={dismiss} />, document.body)}
+      {createPortal(<Viewport items={items} onDismiss={dismiss} onHold={hold} onRelease={release} />, document.body)}
     </Ctx.Provider>
   );
 }
 
 // Portalled and fixed, so a card with its own overflow or stacking context
 // cannot clip or bury it. Above the hover hints, which sit at z-50.
-function Viewport({ items, onDismiss }: { items: Item[]; onDismiss: (id: number) => void }) {
+function Viewport({
+  items,
+  onDismiss,
+  onHold,
+  onRelease,
+}: {
+  items: Item[];
+  onDismiss: (id: number) => void;
+  onHold: (id: number) => void;
+  onRelease: (id: number) => void;
+}) {
   if (items.length === 0) return null;
   return (
     <div className="pointer-events-none fixed inset-x-0 top-4 z-[60] flex flex-col items-center gap-2 px-4">
@@ -85,6 +111,8 @@ function Viewport({ items, onDismiss }: { items: Item[]; onDismiss: (id: number)
             key={t.id}
             role={bad ? "alert" : "status"}
             aria-live={bad ? "assertive" : "polite"}
+            onMouseEnter={bad ? undefined : () => onHold(t.id)}
+            onMouseLeave={bad ? undefined : () => onRelease(t.id)}
             className={cn(
               "pointer-events-auto flex w-full max-w-md items-start gap-2.5 rounded-lg border p-3",
               "bg-card text-sm text-card-foreground shadow-lg",
