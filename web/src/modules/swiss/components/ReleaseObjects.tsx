@@ -396,16 +396,6 @@ function SLOPanel({
           </Button>
         )
       }
-      state={
-        spec &&
-        (suspended ? (
-          <Badge variant="warning">suspended</Badge>
-        ) : priority > 0 ? (
-          <Badge variant="success">priority {priority}</Badge>
-        ) : (
-          <Badge variant="muted">best effort</Badge>
-        ))
-      }
     >
       {spec && (
         <>
@@ -418,6 +408,15 @@ function SLOPanel({
           </Stats>
 
           <Facts>
+            <Fact label="Class">
+              {suspended ? (
+                <Badge variant="warning">suspended</Badge>
+              ) : priority > 0 ? (
+                <Badge variant="success">priority {priority}</Badge>
+              ) : (
+                <Badge variant="muted">best effort</Badge>
+              )}
+            </Fact>
             <Fact label="Service id">
               <Mono>{spec.serviceId}</Mono>
             </Fact>
@@ -619,11 +618,16 @@ function ObjectCard({
           <div className="min-w-0">
             <div className="text-sm font-semibold">{title}</div>
             <div
-              className="truncate font-mono text-xs text-muted-foreground"
+              className="font-mono text-xs break-words text-muted-foreground"
               title={result?.ref.apiVersion}
             >
               {kind}
-              {result && ` · ${result.ref.name}`}
+              {result && (
+                <>
+                  {" · "}
+                  <span className="inline-block max-w-full break-words">{result.ref.name}</span>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Check as CheckIcon, CircleCheck, CircleX, Copy, ExternalLink, Globe, KeyRound, Loader2, Send } from "lucide-react";
+import { Activity, Check as CheckIcon, CircleCheck, CircleX, Copy, ExternalLink, Globe, KeyRound, Loader2, Send } from "lucide-react";
 import {
   api,
   deployApi,
@@ -187,7 +187,9 @@ function ServingCheck({ namespace, release }: { namespace: string; release: stri
             <Loader2 className="size-4 animate-spin" /> Checking…
           </>
         ) : (
-          "Check service"
+          <>
+            <Activity className="size-4" /> Check service
+          </>
         )}
       </Button>
 

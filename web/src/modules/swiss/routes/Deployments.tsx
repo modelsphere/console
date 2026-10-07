@@ -137,10 +137,10 @@ function Row({ d, onConfigureSLO }: { d: Deployment; onConfigureSLO: () => void 
           {d.variant && <span className="text-muted-foreground"> · {d.variant}</span>}
         </span>
       </TableCell>
-      <TableCell className="font-mono text-xs text-muted-foreground">
+      <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
         {d.route || "—"}
       </TableCell>
-      <TableCell className="text-muted-foreground">{d.chart}</TableCell>
+      <TableCell className="whitespace-nowrap text-muted-foreground">{d.chart}</TableCell>
       <TableCell className="tabular-nums">{d.revision}</TableCell>
       <TableCell>
         <StatusBadge status={d.status} />
