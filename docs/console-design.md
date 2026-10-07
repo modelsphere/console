@@ -417,11 +417,11 @@ the Playground is a conversation, streaming, for anyone with the permission.
 
 | Concern | Decision |
 |---|---|
-| Where it runs | `web/src/modules/playground/`, mounted at `/playground`; both pages are lazy-loaded (Markdown and highlighting are most of the weight) |
-| Pages | `/playground` — one conversation; `/playground/compare` — 2–4 columns, one prompt sent to every column, shared parameters in a dialog |
+| Where it runs | `web/src/modules/playground/`, mounted at `/playground`; the page is lazy-loaded (Markdown and highlighting are most of the weight) |
+| Pages | `/playground` — one conversation. A compare page (2–4 columns, one prompt to each) was removed to get the one conversation right first |
 | Which backend | `llm` → the gateway, resolved from the cluster; one picker lists every model on every route (see "Models across routes") |
 | Gateway key | read by console from the Secret the site profile names (or `apiKeyEnv`). Never in a values file, never in a chart value, never in the browser |
-| Conversation identity | each conversation (each column, in compare) sends its own `X-Session-Id`; the gateway pins it to one engine, so its prefix cache stays warm across turns |
+| Conversation identity | each conversation sends its own `X-Session-Id`; the gateway pins it to one engine, so its prefix cache stays warm across turns |
 | Parameters | system prompt, temperature, top_p, max_tokens, seed, stop (one per line), frequency/presence penalty, reasoning_effort; an empty field is left out of the request, so the engine's default applies |
 | Token counts | the page sends `stream_options.include_usage`: openresty injects it only on aggregate routes, and autoconfig's per-model routes are not |
 | Stats per answer | TTFT, total time, input/output tokens, tok/s over the decoding window (after TTFT), and cache hit rate = `prompt_tokens_details.cached_tokens / prompt_tokens`, shown only when the engine reports it |
@@ -605,7 +605,7 @@ requests carry the same headers Global's apiserver sets.
 | P3 | Full roles: authorizer + role/binding CRUD + role/permission UI. |
 | P4 | Federation: module shell, stack aligned with swiss, backend proxy with identity headers and per-backend RBAC. **(done)** |
 | P5 | swiss module: copy into `modules/swiss`, mounted through `lib/host.ts` (see "Bringing swiss in"). **(done; unmounted again once Model Serving covered every page)** Then: swiss prepares its frontend (table above) and exports `openapi.json`; CODEOWNERS. |
-| P6 | Playground: chat module, `llm` backend resolved from the cluster (site profile or route ConfigMap) with the gateway key read from its Secret, streaming SSE end to end. **(done)** Then: Markdown, compare page, full parameters, stats, view code. **(done)** The router: `/v1`, API keys, usage metrics. **(done)** One-command install. **(done; its built-in gateway and CPU demo model since removed: models come from swiss)** |
+| P6 | Playground: chat module, `llm` backend resolved from the cluster (site profile or route ConfigMap) with the gateway key read from its Secret, streaming SSE end to end. **(done)** Then: Markdown, compare page (since removed), full parameters, stats, view code. **(done)** The router: `/v1`, API keys, usage metrics. **(done)** One-command install. **(done; its built-in gateway and CPU demo model since removed: models come from swiss)** |
 | P7 | Container management modules, moved over from Rise Global. |
 
 Each phase is independently committable and verifiable.

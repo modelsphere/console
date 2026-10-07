@@ -1,6 +1,6 @@
 # Playground
 
-The Playground lets you talk to deployed models in the browser, to check their answers and compare them. Requests go through the console to the inference gateway; the gateway key stays on the server and never reaches the browser.
+The Playground lets you talk to deployed models in the browser, to check their answers. Requests go through the console to the inference gateway; the gateway key stays on the server and never reaches the browser.
 
 ## Chat
 
@@ -26,14 +26,6 @@ A conversation keeps one session ID, so the gateway pins it to one inference ins
 - **Max output tokens**, and under "More" temperature, top_p, seed, stop sequences and penalties.
 - Empty parameters are not sent; the engine uses its own defaults.
 - **Reset** restores the defaults and keeps the system prompt.
-
-## Compare models
-
-Open [Compare models](/playground/compare):
-
-- **Add model** to compare up to 4 models side by side.
-- One message goes to all of them at once; each column shows its own answer and numbers.
-- Parameters apply to every model, so you compare models, not settings.
 
 ## View code
 

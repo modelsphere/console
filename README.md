@@ -23,7 +23,7 @@ Console is a Go backend-for-frontend with a React UI compiled into the same bina
 
 - **Identity and access control.** Users, roles and login history stored as Kubernetes CRDs; OAuth2 password login with HS256 tokens; Kubernetes-RBAC-style roles that gate both pages and backend APIs. The seeded administrator is asked to set a password on first login.
 - **Model deployment.** With [Swiss](https://github.com/modelsphere/swiss) on the cluster, browse the model catalog and deploy, upgrade and uninstall models, with a diff before every change and the GPU nodes they run on.
-- **Playground.** Streaming chat with any model behind the gateway, a 2–4 column compare view, full sampling parameters, per-answer TTFT, tokens/s and cache hit rate, reasoning output, and "view code" for cURL, Python and Node.js.
+- **Playground.** Streaming chat with the models deployed in Model Serving, full sampling parameters, per-answer TTFT, tokens/s and cache hit rate, reasoning output, and "view code" for cURL, Python and Node.js.
 - **OpenAI-compatible router.** Programs call `/v1` with API keys that administrators issue — with expiry and optional per-model scope. Keys are stored hashed; usage is exported as Prometheus metrics.
 - **Gateway discovery.** The inference entrypoint, routes and gateway key are read from the cluster (Swiss's site profile or the route ConfigMap) and followed as they change — no URLs or keys copied into configuration.
 - **One `helm install`.** The image and chart are published together to GHCR; point Console at Swiss and the models deployed there are in the Playground and `/v1`.

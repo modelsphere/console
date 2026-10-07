@@ -12,7 +12,7 @@ pick a model -> deploy an inference service -> wait until ready -> try it in the
 |---|---|---|
 | Pick and deploy a model | [Model Serving → Model Library](/inferences/catalog) | [Deploying models](/help/docs/deploy) |
 | Watch the rollout | [Model Serving → Inference Services](/inferences) | [Deploying models](/help/docs/deploy) |
-| Chat and compare models | [Playground → Chat](/playground) | [Playground](/help/docs/playground) |
+| Chat with a model | [Playground → Chat](/playground) | [Playground](/help/docs/playground) |
 | Issue keys | [Router → API Keys](/router/api-keys) | [Calling the API](/help/docs/api) |
 | Manage users and roles | [Access Control → Users](/iam/users) | [Access control](/help/docs/access-control) |
 
@@ -37,7 +37,7 @@ pick a model -> deploy an inference service -> wait until ready -> try it in the
 | Group | Menus | Purpose |
 |---|---|---|
 | Model Serving | Inference Services, Model Library, Nodes, Activity, Site Profile | Deploy and manage inference services |
-| Playground | Chat, Compare models | Talk to models in the browser |
+| Playground | Chat | Talk to models in the browser |
 | Router | API Keys | Keys that programs use to call `/v1` |
 | Access Control | Users, Login History, Roles | Accounts and permissions |
 | Help | User Guide | This guide |

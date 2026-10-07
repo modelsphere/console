@@ -12,7 +12,7 @@ ModelSphere Console 是推理平台的统一入口：在这里部署模型、试
 |---|---|---|
 | 选模型、部署 | [模型服务 → 模型库](/inferences/catalog) | [部署模型](/help/docs/deploy) |
 | 查看部署进度 | [模型服务 → 推理服务](/inferences) | [部署模型](/help/docs/deploy) |
-| 在线对话、对比模型 | [Playground → 对话](/playground) | [Playground](/help/docs/playground) |
+| 在线对话 | [Playground → 对话](/playground) | [Playground](/help/docs/playground) |
 | 发放密钥 | [路由 → API 密钥](/router/api-keys) | [调用 API](/help/docs/api) |
 | 管理用户和角色 | [访问控制 → 用户](/iam/users) | [访问控制](/help/docs/access-control) |
 
@@ -37,7 +37,7 @@ ModelSphere Console 是推理平台的统一入口：在这里部署模型、试
 | 分组 | 菜单 | 用途 |
 |---|---|---|
 | 模型服务 | 推理服务、模型库、节点、操作记录、站点配置 | 部署和管理推理服务 |
-| Playground | 对话、多模型对比 | 在浏览器里直接和模型对话 |
+| Playground | 对话 | 在浏览器里直接和模型对话 |
 | 路由 | API 密钥 | 为程序发放调用 `/v1` 的密钥 |
 | 访问控制 | 用户、登录历史、角色 | 账号与权限管理 |
 | 帮助 | 使用文档 | 本文档 |

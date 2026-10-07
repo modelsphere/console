@@ -13,18 +13,6 @@
     "messages": "{n, plural, other {# 条消息}}",
     "emptyWithModel": "在下方输入消息，开始与 {model} 对话。"
   },
-  "compare": {
-    "title": "多模型对比",
-    "params": "参数",
-    "addModel": "添加模型",
-    "clearAll": "全部清空",
-    "fanOut": "{n, plural, other {同一条消息会同时发给 # 个模型}}",
-    "paramsHint": "对所有模型生效，保证比较的是模型而不是参数。",
-    "clear": "清空",
-    "remove": "移除",
-    "emptyReady": "在下方输入，所有模型同时回答。",
-    "emptyPick": "选择一个模型。"
-  },
   "composer": {
     "placeholderUser": "Enter 发送，Shift+Enter 换行",
     "placeholderAssistant": "以助手身份写一条消息：「添加」只追加，「发送」追加后请模型续写",

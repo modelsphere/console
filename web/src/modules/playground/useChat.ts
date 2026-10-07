@@ -175,7 +175,7 @@ function replaceLast(turns: Turn[], update: (turn: Turn) => Turn): Turn[] {
   return [...turns.slice(0, -1), update(turns[turns.length - 1])];
 }
 
-export function newId(): string {
+function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   return `pg-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 }

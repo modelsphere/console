@@ -27,6 +27,7 @@ chart's `appVersion`; the image and chart are released together under it.
 - GitHub Actions in `publish.yml` pinned to commit SHAs.
 
 ### Removed
+- The Playground's compare page (`/playground/compare`); the Playground is one conversation, Chat.
 - Model Deployment (`/swiss`, swiss's own pages mounted as a module): Model Serving (`/inferences`) covers every page. Old `/swiss` links land on the home page.
 - The chart's CPU demo model (`demo.enabled`, llama.cpp serving Qwen2.5-0.5B): the Playground lists Model Serving's deployments, so it never showed there. Models come from Swiss. action required if you set `demo.enabled`: the value is now ignored; delete the weights PVC the chart kept (`console-console-demo` for a release named `console`).
 - The proprietary `@riseaicloud/ui` and `@riseaicloud/tokens` (`web/vendor/`). The image now ships no closed code.

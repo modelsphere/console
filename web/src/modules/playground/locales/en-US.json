@@ -3,8 +3,7 @@
     "Playground": "Playground"
   },
   "menu": {
-    "index": "Chat",
-    "compare": "Compare models"
+    "index": "Chat"
   },
   "chat": {
     "title": "Chat",
@@ -19,18 +18,6 @@
     "generating": "Generating…",
     "messages": "{n, plural, one {# message} other {# messages}}",
     "emptyWithModel": "Type a message below to start chatting with {model}."
-  },
-  "compare": {
-    "title": "Compare models",
-    "params": "Parameters",
-    "addModel": "Add model",
-    "clearAll": "Clear all",
-    "fanOut": "{n, plural, one {Each message goes to # model} other {Each message goes to all # models at once}}",
-    "paramsHint": "Applies to every model, so the comparison is between models, not parameters.",
-    "clear": "Clear",
-    "remove": "Remove",
-    "emptyReady": "Type below; every model answers at once.",
-    "emptyPick": "Pick a model."
   },
   "composer": {
     "placeholderUser": "Enter to send, Shift+Enter for a new line",

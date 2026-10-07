@@ -1,12 +1,11 @@
 import { lazy, Suspense, type ReactNode } from "react";
-import { Columns2, MessageSquare } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import type { ConsoleModule } from "@/shell";
 import { useT } from "@/modules/playground/i18n";
 
 // Loaded on first visit: Markdown and syntax highlighting are most of the
 // module's weight, and no other page needs them.
 const Chat = lazy(() => import("@/modules/playground/Chat").then((m) => ({ default: m.Chat })));
-const Compare = lazy(() => import("@/modules/playground/Compare").then((m) => ({ default: m.Compare })));
 
 function Loading() {
   const t = useT();
@@ -24,6 +23,5 @@ export const playgroundModule: ConsoleModule = {
   frame: "flush",
   pages: [
     { path: "", element: page(<Chat />), permission: "playground.use", menu: { label: "对话", icon: MessageSquare } },
-    { path: "compare", element: page(<Compare />), permission: "playground.use", menu: { label: "多模型对比", icon: Columns2 } },
   ],
 };
