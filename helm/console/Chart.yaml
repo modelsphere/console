@@ -2,8 +2,8 @@ apiVersion: v2
 name: console
 description: ModelSphere community portal — identity (users, roles, login) and a federation gateway to Swiss and other backends.
 type: application
-version: 0.1.1
-appVersion: "0.1.1"
+version: 0.1.2
+appVersion: "0.1.2"
 home: https://github.com/modelsphere/console
 sources:
   - https://github.com/modelsphere/console
@@ -12,6 +12,6 @@ keywords: [console, llm, inference, portal]
 # render this chart until it has run, even with swiss.enabled off.
 dependencies:
   - name: swiss
-    version: 0.6.1  # always use a stable version
+    version: 0.6.3  # always use a stable version
     repository: oci://ghcr.io/modelsphere/charts
     condition: swiss.enabled

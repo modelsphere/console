@@ -1,6 +1,6 @@
 dependencies:
 - name: swiss
   repository: oci://ghcr.io/modelsphere/charts
-  version: 0.6.1
-digest: sha256:7f3520ec315f6d68cef5ffc955fd99e7bc89968ddf5dd5d0626aba600ae82310
-generated: "2026-10-03T06:02:33.257806785-07:00"
+  version: 0.6.3
+digest: sha256:d7d5f29c782c8b3106d2717e989ef799e48cb5a874fdef689cf392ca531db3e7
+generated: "2026-10-08T13:00:31.898408+08:00"
