@@ -258,7 +258,6 @@
       "target": "升级目标",
       "resources": "资源与调度",
       "routing": "路由",
-      "slo": "SLO 与监控",
       "advanced": "高级"
     },
     "fields": {

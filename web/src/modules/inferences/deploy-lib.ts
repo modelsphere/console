@@ -90,7 +90,7 @@ export function whatMoves(current: Plan, proposed: Plan, currentCatalog?: string
   ];
 }
 
-export const SECTIONS = ["basic", "resources", "routing", "slo", "advanced"] as const;
+export const SECTIONS = ["basic", "resources", "routing", "advanced"] as const;
 export type Section = (typeof SECTIONS)[number];
 
 // The service id names the helm release and the Services the chart renders

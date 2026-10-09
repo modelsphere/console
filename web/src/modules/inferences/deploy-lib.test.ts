@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { DiffResult, Plan } from "@swiss/lib/api";
-import { chartChoice, defaultServiceId, extraValue, fracOutOfRange, gpuOptions, initialValue, pipelineState, serviceIdError, whatMoves } from "@/modules/inferences/deploy-lib";
+import { SECTIONS, chartChoice, defaultServiceId, extraValue, fracOutOfRange, gpuOptions, initialValue, pipelineState, serviceIdError, whatMoves } from "@/modules/inferences/deploy-lib";
 
 const diff = (over: Partial<DiffResult>): DiffResult => ({ planHash: "h", changed: true, output: "", revision: 3, exists: true, ...over });
+
+describe("deploy sections", () => {
+  it("keeps SLO and monitoring controls in routing instead of a separate section", () => {
+    expect(SECTIONS).toEqual(["basic", "resources", "routing", "advanced"]);
+  });
+});
 
 describe("gpuOptions", () => {
   it("offers the supported products the cluster has, else all supported", () => {
