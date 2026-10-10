@@ -268,7 +268,6 @@
       "target": "Upgrade target",
       "resources": "Resources and scheduling",
       "routing": "Routing",
-      "slo": "SLO and monitoring",
       "advanced": "Advanced"
     },
     "fields": {

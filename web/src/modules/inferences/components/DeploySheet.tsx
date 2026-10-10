@@ -44,7 +44,7 @@ export type DeployTarget =
 
 const KEEP = "__keep";
 const ID_PREFIX = "deploy-sec-";
-const OPEN: Record<Section, boolean> = { basic: true, resources: true, routing: false, slo: false, advanced: false };
+const OPEN: Record<Section, boolean> = { basic: true, resources: true, routing: false, advanced: false };
 const REFRESH = [["status"], ["revisions"], ["releasePlan"], ["release-plan"], ["runs"], ["deployments"], ["objects"]];
 
 export function DeploySheet({ target, onClose }: { target: DeployTarget | null; onClose: () => void }) {

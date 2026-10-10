@@ -171,12 +171,6 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
             {sw("cart", f("cart"))}
           </FloatingField>
           <RouteExtras form={form} onChange={onChange} />
-        </>,
-      )}
-
-      {section(
-        "slo",
-        <>
           <FloatingField layout="inline" label={f("slo")} hint={f("sloHint")}>
             {sw("slo", f("slo"))}
           </FloatingField>
