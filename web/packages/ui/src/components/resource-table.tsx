@@ -299,6 +299,8 @@ export interface ResourceTableProps<T> {
   onSortChange?: (sort: SortState | null) => void
 
   // ── 分页 ────────────────────────────────────────────────────────────────
+  /** 关闭时显示全部传入数据，适用于首页等有界预览。 */
+  pagination?: boolean
   /** static：内部分页 + 内部排序；remote：只回调，数据原样渲染 */
   mode?: "static" | "remote"
   page?: number
@@ -404,6 +406,7 @@ export interface ResourceTableProps<T> {
   emptyDescription?: string
   /** 「一条都还没有」时的行动号召（通常是创建按钮） */
   emptyAction?: React.ReactNode
+  emptySize?: "default" | "compact"
 
   className?: string
 }
@@ -771,6 +774,7 @@ export function ResourceTable<T extends Record<string, any>>({
   sort: sortProp,
   onSortChange,
   mode = "static",
+  pagination = true,
   page: pageProp,
   pageSize: pageSizeProp,
   total: totalProp,
@@ -805,6 +809,7 @@ export function ResourceTable<T extends Record<string, any>>({
   emptyTitle,
   emptyDescription,
   emptyAction,
+  emptySize = "default",
   className,
 }: ResourceTableProps<T>) {
   const t = useUiT()
@@ -862,10 +867,10 @@ export function ResourceTable<T extends Record<string, any>>({
 
   const total = mode === "remote" ? (totalProp ?? 0) : sorted.length
   const pageRows = React.useMemo(() => {
-    if (mode === "remote") return sorted
+    if (mode === "remote" || !pagination) return sorted
     const start = (page - 1) * pageSize
     return sorted.slice(start, start + pageSize)
-  }, [sorted, mode, page, pageSize])
+  }, [sorted, mode, pagination, page, pageSize])
 
   // ── 选择：跨页保留 ───────────────────────────────────────────────────────
   // 存的是 rowKey 的值 + 行快照。存快照是为了批量动作能作用到**已翻走的页**上
@@ -1743,7 +1748,7 @@ export function ResourceTable<T extends Record<string, any>>({
               {/* 三种「没内容」的处境完全不同，文案与行动号召也不同 */}
               {!isInitialLoading && error && (
                 <TableRow>
-                  <TableCell colSpan={colSpan} className="py-14">
+                  <TableCell colSpan={colSpan} className={cn("px-0", emptySize === "compact" ? "py-6" : "py-14")}>
                     {/*
                       `sticky left-0` + 可视宽度：这个 td 的宽度是**整张表**的宽度
                       （列多时远宽于可视区），里面 text-center 是在那个宽度里居中的，
@@ -1751,7 +1756,7 @@ export function ResourceTable<T extends Record<string, any>>({
                       与行展开面板同一套解法，`viewWidth` 也是同一个 ResizeObserver 量的。
                     */}
                     <div className="sticky left-0" style={{ width: viewWidth ? `${viewWidth}px` : "100%" }}>
-                    <Empty>
+                    <Empty className={emptySize === "compact" ? "gap-3 p-0 md:p-0" : undefined}>
                       <EmptyHeader>
                         <EmptyMedia variant="icon">
                           <TriangleAlert className="text-destructive" />
@@ -1774,12 +1779,12 @@ export function ResourceTable<T extends Record<string, any>>({
 
               {!isInitialLoading && !error && pageRows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={colSpan} className="py-14">
+                  <TableCell colSpan={colSpan} className={cn("px-0", emptySize === "compact" ? "py-6" : "py-14")}>
                     {/* 同上：不包一层 sticky 的话，空态会按整张表的宽度居中（理由见上一处） */}
                     <div className="sticky left-0" style={{ width: viewWidth ? `${viewWidth}px` : "100%" }}>
                     {hasChips ? (
                       // 有筛选 → 是「筛没了」，该给「清除筛选」而不是「去创建」
-                      <Empty>
+                      <Empty className={emptySize === "compact" ? "gap-3 p-0 md:p-0" : undefined}>
                         <EmptyHeader>
                           <EmptyMedia variant="icon">
                             <SearchX />
@@ -1796,7 +1801,7 @@ export function ResourceTable<T extends Record<string, any>>({
                         )}
                       </Empty>
                     ) : (
-                      <Empty>
+                      <Empty className={emptySize === "compact" ? "gap-3 p-0 md:p-0" : undefined}>
                         <EmptyHeader>
                           <EmptyMedia variant="icon">
                             <Inbox />
@@ -2028,7 +2033,7 @@ export function ResourceTable<T extends Record<string, any>>({
         </div>
 
         {/* ══ 分页 ══ */}
-        {total > 0 && (
+        {pagination && total > 0 && (
           <div
             className={cn(
               'flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3',

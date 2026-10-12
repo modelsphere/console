@@ -9,7 +9,7 @@
     "logout": "退出登录"
   },
   "home": {
-    "title": "概览",
+    "title": "推理运行概览",
     "session": "当前会话",
     "user": "用户：",
     "email": "邮箱：",

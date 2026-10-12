@@ -1,10 +1,70 @@
 {
+  "dashboard": {
+    "title": "Inference Overview",
+    "services": "Inference services",
+    "nodes": "Cluster nodes",
+    "gpus": "Total GPUs",
+    "gpusUsed": "Allocated GPUs",
+    "catalog": "Model library",
+    "activity": "Recent activity",
+    "instances": "Ready instances",
+    "serving": "Serving",
+    "failedServices": "Failed",
+    "changing": "Loading / changing",
+    "healthUnknown": "{n} service states unconfirmed; counts may be incomplete",
+    "capacity": "Capacity",
+    "preview": "Showing {shown} of {total} services",
+    "nodesError": "Unable to load node resources: {error}",
+    "statusError": "Status unavailable",
+    "retry": "Retry",
+    "supportedModels": "Supported models",
+    "recipeTotal": "Total recipes",
+    "catalogError": "Unable to load catalog statistics: {error}",
+    "trend": {
+      "title": "Model Deployment Activity",
+      "range": "Last 24 hours · Hourly",
+      "records": "Deployment log",
+      "started": "Deployments started",
+      "updated": "Updates / rollbacks",
+      "failed": "Failed operations",
+      "unit": " operations",
+      "chartLabel": "Hourly deployment starts, updates and failures over the last 24 hours",
+      "noHistory": "Deployment history is not enabled",
+      "incomplete": "The backend history limit was reached. The 24-hour window is incomplete."
+    },
+    "cluster": {
+      "title": "Cluster Information",
+      "config": "Settings",
+      "name": "Cluster",
+      "kubernetes": "Node K8s",
+      "namespace": "Namespace",
+      "ready": "Ready nodes",
+      "schedulable": "Schedulable",
+      "backend": "swissd version",
+      "mode": "Deploy mode",
+      "deployEnabled": "Enabled",
+      "readOnly": "Read-only"
+    },
+    "resources": {
+      "title": "Compute Resources",
+      "summary": "{nodes} nodes · {gpus} GPUs",
+      "byNode": "GPU allocation by node",
+      "unallocated": "Unallocated",
+      "allocation": "GPU allocation",
+      "online": "Nodes online",
+      "unknown": "Not measured",
+      "noNodes": "No GPU node data",
+      "freeCount": "{n} GPUs unallocated",
+      "readyCount": "{ready} / {total} nodes online"
+    }
+  },
   "group": {
     "模型服务": "Model Serving"
   },
   "menu": {
     "index": "Inference Services",
     "catalog": "Model Library",
+    "catalogTopbar": "Model Hub",
     "nodes": "Nodes",
     "runs": "Activity",
     "siteProfile": "Site Profile"

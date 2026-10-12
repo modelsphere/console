@@ -112,4 +112,20 @@ describe("topbarItems", () => {
     expect(topbarItems([mod(), help], () => false).map((i) => `${i.label}@${i.to}`)).toEqual(["使用文档@/help/docs"]);
     expect(topbarItems([mod(), help], () => true).map((i) => i.to)).toEqual(["/help/docs", "/help/admin"]);
   });
+
+  const serving = mod({
+    id: "inferences",
+    basePath: "/inferences",
+    pages: [{ path: "catalog", element: null, permission: "swiss.view", menu: { label: "模型库", icon: Boxes }, topbar: { label: "模型广场" } }],
+  });
+
+  it("uses a top-bar label without changing the sidebar or page destination", () => {
+    const [item] = topbarItems([serving], () => true);
+    expect(item).toMatchObject({ label: "模型广场", to: "/inferences/catalog", ns: "inferences", key: "catalogTopbar" });
+    expect(navGroups([serving], () => true)[1].items[0]).toMatchObject({ label: "模型库", to: item.to, key: "catalog" });
+  });
+
+  it("hides the model plaza when the catalog permission is missing", () => {
+    expect(topbarItems([serving, help], () => false).map((i) => i.to)).toEqual(["/help/docs"]);
+  });
 });

@@ -124,6 +124,7 @@ Rules:
 
 - A module imports from `@/shell` only, never from a file under it or from another module. One exception: `inferences` builds on swiss (see "The inferences module").
 - `permission` is a UI permission (a Role's `uiPermissions`); it guards the route and hides the menu entry.
+- `topbar: true` adds the page's menu entry to the header; `topbar: { label: "模型广场" }` gives it a separate header label without changing the sidebar or route.
 - Links go through `useModulePath()`: `p("catalog")` → `/inferences/catalog`. A leading `/` is still relative to the module.
 - API calls go through `apiFetch` (drop-in `fetch` with the session) or `request<T>` (JSON helper).
 - The sidebar opens the group of the module the current path is mounted under (`activeGroupTitle`), so a page with no menu entry -- a detail page -- still keeps its module's group open.
@@ -159,6 +160,7 @@ derived key, falling back to the literal:
 |---|---|
 | module `title` | `{id}:group.{title}` |
 | page `menu.label` | `{id}:menu.{pageKey(path)}`: `""` → `index`, `login-history` → `loginHistory` |
+| page `topbar.label` | `{id}:menu.{pageKey(path)}Topbar`; Chinese uses the declared label |
 
 So `group`/`menu` appear only in the non-Chinese files. `t()` returns one
 function per (locale, namespace): a fresh one per render would re-run every
@@ -232,6 +234,7 @@ service layout. It replaced the swiss module's own pages, Model Deployment at
 
 | Page | Path | Layout |
 |---|---|---|
+| Home dashboard | `/` | six full-width capability/resource totals; primary 24-hour deployment curve and live service table; compact cluster, GPU capacity and recent-operation context in a right rail; one page heading and collapsed personal session below |
 | Inference services | `/inferences` | resource table, server-side paging, row menu |
 | Service detail | `/inferences/:release/details?namespace=…&tab=…` | header card over tabs: overview, instances, logs, events, cluster resources, health check, versions, activity, plan; SLO edited in a sheet from the header |
 | Model library | `/inferences/catalog?catalog=…&q=…` | card grid, facet filters in the URL (swiss's parameter names) |
@@ -240,6 +243,23 @@ service layout. It replaced the swiss module's own pages, Model Deployment at
 | Activity | `/inferences/runs?action=…&namespace=…&release=…` | every run, output on expand |
 | Site profile | `/inferences/site-profile` | grouped read view; edit in a sheet, form or YAML |
 | Setup | `/inferences/setup` | first run; swiss's gate sends an uninitialised site here |
+
+The home overview is gated by `swiss.view` and does not run `SwissScope`, so an uninitialised backend cannot redirect the whole console home to setup.
+
+| Dashboard data | Contract |
+|---|---|
+| Service total | server summary, not the six-row preview count |
+| Capability totals | all configured catalogs; non-deprecated models deduplicated by model/source/revision identity, recipes from all listed versions deduplicated by that identity/version/digest/variant id; any unreadable catalog keeps totals unknown |
+| Deployment curve | last 24 hours of completed audit operations by `startedAt`; changed successful installs are starts, changed successful apply/rollback are updates, failed install/apply/rollback are failures; not a history of Pods serving |
+| Timeline completeness | use the exact backend `/api/runs/timeline` aggregate; old servers may use uncapped-length responses below 500 rows, but reaching that legacy cap is incomplete and never shown as a complete zero curve; no database remains unknown |
+| Cluster sidebar | name, namespace, deployment mode and swissd version from cluster info; distinct Kubernetes node versions from `Node.Kubelet`, never from the swissd version; ready/schedulable counts from node inventory |
+| Service state and instances | live release status for each preview row; a deployed Helm release alone is not serving |
+| Allocated GPUs | pod resource allocation, not GPU utilisation; `usageError` means unknown |
+| Resource charts | node allocation bars and GPU allocation/node online gauges from the existing nodes snapshot; unavailable readings stay unknown, with no synthetic GPU-utilisation or token/request history |
+| Refresh | services/status every 15 s, activity every 20 s, nodes every 30 s; no overview-wide refresh control, with local retries on read failures |
+| Read failures | inline error and retry, never a successful empty state |
+| Service preview | standard `ResourceTable` surface and title header; `pagination={false}` renders all supplied rows and `emptySize="compact"` bounds the empty state |
+| Activity preview | five recent operations in a compact `SectionCard` feed, with timestamps, result and detail links |
 
 Writes are right-side sheets, as Rise Global's are:
 

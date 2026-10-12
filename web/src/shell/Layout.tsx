@@ -35,7 +35,7 @@ export function Layout({ modules, children }: { modules: ConsoleModule[]; childr
   const { has } = usePermissions();
   const t = useT("shell");
   const layout = useLayout();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const groups = navGroups(modules, has);
   const links = topbarItems(modules, has);
@@ -141,18 +141,19 @@ function TopBar({
           <PanelLeft className="h-4 w-4" />
         </button>
       )}
-      <NavLink to="/" className="flex items-center gap-2.5">
+      <NavLink to="/" aria-label="ModelSphere" className="flex shrink-0 items-center gap-2.5">
         <Boxes className={`h-[26px] w-[26px] shrink-0 ${t.logo}`} />
-        <span className="text-sm font-semibold">ModelSphere</span>
+        <span className="hidden text-sm font-semibold sm:inline">ModelSphere</span>
       </NavLink>
 
       <div className="ml-auto flex items-center gap-1">
         {links.map((item) => {
           const Icon = item.icon;
+          const label = navLabel(tr, item.ns, "menu", item.key, item.label);
           return (
-            <NavLink key={item.to} to={item.to} className={`flex h-8 items-center gap-1.5 rounded-md px-2 text-[13px] transition-colors ${t.icon}`}>
-              <Icon className="h-4 w-4" />
-              {navLabel(tr, item.ns, "menu", item.key, item.label)}
+            <NavLink key={item.to} to={item.to} aria-label={label} title={label} className={`flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-[13px] transition-colors ${t.icon}`}>
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">{label}</span>
             </NavLink>
           );
         })}
@@ -171,7 +172,7 @@ function TopBar({
             <Avatar className="h-7 w-7">
               <AvatarFallback className={`text-[13px] font-semibold ${t.avatar}`}>{initial}</AvatarFallback>
             </Avatar>
-            <span className="text-[13px] font-medium">{me?.name}</span>
+            <span className="hidden text-[13px] font-medium sm:inline">{me?.name}</span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuGroup>

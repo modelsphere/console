@@ -12,7 +12,7 @@
     "logout": "Sign out"
   },
   "home": {
-    "title": "Overview",
+    "title": "Inference Overview",
     "session": "Current session",
     "user": "User: ",
     "email": "Email: ",

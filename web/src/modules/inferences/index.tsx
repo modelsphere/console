@@ -3,6 +3,7 @@ import { Activity, Bot, Library, Server, SlidersHorizontal } from "lucide-react"
 import type { ConsoleModule } from "@/shell";
 import { useT } from "@/modules/inferences/i18n";
 import { SwissScope } from "@/modules/inferences/components/SwissScope";
+import { InferencesOverview } from "@/modules/inferences/Dashboard";
 
 const InferenceList = lazy(() => import("@/modules/inferences/InferenceList").then((m) => ({ default: m.InferenceList })));
 const CatalogPage = lazy(() => import("@/modules/inferences/CatalogPage").then((m) => ({ default: m.CatalogPage })));
@@ -31,10 +32,11 @@ export const inferencesModule: ConsoleModule = {
   title: "模型服务",
   basePath: "/inferences",
   frame: "flush",
+  overview: InferencesOverview,
   pages: [
     { path: "", element: page(<InferenceList />), permission: "swiss.view", menu: { label: "推理服务", icon: Bot } },
     { path: ":release/details", element: page(<InferenceDetail />), permission: "swiss.view" },
-    { path: "catalog", element: page(<CatalogPage />), permission: "swiss.view", menu: { label: "模型库", icon: Library } },
+    { path: "catalog", element: page(<CatalogPage />), permission: "swiss.view", menu: { label: "模型库", icon: Library }, topbar: { label: "模型广场" } },
     { path: "catalog/:name", element: page(<ModelPage />), permission: "swiss.view" },
     { path: "nodes", element: page(<NodesPage />), permission: "swiss.view", menu: { label: "节点", icon: Server } },
     { path: "runs", element: page(<RunsPage />), permission: "swiss.view", menu: { label: "操作记录", icon: Activity } },
