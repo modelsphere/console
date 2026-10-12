@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useCopy } from "@modelsphere/ui";
 import { Activity, Check as CheckIcon, CircleCheck, CircleX, Copy, ExternalLink, Globe, KeyRound, Loader2, Send } from "lucide-react";
 import {
   api,
@@ -428,46 +429,39 @@ function curlFor(s: Status): string {
   ].join("\n");
 }
 
+// Via the shared useCopy, not navigator.clipboard: the console is served over
+// plain http on node ports, where the async clipboard API does not exist and a
+// direct call is a silent no-op.
 function CopyButton({ value }: { value: string }) {
-  const [done, setDone] = useState(false);
+  const { copy, copied, failed } = useCopy();
   return (
     <button
       type="button"
-      onClick={() => {
-        void navigator.clipboard?.writeText(value).then(
-          () => {
-            setDone(true);
-            setTimeout(() => setDone(false), 1500);
-          },
-          () => {},
-        );
-      }}
-      className="shrink-0 text-xs text-muted-foreground underline hover:text-foreground"
+      onClick={() => void copy(value)}
+      className={`shrink-0 text-xs underline ${failed ? "text-destructive" : "text-muted-foreground hover:text-foreground"}`}
     >
-      {done ? "copied" : "copy"}
+      {copied ? "copied" : failed ? "copy failed" : "copy"}
     </button>
   );
 }
 
 function IconCopy({ value, label }: { value: string; label: string }) {
-  const [done, setDone] = useState(false);
+  const { copy, copied, failed } = useCopy();
   return (
     <button
       type="button"
       aria-label={label}
-      title={done ? "copied" : label}
-      onClick={() => {
-        void navigator.clipboard?.writeText(value).then(
-          () => {
-            setDone(true);
-            setTimeout(() => setDone(false), 1500);
-          },
-          () => {},
-        );
-      }}
+      title={copied ? "copied" : failed ? "copy failed" : label}
+      onClick={() => void copy(value)}
       className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
     >
-      {done ? <CheckIcon className="size-4 text-success" /> : <Copy className="size-4" />}
+      {copied ? (
+        <CheckIcon className="size-4 text-success" />
+      ) : failed ? (
+        <CircleX className="size-4 text-destructive" />
+      ) : (
+        <Copy className="size-4" />
+      )}
     </button>
   );
 }
