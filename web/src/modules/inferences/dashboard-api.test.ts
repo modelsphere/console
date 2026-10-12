@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readDeploymentTimeline } from "./dashboard-api";
-import { HISTORY_LIMIT, recordedTimeline } from "./dashboard-lib";
+import { HISTORY_LIMIT, timelineTotals } from "./dashboard-lib";
 
 const from = "2026-10-10T12:15:00.000Z";
 const to = "2026-10-11T12:15:00.000Z";
@@ -16,50 +16,74 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe("deployment timeline API compatibility", () => {
-  it("uses the complete aggregate without downloading individual history rows", async () => {
-    const data = recordedTimeline([], from, to, true);
-    data.buckets[2].started = 601;
-    fetchMock.mockResolvedValue(json(data));
-    const result = await readDeploymentTimeline(now);
-    expect(result.complete).toBe(true);
-    expect(result.buckets[2].started).toBe(601);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toContain("/api/deploy/runs/timeline?from=");
-  });
-  it("supports the old server's run-id error and requests its actual 500-row limit", async () => {
-    fetchMock
-      .mockResolvedValueOnce(json({ error: "run id must be a number" }, 400))
-      .mockResolvedValueOnce(json({ hasStore: true, runs: [] }));
+describe("deployment history using published swissd APIs", () => {
+  it("reads only the existing run log without probing an unmerged endpoint", async () => {
+    fetchMock.mockResolvedValue(
+      json({
+        hasStore: true,
+        runs: [
+          {
+            id: 1,
+            namespace: "models",
+            release: "example",
+            action: "install",
+            planHash: "hash",
+            changed: true,
+            startedAt: from,
+            endedAt: from,
+          },
+        ],
+      }),
+    );
     const result = await readDeploymentTimeline(now);
     expect(result.hasStore).toBe(true);
     expect(result.complete).toBe(true);
-    expect(result.buckets).toHaveLength(25);
-    expect(String(fetchMock.mock.calls[1][0])).toContain("limit=500");
+    expect(timelineTotals(result)).toEqual({ started: 1, updated: 0, failed: 0 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe(`/api/deploy/runs?limit=${HISTORY_LIMIT}`);
   });
-  it("marks old capped data incomplete instead of returning a fake complete zero chart", async () => {
-    fetchMock
-      .mockResolvedValueOnce(json({ error: "not found" }, 404))
-      .mockResolvedValueOnce(json({ hasStore: true, runs: Array.from({ length: HISTORY_LIMIT }, () => ({})) }));
+
+  it("zero-fills a known empty persisted history over the requested window", async () => {
+    fetchMock.mockResolvedValue(json({ hasStore: true, runs: [] }));
+    const result = await readDeploymentTimeline(now);
+    expect(result.from).toBe(from);
+    expect(result.to).toBe(to);
+    expect(result.complete).toBe(true);
+    expect(result.buckets).toHaveLength(25);
+    expect(timelineTotals(result)).toEqual({ started: 0, updated: 0, failed: 0 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks capped history incomplete instead of returning a fake complete zero chart", async () => {
+    fetchMock.mockResolvedValue(json({ hasStore: true, runs: Array.from({ length: HISTORY_LIMIT }, () => ({})) }));
     const result = await readDeploymentTimeline(now);
     expect(result.complete).toBe(false);
     expect(result.buckets).toEqual([]);
+    expect(timelineTotals(result)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
   it("keeps a server without persistence distinct from zero operations", async () => {
-    fetchMock
-      .mockResolvedValueOnce(json({ error: "no database: this swissd keeps no operation log" }, 503))
-      .mockResolvedValueOnce(json({ hasStore: false, runs: [] }));
+    fetchMock.mockResolvedValue(json({ hasStore: false, runs: [] }));
     const result = await readDeploymentTimeline(now);
     expect(result.hasStore).toBe(false);
     expect(result.buckets).toEqual([]);
+    expect(timelineTotals(result)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
-  it.each([403, 500, 503])("does not mask unrelated HTTP %s failures", async (status) => {
+
+  it.each([400, 403, 404, 500, 503])("does not hide HTTP %s failures with another endpoint request", async (status) => {
     fetchMock.mockResolvedValue(json({ error: "real backend failure" }, status));
     await expect(readDeploymentTimeline(now)).rejects.toThrow("real backend failure");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
-  it("does not treat malformed successful responses as valid history", async () => {
-    fetchMock.mockResolvedValue(json({ ok: true }));
-    await expect(readDeploymentTimeline(now)).rejects.toThrow("Invalid deployment timeline");
-  });
+
+  it.each([{ ok: true }, { hasStore: true }, { runs: [] }, { hasStore: true, runs: null }])(
+    "rejects malformed history responses",
+    async (body) => {
+      fetchMock.mockResolvedValue(json(body));
+      await expect(readDeploymentTimeline(now)).rejects.toThrow("Invalid deployment history response");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
 });

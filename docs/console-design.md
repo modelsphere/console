@@ -252,7 +252,7 @@ The home overview is gated by `swiss.view` and does not run `SwissScope`, so an 
 | Service total | server summary, not the six-row preview count |
 | Capability totals | all configured catalogs; non-deprecated models deduplicated by model/source/revision identity, recipes from all listed versions deduplicated by that identity/version/digest/variant id; any unreadable catalog keeps totals unknown |
 | Deployment curve | last 24 hours of completed audit operations by `startedAt`; changed successful installs are starts, changed successful apply/rollback are updates, failed install/apply/rollback are failures; not a history of Pods serving |
-| Timeline completeness | use the exact backend `/api/runs/timeline` aggregate; old servers may use uncapped-length responses below 500 rows, but reaching that legacy cap is incomplete and never shown as a complete zero curve; no database remains unknown |
+| Timeline completeness | current Console reads only the published `/api/runs?limit=500` endpoint and aggregates on the client; reaching that cap is incomplete and never shown as a complete zero curve; no database remains unknown. It does not call the unmerged `/api/runs/timeline` prototype. Complete server-side aggregation and serving metrics require separately reviewed backend work before Console integration |
 | Cluster sidebar | name, namespace, deployment mode and swissd version from cluster info; distinct Kubernetes node versions from `Node.Kubelet`, never from the swissd version; ready/schedulable counts from node inventory |
 | Service state and instances | live release status for each preview row; a deployed Helm release alone is not serving |
 | Allocated GPUs | pod resource allocation, not GPU utilisation; `usageError` means unknown |
