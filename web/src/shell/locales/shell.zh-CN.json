@@ -5,8 +5,10 @@
     "preferences": "偏好设置",
     "language": "语言",
     "admin": "管理员",
+    "member": "普通用户",
     "changePassword": "修改密码",
-    "logout": "退出登录"
+    "logout": "退出登录",
+    "noLogin": "登录已关闭，当前为管理员身份"
   },
   "home": {
     "title": "推理运行概览",

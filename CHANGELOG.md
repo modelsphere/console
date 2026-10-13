@@ -9,6 +9,7 @@ chart's `appVersion`; the image and chart are released together under it.
 
 ### Fixed
 - Overlay panels keep their edge. The site-wide "no focus ring" rule zeroed the `ring-1` that draws the border of menus, popovers, selects, comboboxes and dialogs, so an open white panel on the white page showed only a faint shadow — the top-bar avatar menu read as a line of text floating under the header.
+- The top-bar avatar menu names the signed-in user — avatar, name, role and, when console has one to read, the email — instead of a single `name · role` line. With `server.auth.disabled` the user button itself turns amber and the avatar carries a dot, so the state shows without opening anything and the bar gains no element; the menu carries 登录已关闭，当前为管理员身份 (*Sign-in off — acting as the administrator*) in place of change-password and sign-out, which that mode cannot honour.
 
 ## [0.1.2] - 2026-10-08
 

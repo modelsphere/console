@@ -8,8 +8,10 @@
     "preferences": "Preferences",
     "language": "Language",
     "admin": "Administrator",
+    "member": "Member",
     "changePassword": "Change password",
-    "logout": "Sign out"
+    "logout": "Sign out",
+    "noLogin": "Sign-in off — acting as the administrator"
   },
   "home": {
     "title": "Inference Overview",
