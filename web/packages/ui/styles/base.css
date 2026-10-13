@@ -78,8 +78,17 @@
 /*
   Card 的「边框」是 ring-1 画的（shadcn 新版 Card 没有 border）。整块可点的卡片
   （模型库、卡片 Demo：role="button" + tabIndex）点一下就聚焦，这条规则一把 ring 归零，
+  卡片的边框跟着消失 —— 它不是聚焦环，是结构线，排除掉。
+
+  浮层外壳同理，而且漏了同一类：菜单 / Popover / Select / Combobox / 对话框都是
+  `bg-popover + ring-1`、没有 border，Base UI 打开时又把焦点交给外壳
+  （dropdown-menu-content 带 tabindex="-1"）—— 打开即掉描边，白底浮层落在白底页面上
+  只剩一层几乎看不见的 shadow（2026-10-12 右上角头像菜单：那行「admin · 管理员」
+  像凭空飘在页面上）。按容器面的命名约定整类豁免，新加浮层不会再漏。
 */
-:where(:focus-visible, :focus, [data-focused], [aria-invalid='true']):where(:not([data-slot='card'])) {
+:where(:focus-visible, :focus, [data-focused], [aria-invalid='true']):where(
+  :not([data-slot='card']):not([data-slot$='-content'])
+) {
   --tw-ring-shadow: 0 0 #0000;
   --tw-ring-offset-shadow: 0 0 #0000;
   --tw-inset-ring-shadow: 0 0 #0000;

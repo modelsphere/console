@@ -7,6 +7,9 @@ chart's `appVersion`; the image and chart are released together under it.
 
 ## [Unreleased]
 
+### Fixed
+- Overlay panels keep their edge. The site-wide "no focus ring" rule zeroed the `ring-1` that draws the border of menus, popovers, selects, comboboxes and dialogs, so an open white panel on the white page showed only a faint shadow — the top-bar avatar menu read as a line of text floating under the header.
+
 ## [0.1.2] - 2026-10-08
 
 ### Added
