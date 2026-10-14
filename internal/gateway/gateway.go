@@ -52,6 +52,8 @@ type Entry struct {
 	KeySource string
 }
 
+var ErrNoRoutes = fmt.Errorf("no session_route_<route>.conf entry")
+
 // refresh is how long a resolved entrypoint is reused. Long enough that a busy
 // Playground does not read the same two ConfigMaps per request, short enough that
 // a deploy shows up without touching the console.
@@ -203,7 +205,7 @@ func (r *Resolver) routes(ctx context.Context, p profile, profileRef string) (ro
 		}
 	}
 	if len(aggregates)+len(plain) == 0 {
-		return nil, "", fmt.Errorf("route configmap %s has no session_route_<route>.conf entry; is this the entrypoint's shared configmap?", ref)
+		return nil, "", fmt.Errorf("route configmap %s has %w; is this the entrypoint's shared configmap?", ref, ErrNoRoutes)
 	}
 	sort.Strings(aggregates)
 	sort.Strings(plain)

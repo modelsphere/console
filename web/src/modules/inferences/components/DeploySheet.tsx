@@ -37,6 +37,7 @@ import { useT } from "@/modules/inferences/i18n";
 import { detailPath } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, defaultServiceId, gpuOptions, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
+import { readRouteOptions } from "@/modules/inferences/route-options";
 
 export type DeployTarget =
   | { kind: "deploy"; model: string; catalog: string; version?: string; variant?: string }
@@ -105,6 +106,14 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
 
   const initial = useMemo<Form>(() => (upgrade ? (current.data ? formFromPlan(current.data) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(target.model) }), [upgrade, current.data, target]);
   const [form, setForm] = useState<Form>(initial);
+  const catalogRoute = upgrade && current.data ? initial.route || initial.serviceId || target.release : undefined;
+  const routeOptions = useQuery({
+    queryKey: ["route-options", catalogRoute ?? ""],
+    queryFn: ({ signal }) => readRouteOptions(catalogRoute, signal),
+    enabled: !upgrade || !!current.data,
+    staleTime: 30_000,
+    retry: false,
+  });
   useEffect(() => setForm(initial), [initial]);
   const dirty = useDirty({ form, version, variant, moveTo, chartVersion }, { form: initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "" });
 
@@ -270,6 +279,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
             <AlertDescription>{t("deploy.review.readOnly")}</AlertDescription>
           </Alert>
         )}
+        {routeOptions.error && (
+          <Alert variant="warning"><TriangleAlert /><AlertDescription>{t("deploy.routeOptions.error", { error: routeOptions.error.message })}</AlertDescription></Alert>
+        )}
         {(error || compose.error || apply.error) && (
           <Alert variant="destructive">
             <TriangleAlert />
@@ -293,6 +305,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               gpuOptions={gpuOptions(v?.requires.gpuProduct, nodes.data?.nodes.map((n) => n.GPUProduct))}
               expanded={expanded}
               onExpand={(s, o) => setExpanded((e) => ({ ...e, [s]: o }))}
+              routeOptions={routeOptions.data}
+              catalogRoute={catalogRoute}
               idPrefix={ID_PREFIX}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />

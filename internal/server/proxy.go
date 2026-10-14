@@ -56,12 +56,18 @@ var unresolved = &backendTarget{url: url.URL{Scheme: "http", Host: "backend-with
 // is skipped and logged rather than taking the server down.
 func (s *Server) mountBackends(mux *http.ServeMux) {
 	targets := s.backendTargets()
+	catalogMounted := false
 	for _, b := range s.cfg.Backends {
 		resolve, ok := targets[b.Name]
 		if !ok {
 			continue
 		}
 		proxy := s.backendProxy(b)
+		prefix := strings.TrimSuffix(b.Prefix, "/")
+		catalogMounted = catalogMounted || prefix == "/api/llm"
+		mux.HandleFunc(prefix+"/route-options", func(w http.ResponseWriter, r *http.Request) {
+			s.handleRouteOptions(w, r, b, resolve)
+		})
 		mux.HandleFunc(strings.TrimSuffix(b.Prefix, "/")+"/", func(w http.ResponseWriter, r *http.Request) {
 			if !s.authorize(w, r, backendVerb(r.Method), backendResource, b.Name) {
 				return
@@ -80,6 +86,16 @@ func (s *Server) mountBackends(mux *http.ServeMux) {
 				}
 			}
 			proxy.ServeHTTP(w, r.WithContext(withTarget(r.Context(), target)))
+		})
+	}
+	if !catalogMounted {
+		mux.HandleFunc("/api/llm/route-options", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				w.Header().Set("Allow", "GET")
+				writeError(w, http.StatusMethodNotAllowed, "GET required")
+				return
+			}
+			writeError(w, http.StatusNotFound, "no gateway backend configured")
 		})
 	}
 }

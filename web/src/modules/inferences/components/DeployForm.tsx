@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import {
   Badge,
   Button,
@@ -23,9 +23,10 @@ import {
 import { Plus, X } from "lucide-react";
 import type { ClusterInfo } from "@swiss/lib/api";
 import { effective, type Form, type Toleration } from "@swiss/components/DeploySettings";
-import { DIRECTIVES, DIRECTIVES_BY_KEY, MAX_VALUES, directiveGroups, rejectKey } from "@swiss/lib/routeDirectives";
+import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
+import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/route-options";
 import { useT } from "@/modules/inferences/i18n";
-import { NAMED_VALUES, extraValue, fracOutOfRange, initialValue, serviceIdError, type Section } from "@/modules/inferences/deploy-lib";
+import { NAMED_VALUES, extraValue, fracOutOfRange, serviceIdError, type Section } from "@/modules/inferences/deploy-lib";
 
 const EFFECTS = ["", "NoSchedule", "PreferNoSchedule", "NoExecute"];
 const digits = (v: string) => v.replace(/\D/g, "");
@@ -42,12 +43,22 @@ export interface DeployFormProps {
   expanded: Record<Section, boolean>;
   onExpand: (s: Section, open: boolean) => void;
   idPrefix: string;
+  routeOptions?: RouteOptions | null;
+  catalogRoute?: string;
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, expanded, onExpand, idPrefix }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, expanded, onExpand, idPrefix, routeOptions, catalogRoute }: DeployFormProps) {
   const t = useT();
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
+  const byKey = new Map(routeDirectives(routeOptions).map((d) => [d.key, d]));
+  const showRuntime = !!upgrade && routeOptions?.route === (catalogRoute ?? (form.route || form.serviceId));
+  const label = (key: string, fallback: string) => directiveText(t, byKey.get(key), "label") || f(fallback);
+  const hint = (key: string, fallback: string) => {
+    const d = byKey.get(key);
+    const detail = routeOptions ? directiveText(t, d, "detail") || f(fallback) : f(fallback);
+    return showRuntime && d?.set !== undefined ? `${detail} · ${runtimeText(t, d)}` : detail;
+  };
   const text = (k: keyof Form) => ({ value: form[k] as string, onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange({ [k]: e.target.value }) });
   const count = (k: "replicaCount" | "scalerMin" | "scalerMax") => ({ value: form[k], inputMode: "numeric" as const, onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange({ [k]: digits(e.target.value) }) });
   const sw = (k: keyof Form, label: string) => <Switch aria-label={label} checked={form[k] as boolean} onCheckedChange={(v) => onChange({ [k]: v })} />;
@@ -151,7 +162,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           >
             <Switch aria-label={f("modelRoute")} checked={on.modelRoute} onCheckedChange={(v) => onChange(v ? { modelRoute: true } : { modelRoute: false, route: "" })} />
           </FloatingField>
-          <FloatingField layout="inline" label={f("exposeRoutedPeer")} hint={f("exposeRoutedPeerHint")}>
+          <FloatingField layout="inline" label={label("expose_routed_peer", "exposeRoutedPeer")} hint={hint("expose_routed_peer", "exposeRoutedPeerHint")}>
             {sw("exposeRoutedPeer", f("exposeRoutedPeer"))}
           </FloatingField>
           <FloatingField label={f("backendMaxConcurrency")} hint={f("backendMaxConcurrencyHint")}>
@@ -170,22 +181,22 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           >
             {sw("cart", f("cart"))}
           </FloatingField>
-          <RouteExtras form={form} onChange={onChange} />
+          <RouteExtras form={form} onChange={onChange} options={routeOptions} showRuntime={showRuntime} />
           <FloatingField layout="inline" label={f("slo")} hint={f("sloHint")}>
             {sw("slo", f("slo"))}
           </FloatingField>
           <div className="grid grid-cols-2 gap-3">
-            <FloatingField label={form.slo ? f("ttftFallback") : f("ttft")} hint={f("ttftHint")}>
-              <FieldInput {...text("ttftLimitMs")} inputMode="numeric" />
+            <FloatingField layout={byKey.get("ttft_limit_ms")?.fallback ? "block" : "float"} label={form.slo ? f("ttftFallback") : label("ttft_limit_ms", "ttft")} hint={hint("ttft_limit_ms", "ttftHint")}>
+              <FieldInput {...text("ttftLimitMs")} inputMode="numeric" placeholder={byKey.get("ttft_limit_ms")?.fallback || undefined} />
             </FloatingField>
-            <FloatingField label={form.slo ? f("tpsFallback") : f("tps")} hint={f("tpsHint")}>
-              <FieldInput {...text("tpsLimitTps")} inputMode="numeric" />
+            <FloatingField layout={byKey.get("tps_limit_tps")?.fallback ? "block" : "float"} label={form.slo ? f("tpsFallback") : label("tps_limit_tps", "tps")} hint={hint("tps_limit_tps", "tpsHint")}>
+              <FieldInput {...text("tpsLimitTps")} inputMode="numeric" placeholder={byKey.get("tps_limit_tps")?.fallback || undefined} />
             </FloatingField>
           </div>
           <FloatingField
             layout="inline"
-            label={f("adaptiveCc")}
-            hint={f("adaptiveCcHint")}
+            label={label("adaptive_cc", "adaptiveCc")}
+            hint={hint("adaptive_cc", "adaptiveCcHint")}
             expanded={form.adaptiveCc}
             expandedContent={
               <div className="space-y-1 pb-3">
@@ -193,13 +204,13 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
                   value={form.adaptiveCcMinFrac}
                   onChange={(e) => onChange({ adaptiveCcMinFrac: e.target.value })}
                   inputMode="decimal"
-                  placeholder={`${f("adaptiveCcMinFrac")} · 0.4`}
+                  placeholder={byKey.get("adaptive_cc_min_frac")?.fallback || undefined}
                   aria-label={f("adaptiveCcMinFrac")}
                   aria-invalid={fracOutOfRange(form.adaptiveCcMinFrac)}
                   disabled={!!extraValue(form, "adaptive_cc_min")}
                 />
                 <p className={cn("text-xs", fracOutOfRange(form.adaptiveCcMinFrac) ? "text-destructive" : "text-muted-foreground")}>
-                  {fracOutOfRange(form.adaptiveCcMinFrac) ? f("fracRange") : f("adaptiveCcMinFracHint")}
+                  {fracOutOfRange(form.adaptiveCcMinFrac) ? f("fracRange") : hint("adaptive_cc_min_frac", "adaptiveCcMinFracHint")}
                 </p>
               </div>
             }
@@ -260,78 +271,98 @@ function Tolerations({ rows, onChange }: { rows: Toleration[]; onChange: (v: Tol
   );
 }
 
-function RouteExtras({ form, onChange }: { form: Form; onChange: (patch: Partial<Form>) => void }) {
+function directiveText(t: ReturnType<typeof useT>, d: RouteDirective | undefined, field: "label" | "detail"): string {
+  return d ? t(`deploy.routeOptions.options.${d.key}.${field}`, { defaultValue: d[field] }) : "";
+}
+
+function runtimeText(t: ReturnType<typeof useT>, d: RouteDirective): string {
+  return t("deploy.routeOptions.current", { value: runtimeValue(d.value), source: t(d.set ? "deploy.routeOptions.configured" : "deploy.routeOptions.inherited") });
+}
+
+export function RouteExtras({ form, onChange, options, showRuntime = false }: { form: Form; onChange: (patch: Partial<Form>) => void; options?: RouteOptions | null; showRuntime?: boolean }) {
   const t = useT();
   const f = (k: string, v?: Record<string, string | number>) => t(`deploy.fields.${k}`, v);
   const [custom, setCustom] = useState("");
-  const taken = form.nginxExtras.map((r) => r.key);
+  const controlsId = useId();
+  const catalog = options ?? FALLBACK_ROUTE_OPTIONS;
+  const byKey = new Map(routeDirectives(catalog).map((d) => [d.key, d]));
+  const taken = [...NAMED_VALUES, ...form.nginxExtras.map((r) => r.key)];
   const used = NAMED_VALUES.size + form.nginxExtras.length;
   const full = used >= MAX_VALUES;
   const customError = custom.trim() ? rejectKey(custom, taken) : "";
   const add = (key: string) => {
-    onChange({ nginxExtras: [...form.nginxExtras, { key, value: initialValue(key) }] });
+    onChange({ nginxExtras: [...form.nginxExtras, { key, value: "" }] });
     setCustom("");
   };
-  const set = (i: number, value: string) => onChange({ nginxExtras: form.nginxExtras.map((r, j) => (j === i ? { ...r, value } : r)) });
-
-  return (
-    <Group label={f("extras")} hint={f("extrasHint")}>
-        {form.nginxExtras.map((row, i) => {
-          const d = DIRECTIVES_BY_KEY.get(row.key);
-          const idle = !!d?.needsAdaptive && !form.adaptiveCc;
-          return (
-            <div key={`${row.key}-${i}`} className={cn("grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2", idle && "opacity-60")}>
-              <div className="min-w-0" title={d?.detail}>
-                <div className="truncate text-sm">{d?.label ?? row.key}</div>
-                <div className="truncate font-mono text-xs text-muted-foreground">{idle ? f("idle") : f("without", { fallback: d?.fallback ?? "-" })}</div>
-              </div>
-              {d?.kind === "boolean" ? (
-                <Switch aria-label={d?.label ?? row.key} checked={row.value === "true"} onCheckedChange={(v) => set(i, v ? "true" : "false")} />
-              ) : (
-                <Input value={row.value} onChange={(e) => set(i, e.target.value)} inputMode={d?.kind === "number" ? "decimal" : undefined} placeholder={d?.fallback} aria-label={d?.label ?? row.key} />
-              )}
-              <Button variant="ghost" size="icon" className="size-8" aria-label={t("common:actions.delete")} onClick={() => onChange({ nginxExtras: form.nginxExtras.filter((_, j) => j !== i) })}>
-                <X className="size-4" />
-              </Button>
-            </div>
-          );
-        })}
-        <div className="flex flex-wrap items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="sm" disabled={full} />}>
-              <Plus className="size-3.5" /> {f("extrasAdd")}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-96 w-96 overflow-auto">
-              {directiveGroups().map((group) => {
-                const rows = DIRECTIVES.filter((d) => d.group === group && !taken.includes(d.key));
-                if (!rows.length) return null;
-                return (
-                  <DropdownMenuGroup key={group}>
-                    <DropdownMenuLabel>{group}</DropdownMenuLabel>
-                    {rows.map((d) => (
-                      <DropdownMenuItem key={d.key} onClick={() => add(d.key)} className="flex-col items-start gap-0.5">
-                        <span className="text-sm">
-                          {d.label} <span className="font-mono text-xs text-muted-foreground">{d.key}</span>
-                        </span>
-                        <span className="text-xs text-muted-foreground">{f("without", { fallback: d.fallback })}</span>
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                  </DropdownMenuGroup>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder={f("extrasCustom")} aria-label={f("extrasCustom")} className="h-8 w-48" disabled={full} />
-          <Button variant="outline" size="sm" disabled={full || !custom.trim() || !!customError} onClick={() => add(custom.trim())}>
-            {t("common:actions.add")}
-          </Button>
-          <Badge variant="outline" className="ms-auto font-normal">
-            {full ? f("extrasFull", { max: MAX_VALUES }) : f("extrasUsed", { used, max: MAX_VALUES })}
-          </Badge>
+  const set = (key: string, value: string) => {
+    const exists = form.nginxExtras.some((r) => r.key === key);
+    if (!exists && full) return;
+    onChange({ nginxExtras: exists ? form.nginxExtras.map((r) => r.key === key ? { ...r, value } : r) : [...form.nginxExtras, { key, value }] });
+  };
+  const remove = (key: string) => onChange({ nginxExtras: form.nginxExtras.filter((r) => r.key !== key) });
+  const row = (key: string, d?: RouteDirective) => {
+    const value = form.nginxExtras.find((r) => r.key === key)?.value ?? "";
+    const idle = !!d?.needsAdaptive && !form.adaptiveCc;
+    const label = directiveText(t, d, "label") || key;
+    const fraction = key.endsWith("_frac") && fracOutOfRange(value);
+    return (
+      <div key={key} className={cn("grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-start gap-2", idle && "opacity-60")}>
+        <div className="min-w-0" title={directiveText(t, d, "detail")}>
+          <div className="flex items-center gap-1.5 text-sm"><label htmlFor={`${controlsId}-${key}`} className="break-words">{label}</label>{d && <FieldHint>{directiveText(t, d, "detail")}</FieldHint>}</div>
+          {idle && <div className="text-xs text-muted-foreground">{f("idle")}</div>}
+          {showRuntime && d?.set !== undefined && <div className="break-words text-xs text-muted-foreground">{runtimeText(t, d)}</div>}
         </div>
-        {customError && <p className="text-xs text-warning">{customError}</p>}
-    </Group>
+        <div className="min-w-0">
+          {d?.kind === "boolean" ? (
+            <DataSelect id={`${controlsId}-${key}`} value={value || "__inherit"} onValueChange={(v) => set(key, v === "__inherit" ? "" : v)} disabled={full && !taken.includes(key)}
+              options={[{ value: "__inherit", label: d.fallback ? f("without", { fallback: d.fallback }) : t("deploy.routeOptions.inherit") }, { value: "true", label: t("deploy.routeOptions.on") }, { value: "false", label: t("deploy.routeOptions.off") }]} />
+          ) : (
+            <Input id={`${controlsId}-${key}`} value={value} onChange={(e) => set(key, e.target.value)} inputMode={d?.kind === "number" ? "decimal" : undefined} placeholder={d?.fallback || undefined} aria-label={label} aria-invalid={!!fraction} disabled={full && !taken.includes(key)} />
+          )}
+          {fraction && <p className="text-xs text-destructive">{f("fracRange")}</p>}
+        </div>
+        <Button variant="ghost" size="icon" className="size-8" aria-label={t("deploy.routeOptions.reset", { label })} title={t("deploy.routeOptions.reset", { label })} disabled={!taken.includes(key)} onClick={() => remove(key)}><X className="size-4" /></Button>
+      </div>
+    );
+  };
+  const primary = catalog.directives.filter((d) => !NAMED_VALUES.has(d.key));
+  const primaryKeys = new Set(primary.map((d) => d.key));
+  return (
+    <div className="flex flex-col gap-4">
+      {[...new Set(primary.map((d) => d.group))].map((group) => (
+        <div key={group} className="flex flex-col gap-2">
+          <div className="text-sm font-medium">{t(`deploy.routeOptions.groups.${group}`, { defaultValue: group })}</div>
+          {primary.filter((d) => d.group === group).map((d) => row(d.key, d))}
+        </div>
+      ))}
+      {showRuntime && <div className="grid gap-1 text-xs text-muted-foreground">
+        {catalog.directives.filter((d) => NAMED_VALUES.has(d.key)).map((d) => <div key={d.key} className="break-words">{directiveText(t, d, "label")}: {runtimeText(t, d)}</div>)}
+      </div>}
+      {form.nginxExtras.filter((r) => !primaryKeys.has(r.key)).map((r) => row(r.key, byKey.get(r.key)))}
+      <div className="flex flex-wrap items-center gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="sm" disabled={full} />}><Plus className="size-3.5" /> {t("deploy.routeOptions.advanced")}</DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-[min(24rem,var(--available-height))] w-96 max-w-[calc(100vw-2rem)] overflow-auto">
+            {[...new Set(catalog.advanced.map((d) => d.group))].map((group) => {
+              const rows = catalog.advanced.filter((d) => d.group === group && !taken.includes(d.key));
+              if (!rows.length) return null;
+              return <DropdownMenuGroup key={group}>
+                <DropdownMenuLabel>{t(`deploy.routeOptions.groups.${group}`, { defaultValue: group })}</DropdownMenuLabel>
+                {rows.map((d) => <DropdownMenuItem key={d.key} onClick={() => add(d.key)} className="flex-col items-start gap-0.5">
+                  <span className="text-sm">{directiveText(t, d, "label")} <span className="font-mono text-xs text-muted-foreground">{d.key}</span></span>
+                  {d.fallback && <span className="text-xs text-muted-foreground">{f("without", { fallback: d.fallback })}</span>}
+                </DropdownMenuItem>)}
+                <DropdownMenuSeparator />
+              </DropdownMenuGroup>;
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder={f("extrasCustom")} aria-label={f("extrasCustom")} className="h-8 w-48" disabled={full} />
+        <Button variant="outline" size="sm" disabled={full || !custom.trim() || !!customError} onClick={() => add(custom.trim())}><Plus className="size-3.5" />{t("common:actions.add")}</Button>
+        <Badge variant="outline" className="ms-auto font-normal">{full ? f("extrasFull", { max: MAX_VALUES }) : f("extrasUsed", { used, max: MAX_VALUES })}</Badge>
+      </div>
+      {customError && <p className="text-xs text-warning">{customError}</p>}
+    </div>
   );
 }
 

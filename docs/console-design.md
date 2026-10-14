@@ -307,13 +307,33 @@ Not there yet:
 - **Search on the services list.** swissd pages its list (at most 100 a page) and
   takes no query; filtering one page on the client would miss the others. It
   needs `?q=` on swissd's `/api/deployments`.
-- **swiss's panels and the route directive texts are English.** They are swiss's,
-  and swiss's pages have no Chinese yet.
+- **swiss's panels are English.** They are swiss's, and swiss's pages have no Chinese yet. Route option labels are translated by inferences; untranslated help and new options use the engine's text.
 - **Cluster resources needs a recent swissd.** An older one (0.5.6, for one) has
   no `/objects`: the tab says so, and the install track reports the route and
   scaler as unreadable rather than absent.
 - **Upgrade picks chart versions through `/api/catalog/:name/chart-versions`**,
   which swissd has from 0.6.2 (swiss #13).
+
+### Deploy route options
+
+The deploy and upgrade form reads the running openresty's catalog instead of treating bundled defaults as deployment defaults (console #52; [agreed design](development/route-options-catalog.md)).
+
+```text
+DeploySheet -> GET /api/llm/route-options[?route=<existing>]
+            -> configured gateway -> /<route>/_route_opts
+            -> common grouped rows + advanced picker + runtime state
+```
+
+| Concern | Decision |
+|---|---|
+| Authorization | Console login and `get backends` for `llm`, the same grant as the inference proxy |
+| New deployment | Probe existing ConfigMap routes for a catalog; never show their per-route values as the new deployment's |
+| Upgrade | Query the recorded route, display `value` and `set` separately from saved overrides |
+| Defaults | Live `fallback` supplies placeholders; no copied values are submitted automatically |
+| Legacy or empty gateway | 404 uses bundled metadata with all fallback values stripped |
+| Other failures | Surface a catalog warning; do not claim a deployment default |
+| Text | Per-key locale translations where present; new options retain engine text |
+| Ownership | Inferences adapts the Swiss metadata without editing the copied upstream module |
 
 ### Workload reads (`/api/k8s/...`)
 
