@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { IndexModel, Node } from "@swiss/lib/api";
+import type { CatalogModel, Node } from "@swiss/lib/api";
 import { facetsOf } from "@swiss/lib/catalog";
 import {
   activeFilters,
@@ -13,22 +13,15 @@ import {
   withoutFilters,
 } from "@/modules/inferences/catalog-lib";
 
-const model = (over: Partial<IndexModel>): IndexModel => ({
+const model = (over: Partial<CatalogModel>): CatalogModel => ({
   name: "qwen3-8b",
   family: "qwen",
   tags: ["chat"],
   source: { hf: "Qwen/Qwen3-8B" },
-  latest: "1.0",
-  versions: [
-    {
-      version: "1.0",
-      path: "p",
-      digest: "d",
-      variants: [
-        { id: "h100x1", engine: "sglang", default: true, chart: { name: "sglang", version: "0.7.1" }, requires: { gpus: 1, gpuProduct: ["NVIDIA-H100-80GB-HBM3"] } },
-        { id: "v100x2", engine: "vllm", chart: { name: "vllm", version: "0.6.2" }, requires: { gpus: 2 } },
-      ],
-    },
+  defaultVariant: "h100x1",
+  variants: [
+    { id: "h100x1", version: "1.0", digest: "d", engine: "sglang", default: true, chart: { name: "sglang", version: "0.7.1" }, requires: { gpus: 1, gpuProduct: ["NVIDIA-H100-80GB-HBM3"] } },
+    { id: "v100x2", version: "1.0", digest: "d", engine: "vllm", chart: { name: "vllm", version: "0.6.2" }, requires: { gpus: 2 } },
   ],
   ...over,
 });
@@ -78,7 +71,7 @@ describe("facetOptions", () => {
 });
 
 describe("fitness", () => {
-  const v = model({}).versions[0]!.variants[0]!;
+  const v = model({}).variants[0]!;
   it("is unknown without the node list", () => {
     expect(fitness(v, undefined)).toBeNull();
   });

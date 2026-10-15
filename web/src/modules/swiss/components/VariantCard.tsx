@@ -1,5 +1,5 @@
 import { ChartColumn, ExternalLink } from "lucide-react";
-import type { IndexVariant, Node } from "@swiss/lib/api";
+import type { ModelVariant, Node } from "@swiss/lib/api";
 import { type Kind, httpLink, UPLIFT_HELP } from "@swiss/lib/catalog";
 import { gpuCount, matchesVendor, vendorLabel } from "@swiss/lib/gpu";
 import { Badge } from "@swiss/components/ui/badge";
@@ -25,7 +25,7 @@ export function VariantCard({
   disabled,
   action,
 }: {
-  v: IndexVariant;
+  v: CardVariant;
   kind: Kind;
   // The headline, "+58%", with "on v1.0.0" when measured on another version.
   uplift?: string;
@@ -56,6 +56,11 @@ export function VariantCard({
             {v.id}
             {tags}
             {v.default && <Badge variant="muted">default</Badge>}
+            {v.deprecated && (
+              <Badge variant="destructive" title={typeof v.deprecated === "string" ? v.deprecated : undefined}>
+                deprecated
+              </Badge>
+            )}
             {kind.optimized && (
               <Badge variant="success" title={upliftTitle ? `${upliftTitle}. ${UPLIFT_HELP}` : UPLIFT_HELP}>
                 optimized{uplift && ` ${uplift}`}
@@ -132,7 +137,9 @@ export function VariantCard({
   );
 }
 
-function fitness(v: IndexVariant, nodes?: Node[]): { ok: boolean; text: string } | null {
+type CardVariant = Pick<ModelVariant, "id" | "engine" | "default" | "description" | "link" | "chart" | "requires" | "deprecated">;
+
+function fitness(v: CardVariant, nodes?: Node[]): { ok: boolean; text: string } | null {
   if (!nodes) return null;
   const matching = nodes.filter(
     (n) =>

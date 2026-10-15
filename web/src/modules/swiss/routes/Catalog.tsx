@@ -2,7 +2,7 @@ import { Fragment, createContext, useContext, useMemo, useState } from "react";
 import { Link, useSearchParams } from "@swiss/lib/host";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChartColumn, ExternalLink, Eye, LayoutGrid, Rocket, RotateCcw, Search, Table2 } from "lucide-react";
-import { api, type IndexVariant } from "@swiss/lib/api";
+import { api, type ModelVariant } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button, buttonVariants } from "@swiss/components/ui/button";
 import { Card } from "@swiss/components/ui/card";
@@ -11,7 +11,7 @@ import { Input } from "@swiss/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@swiss/components/ui/table";
 import { Empty, ErrorState, Loading } from "@swiss/components/States";
 import { WorkloadList } from "@swiss/components/Uplift";
-import { CatalogGate, CatalogSwitch, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
+import { CatalogGate, CatalogSwitch, SchemaBadge, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
 import {
   type Comparison,
   type Facets,
@@ -150,7 +150,7 @@ export function Catalog() {
     enabled: !!choice.selected,
   });
   const { filters: f, set, reset } = useFilters();
-  const all = useMemo(() => data?.index.models.map(facetsOf) ?? [], [data]);
+  const all = useMemo(() => data?.models.map(facetsOf) ?? [], [data]);
 
   if (choice.isPending) return <Loading what="catalogs" />;
   if (choice.error) return <ErrorState what="catalogs" error={choice.error} />;
@@ -164,11 +164,12 @@ export function Catalog() {
 
   return (
     <CatalogName.Provider value={choice.selected}>
-    <CatalogSite.Provider value={data.index.site}>
+    <CatalogSite.Provider value={data.site}>
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 className="text-lg font-semibold">Catalog</h1>
         <CatalogSwitch catalogs={choice.catalogs} selected={choice.selected} choose={choice.choose} />
+        <SchemaBadge schema={data.schema} />
         <span className="text-sm text-muted-foreground">{data.source}</span>
         <code className="ml-auto text-xs text-muted-foreground">{data.ref.slice(0, 19)}</code>
       </div>
@@ -447,7 +448,7 @@ function CatalogTable({ rows, sort, set }: { rows: Facets[]; sort: SortKey; set:
           <TableRow className="hover:bg-transparent">
             {head("name", "Model")}
             {head("family", "Family")}
-            <TableHead>Variants (latest)</TableHead>
+            <TableHead>Variants</TableHead>
             {head("uplift", "Uplift vs baseline", "h-auto py-2 text-right", UPLIFT_HELP, "per workload · in + out tokens")}
             <TableHead>
               <span className="sr-only">Actions</span>
@@ -460,8 +461,8 @@ function CatalogTable({ rows, sort, set }: { rows: Facets[]; sort: SortKey; set:
               <TableCell className="min-w-48 align-top">
                 <ModelName f={x} />
                 <div className="mt-0.5 text-xs text-muted-foreground">
-                  <code>{x.model.name}</code> · v{x.model.latest}
-                  {x.model.versions.length > 1 && ` · ${x.model.versions.length} versions`}
+                  <code>{x.model.name}</code>
+                  {x.version && ` · v${x.version}`}
                 </div>
               </TableCell>
               <TableCell className="align-top">
@@ -474,13 +475,13 @@ function CatalogTable({ rows, sort, set }: { rows: Facets[]; sort: SortKey; set:
               <TableCell className="align-top">
                 <div className="space-y-1.5">
                   {x.variants.map((v) => (
-                    <VariantLine key={v.id} v={v} kind={x.kinds[v.id]} />
+                    <VariantLine key={v.id} v={v} kind={x.kinds[v.id]} version={!x.version} />
                   ))}
                 </div>
               </TableCell>
               <TableCell className="align-top text-right">
                 {x.cmp ? (
-                  <UpliftCell cmp={x.cmp} latest={x.model.latest} model={x.model.name} />
+                  <UpliftCell cmp={x.cmp} model={x.model.name} />
                 ) : (
                   <span className="text-muted-foreground">—</span>
                 )}
@@ -506,8 +507,7 @@ function ModelCard({ f, set }: { f: Facets; set: Update }) {
         <div className="min-w-0 space-y-1.5">
           <ModelName f={f} className="text-base" />
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <Badge variant="muted">v{m.latest}</Badge>
-            {m.versions.length > 1 && <span>{m.versions.length} versions</span>}
+            {f.version && <Badge variant="muted">v{f.version}</Badge>}
             {m.family && <Chip onClick={() => set({ family: m.family ?? "" })}>{m.family}</Chip>}
           </div>
         </div>
@@ -515,7 +515,7 @@ function ModelCard({ f, set }: { f: Facets; set: Update }) {
           <div className="shrink-0 text-right">
             <UpliftBadge cmp={f.cmp} />
             <div className="mt-1 text-xs text-muted-foreground">
-              vs baseline{f.cmp.version !== m.latest && ` · v${f.cmp.version}`}
+              vs baseline{f.cmp.older && ` · v${f.cmp.version}`}
             </div>
           </div>
         )}
@@ -544,7 +544,7 @@ function ModelCard({ f, set }: { f: Facets; set: Update }) {
       <ul className="divide-y rounded-md border">
         {f.variants.map((v) => (
           <li key={v.id} className="px-3 py-2">
-            <VariantLine v={v} kind={f.kinds[v.id]} wrap />
+            <VariantLine v={v} kind={f.kinds[v.id]} version={!f.version} wrap />
             {/* Cards are narrow, so the hardware leads the description line
                 rather than wrapping onto a line of its own. */}
             <p className="mt-1 line-clamp-2 text-xs text-muted-foreground" title={v.description}>
@@ -604,13 +604,30 @@ function ModelName({ f, className }: { f: Facets; className?: string }) {
   );
 }
 
-// id, badges, and (unless the caller places it) the hardware on one line.
-function VariantLine({ v, kind, wrap = false }: { v: IndexVariant; kind: Kind; wrap?: boolean }) {
+// id, badges, and (unless the caller places it) the hardware on one line. The
+// version is the variant's own when the model's variants are not all at one.
+function VariantLine({
+  v,
+  kind,
+  version = false,
+  wrap = false,
+}: {
+  v: ModelVariant;
+  kind: Kind;
+  version?: boolean;
+  wrap?: boolean;
+}) {
   const link = httpLink(v.link);
   return (
     <div className={cn("flex items-center gap-1.5", wrap ? "flex-wrap" : "whitespace-nowrap")}>
       <code className="text-xs">{v.id}</code>
+      {version && <span className="text-xs text-muted-foreground">v{v.version}</span>}
       {v.default && <Badge variant="muted">default</Badge>}
+      {v.deprecated && (
+        <Badge variant="destructive" title={typeof v.deprecated === "string" ? v.deprecated : undefined}>
+          deprecated
+        </Badge>
+      )}
       {kind.optimized && <Badge variant="success">optimized</Badge>}
       {kind.baseline && <Badge variant="outline">baseline</Badge>}
       {link && (
@@ -658,7 +675,7 @@ function UpliftBadge({ cmp, className }: { cmp: Comparison; className?: string }
 // in the column header.
 //   50k + 1.5k  [+64.2%]
 //      8k + 1k    +7.6%
-function UpliftCell({ cmp, latest, model }: { cmp: Comparison; latest: string; model: string }) {
+function UpliftCell({ cmp, model }: { cmp: Comparison; model: string }) {
   const report = reportLink(useContext(CatalogSite), model, cmp.report);
   const head = headlineWorkload(cmp);
   const label = "text-left font-mono text-xs whitespace-nowrap text-muted-foreground";
@@ -674,7 +691,7 @@ function UpliftCell({ cmp, latest, model }: { cmp: Comparison; latest: string; m
           </Badge>
         </Fragment>
       ))}
-      {cmp.version !== latest && (
+      {cmp.older && (
         <span className="col-span-2 text-right text-xs text-muted-foreground">measured on v{cmp.version}</span>
       )}
       {report && (
@@ -760,7 +777,7 @@ function DeployButton({ f }: { f: Facets }) {
         open={choosing}
         onClose={() => setChoosing(false)}
         title={`Deploy ${m.displayName ?? m.name}`}
-        subtitle={`v${m.latest} — ${f.variants.length} variants. Each is a different accelerator and parallelism shape; pick the one this cluster runs.`}
+        subtitle={`${f.version ? `v${f.version} — ` : ""}${f.variants.length} variants. Each is a different accelerator and parallelism shape; pick the one this cluster runs.`}
       >
         <div className="space-y-2.5 text-left">
           {f.variants.map((v) => {
@@ -771,6 +788,7 @@ function DeployButton({ f }: { f: Facets }) {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold">{v.id}</span>
+                    {!f.version && <span className="text-xs text-muted-foreground">v{v.version}</span>}
                     {v.default && <Badge variant="muted">default</Badge>}
                     {kind.optimized && <Badge variant="success">optimized</Badge>}
                     {kind.baseline && <Badge variant="outline">baseline</Badge>}

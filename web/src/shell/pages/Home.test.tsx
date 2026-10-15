@@ -75,35 +75,19 @@ const catalog: CatalogResponse = {
   name: "default",
   ref: "main",
   source: "https://catalog.example",
-  index: {
-    apiVersion: "catalog.swiss/v1",
-    count: 1,
-    models: [
-      {
-        name: "alpha",
-        displayName: "Alpha Model",
-        source: { hf: "org/alpha" },
-        latest: "2",
-        versions: [
-          {
-            version: "1",
-            path: "alpha-1.yaml",
-            digest: "old",
-            variants: [{ id: "base", engine: "vllm", chart: { name: "vllm", version: "1" }, requires: { gpus: 1 } }],
-          },
-          {
-            version: "2",
-            path: "alpha-2.yaml",
-            digest: "new",
-            variants: [
-              { id: "base", engine: "vllm", chart: { name: "vllm", version: "2" }, requires: { gpus: 1 } },
-              { id: "tuned", engine: "sglang", chart: { name: "sglang", version: "2" }, requires: { gpus: 2 } },
-            ],
-          },
-        ],
-      },
-    ],
-  },
+  schema: "v2",
+  models: [
+    {
+      name: "alpha",
+      displayName: "Alpha Model",
+      source: { hf: "org/alpha" },
+      defaultVariant: "base",
+      variants: [
+        { id: "base", version: "2", digest: "b2", engine: "vllm", chart: { name: "vllm", version: "2" }, requires: { gpus: 1 } },
+        { id: "tuned", version: "2", digest: "t2", engine: "sglang", chart: { name: "sglang", version: "2" }, requires: { gpus: 2 } },
+      ],
+    },
+  ],
 };
 const history = recordedTimeline([], "2026-10-10T12:15:00Z", "2026-10-11T12:15:00Z", true);
 
@@ -170,7 +154,7 @@ describe("model operations dashboard", () => {
     seed(c);
     const html = render(c);
     expect(html).toContain('aria-label="支持模型: 1"');
-    expect(html).toContain('aria-label="配方总数: 3"');
+    expect(html).toContain('aria-label="配方总数: 2"');
     expect(html).not.toContain("Alpha Model");
     expect(html).not.toContain("模型展示");
     expect(html).not.toContain("max-w-[1600px]");
@@ -188,14 +172,11 @@ describe("model operations dashboard", () => {
     c.setQueryData(["catalog", "first"], catalog);
     c.setQueryData(["catalog", "second"], {
       ...catalog,
-      index: {
-        ...catalog.index,
-        models: catalog.index.models.map((m) => ({ ...m, name: "beta", source: { hf: "org/beta" } })),
-      },
+      models: catalog.models.map((m) => ({ ...m, name: "beta", source: { hf: "org/beta" } })),
     });
     const html = render(c);
     expect(html).toContain('aria-label="支持模型: 2"');
-    expect(html).toContain('aria-label="配方总数: 6"');
+    expect(html).toContain('aria-label="配方总数: 4"');
   });
   it("does not present partial catalog results as a complete capability total", () => {
     const c = client();

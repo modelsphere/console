@@ -99,6 +99,13 @@ function ProfileView({ p }: { p: SiteProfile }) {
                 <span key={c.name} className="flex items-center gap-2">
                   <span className="font-medium">{c.name}</span>
                   {c.default && <Badge variant="secondary">{f("catalogDefault")}</Badge>}
+                  {c.schemaVersion === "v2" ? (
+                    <Badge variant="outline">v2</Badge>
+                  ) : (
+                    <Badge variant="warning" title={t("catalog.legacyHint")}>
+                      {t("catalog.legacy")}
+                    </Badge>
+                  )}
                   <code className="truncate font-mono text-xs text-muted-foreground">{c.url}</code>
                 </span>
               ))}

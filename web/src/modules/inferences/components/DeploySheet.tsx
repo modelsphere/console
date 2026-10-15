@@ -26,7 +26,7 @@ import {
 } from "@modelsphere/ui";
 import { ArrowRight, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
-import { api, deployApi, type ApplyResult, type DiffResult, type IndexModel, type Plan } from "@swiss/lib/api";
+import { api, deployApi, type ApplyResult, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
 import { EMPTY, formFromPlan, imageOf, planRequest, type Form } from "@swiss/components/DeploySettings";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
 import { Provenance } from "@swiss/components/Provenance";
@@ -81,20 +81,29 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const indexes = useQueries({
     queries: catalogs.map((c) => ({ queryKey: ["catalog", c.name], queryFn: () => api.catalog(c.name), enabled: upgrade || c.name === ownCatalog })),
   });
-  const modelIn = (name?: string): IndexModel | undefined =>
-    indexes[catalogs.findIndex((c) => c.name === name)]?.data?.index.models.find((m) => m.name === modelName);
+  const modelIn = (name?: string): CatalogModel | undefined =>
+    indexes[catalogs.findIndex((c) => c.name === name)]?.data?.models.find((m) => m.name === modelName);
   const { movable } = upgrade ? movableCatalogs(catalogs, recorded ?? {}, ownCatalog, (c) => modelIn(c)?.source.hf) : { movable: [] as string[] };
   const im = modelIn(catalogName);
-  const versions = im?.versions.map((v) => v.version) ?? [];
-  const listed = im?.versions.find((v) => v.version === (version || (upgrade ? recorded?.version : undefined) || im.latest))?.variants ?? [];
-  const keptVariant = variant || (upgrade ? recorded?.variant : listed.find((v) => v.default)?.id ?? listed[0]?.id) || "";
+  // The variants as listed now; a version is the chosen variant's, from its
+  // history: on v2 versions are per variant, on v1 the model's.
+  const listed = im?.variants ?? [];
+  const keptVariant = variant || (upgrade ? recorded?.variant : im?.defaultVariant ?? listed[0]?.id) || "";
+  const latest = listed.find((x) => x.id === keptVariant)?.version;
+  const history = useQuery({
+    queryKey: ["history", catalogName, modelName, keptVariant],
+    queryFn: () => api.history(modelName!, { catalog: catalogName, variant: keptVariant }),
+    enabled: !!modelName && !!catalogName && !!latest,
+    retry: false,
+  });
+  const versions = history.data?.revisions.map((r) => r.version) ?? (latest ? [latest] : []);
 
   const entry = useQuery({
-    queryKey: ["model", modelName, version, catalogName],
-    queryFn: () => api.model(modelName!, version || undefined, catalogName),
+    queryKey: ["model", catalogName, modelName, keptVariant, version],
+    queryFn: () => api.model(modelName!, { catalog: catalogName, variant: keptVariant || undefined, version: version || undefined }),
     enabled: !!modelName && !!catalogName,
   });
-  const v = entry.data?.entry.variants.find((x) => x.id === keptVariant) ?? entry.data?.entry.variants[0];
+  const v = entry.data?.variant;
   const chartRange = !!v && isChartRange(v.chart.version);
   const chartList = useQuery({
     queryKey: ["chart-versions", catalogName, modelName, version, keptVariant],
@@ -195,32 +204,45 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
       )}
       {!upgrade && (
         <FloatingField label={t("deploy.fields.model")} disabled>
-          <FieldInput value={entry.data?.entry.displayName || target.model} readOnly disabled />
+          <FieldInput value={entry.data?.model.displayName || target.model} readOnly disabled />
         </FloatingField>
       )}
       <div className="grid grid-cols-2 gap-3">
-        <FloatingField label={t("deploy.fields.version")}>
-          <FieldSelect
-            value={version || (upgrade ? KEEP : im?.latest ?? "")}
-            onValueChange={(x) => {
-              setVersion(x === KEEP || (!upgrade && x === im?.latest) ? "" : x);
-              setVariant("");
-              setChartVersion("");
-            }}
-            options={[...(upgrade ? [keepOption(t("deploy.fields.keep", { v: recorded?.version ?? "-" }))] : []), ...versions.map((x) => ({ value: x, label: x === im?.latest ? `${x} (${t("model.latest")})` : x }))]}
-          />
-        </FloatingField>
         <FloatingField label={t("deploy.fields.variant")}>
           <FieldSelect
             value={variant || (upgrade ? KEEP : keptVariant)}
             onValueChange={(x) => {
               setVariant(x === KEEP ? "" : x);
+              // On v2 another variant has versions of its own.
+              setVersion("");
               setChartVersion("");
             }}
             options={[
               ...(upgrade ? [keepOption(t("deploy.fields.keep", { v: recorded?.variant ?? "-" }))] : []),
               ...listed.map((x) => ({ value: x.id, label: x.id, description: `${x.engine} · ${gpuShort(x.requires)}` })),
             ]}
+          />
+        </FloatingField>
+        {/* Empty is the variant's latest, on an upgrade as on a deploy. */}
+        <FloatingField
+          label={t(entry.data?.schema === "v2" ? "deploy.fields.variantVersion" : "deploy.fields.version")}
+          hint={history.error ? t("deploy.fields.versionError", { error: history.error.message }) : undefined}
+        >
+          <FieldSelect
+            value={version || latest || ""}
+            onValueChange={(x) => {
+              setVersion(x === latest ? "" : x);
+              setChartVersion("");
+            }}
+            options={versions.map((x) => ({
+              value: x,
+              label:
+                x === latest
+                  ? `${x} (${t("model.latest")})`
+                  : upgrade && x === recorded?.version && keptVariant === recorded?.variant
+                    ? `${x} (${t("deploy.fields.deployed")})`
+                    : x,
+            }))}
           />
         </FloatingField>
       </div>

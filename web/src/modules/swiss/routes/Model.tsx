@@ -1,23 +1,23 @@
-import { Link, useParams, useSearchParams } from "@swiss/lib/host";
+import { Link, useParams } from "@swiss/lib/host";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, Rocket } from "lucide-react";
 import { api } from "@swiss/lib/api";
-import { comparison, formatUplift, reportLink, variantKind, workloadSummary } from "@swiss/lib/catalog";
+import { comparison, formatUplift, reportLink, sharedVersion, variantKind, workloadSummary } from "@swiss/lib/catalog";
+import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { VariantCard } from "@swiss/components/VariantCard";
-import { CatalogBadge, CatalogGate, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
+import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
 
 export function Model() {
   const { name = "" } = useParams();
-  const [params, setParams] = useSearchParams();
-  const version = params.get("version") ?? "";
   // A model belongs to one catalog: the same name in another is another model.
   const choice = useCatalogChoice();
   const selected = choice.selected;
+  // The default variant resolved, for what only its file says: the served name.
   const model = useQuery({
-    queryKey: ["model", selected, name, version],
-    queryFn: () => api.model(name, version || undefined, selected),
+    queryKey: ["model", selected, name, "", ""],
+    queryFn: () => api.model(name, { catalog: selected }),
     enabled: !!selected,
   });
   const catalog = useQuery({
@@ -36,13 +36,11 @@ export function Model() {
   if (model.isPending) return <Loading what={name} />;
   if (model.error) return <ErrorState what={name} error={model.error} />;
 
-  const e = model.data.entry;
-  const indexed = catalog.data?.index.models.find((m) => m.name === name);
-  // Roles and the uplift come from the model's recorded tuning, via the index.
-  // The entry itself carries none: it is metadata, not part of the version.
-  const tuning = indexed?.tuning;
-  const cmp = comparison(e.variants, e.version, tuning);
-  const report = cmp ? reportLink(catalog.data?.index.site, e.name, cmp.report) : undefined;
+  const m = model.data.model;
+  // On v1 every variant is at its entry's version; on v2 each is at its own.
+  const shared = sharedVersion(m.variants);
+  const cmp = comparison(m.variants, m.tuning);
+  const report = cmp ? reportLink(catalog.data?.site, m.name, cmp.report) : undefined;
   return (
     <div className="space-y-5">
       <Link
@@ -54,47 +52,32 @@ export function Model() {
 
       <div>
         <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
-          {e.displayName ?? e.name}
+          {m.displayName ?? m.name}
           <CatalogBadge name={selected} show={choice.several} />
+          <SchemaBadge schema={model.data.schema} />
         </h1>
-        {e.description && <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{e.description}</p>}
+        {m.description && <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{m.description}</p>}
       </div>
 
       <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
-        <Field label="Weights" value={`${e.source.hf}${e.source.sizeGiB ? ` · ${e.source.sizeGiB} GiB` : ""}`} />
-        <Field label="Served as" value={e.servedName ?? e.name} />
-        {e.license && <Field label="License" value={e.license} />}
-        <Field label="Version" value={e.version} />
-        {e.digest && <Field label="Digest" value={e.digest.slice(0, 19)} />}
+        <Field label="Weights" value={`${m.source.hf}${m.source.sizeGiB ? ` · ${m.source.sizeGiB} GiB` : ""}`} />
+        <Field label="Served as" value={model.data.variant.servedName} />
+        <Field label="Version" value={shared ?? "per variant"} />
+        {shared && <Field label="Digest" value={m.variants[0].digest.slice(0, 19)} />}
       </dl>
-
-      <VersionPicker
-        name={name}
-        current={e.version}
-        versions={
-          indexed?.versions.map((v) => v.version) ?? []
-        }
-        onPick={(v) =>
-          setParams((prev) => {
-            const next = new URLSearchParams(prev);
-            if (v) next.set("version", v);
-            else next.delete("version");
-            return next;
-          })
-        }
-      />
 
       <div>
         <h2 className="mb-2 text-sm font-medium">Variants</h2>
         <div className="grid gap-3 md:grid-cols-2">
-          {e.variants.map((v) => (
+          {m.variants.map((v) => (
             <VariantCard
               key={v.id}
               v={v}
-              kind={variantKind(v, tuning)}
+              kind={variantKind(v, m.tuning)}
+              tags={!shared && <Badge variant="muted">v{v.version}</Badge>}
               uplift={
                 cmp?.optimized === v.id && cmp.uplift != null
-                  ? formatUplift(cmp.uplift) + (cmp.version !== e.version ? ` on v${cmp.version}` : "")
+                  ? formatUplift(cmp.uplift) + (cmp.older ? ` on v${cmp.version}` : "")
                   : undefined
               }
               upliftTitle={cmp?.optimized === v.id && cmp.workloads.length ? workloadSummary(cmp) : undefined}
@@ -102,13 +85,7 @@ export function Model() {
               workloads={cmp?.optimized === v.id && cmp.workloads.length ? cmp.workloads : undefined}
               nodes={nodes.data?.nodes}
               action={
-                <Link
-                  to={withCatalog(
-                    `/deploy/${encodeURIComponent(e.name)}?variant=${encodeURIComponent(v.id)}` +
-                      (version ? `&version=${encodeURIComponent(version)}` : ""),
-                    selected,
-                  )}
-                >
+                <Link to={withCatalog(`/deploy/${encodeURIComponent(m.name)}?variant=${encodeURIComponent(v.id)}`, selected)}>
                   <Button size="sm">
                     <Rocket className="size-4" /> Deploy
                   </Button>
@@ -117,41 +94,10 @@ export function Model() {
             />
           ))}
         </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Each variant deploys at its current version; an older one is chosen on the deploy page.
+        </p>
       </div>
-    </div>
-  );
-}
-
-function VersionPicker({
-  name,
-  current,
-  versions,
-  onPick,
-}: {
-  name: string;
-  current: string;
-  versions: string[];
-  onPick: (v: string) => void;
-}) {
-  if (versions.length < 2) return null;
-  return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className="text-muted-foreground">Version</span>
-      <select
-        className="rounded-md border bg-background px-2 py-1 text-sm"
-        value={current}
-        onChange={(e) => onPick(e.target.value)}
-        aria-label={`version of ${name}`}
-      >
-        {versions.map((v) => (
-          <option key={v} value={v}>
-            {v}
-          </option>
-        ))}
-      </select>
-      <span className="text-xs text-muted-foreground">
-        a deploy records the version and its digest
-      </span>
     </div>
   );
 }

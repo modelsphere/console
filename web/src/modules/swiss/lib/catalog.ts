@@ -1,4 +1,4 @@
-import type { IndexModel, IndexVariant, Tuning } from "@swiss/lib/api";
+import type { CatalogModel, ModelVariant, Tuning } from "@swiss/lib/api";
 import { gpuModels } from "@swiss/lib/gpu";
 
 export interface Kind {
@@ -12,7 +12,7 @@ export interface Kind {
 // hack/build-site.js used before the field existed.
 // TODO: delete the fallback (guessKind, upliftOf) once every tuned model in the
 // catalog records `tuning`.
-function guessKind(v: Pick<IndexVariant, "id" | "description">): Kind {
+function guessKind(v: Pick<ModelVariant, "id" | "description">): Kind {
   const id = v.id.toLowerCase();
   const desc = (v.description ?? "").toLowerCase();
   const optimized = /optimi[sz]ed/.test(id) || /\b(optimi[sz]ed|tuned by)\b/.test(desc);
@@ -30,10 +30,10 @@ function upliftOf(description?: string): number | null {
 
 // A model that records any tuning is read from it alone: mixing in the guess
 // would label variants the catalog deliberately left unlabelled.
-export function variantKind(v: Pick<IndexVariant, "id" | "description">, tuning?: Tuning[]): Kind {
+export function variantKind(v: Pick<ModelVariant, "id" | "description">, tuning?: Tuning[]): Kind {
   if (!tuning?.length) return guessKind(v);
-  const optimized = tuning.some((t) => t.optimized === v.id);
-  return { optimized, baseline: !optimized && tuning.some((t) => t.baseline === v.id) };
+  const optimized = tuning.some((t) => t.optimized.id === v.id);
+  return { optimized, baseline: !optimized && tuning.some((t) => t.baseline.id === v.id) };
 }
 
 export function formatUplift(pct: number): string {
@@ -44,38 +44,54 @@ export interface Comparison {
   baseline: string;
   optimized: string;
   uplift: number | null;
-  // The version the number was measured on. It can be older than the one
-  // shown, when a later version kept the variants without re-measuring.
+  // The tuned variant's version the number was measured on, and whether that
+  // is another than the one shown: a variant can move on without re-measuring.
   version: string;
+  older: boolean;
   report?: string;
   workloads: { name: string; uplift: number }[];
 }
 
-// The pair shown for one version's variants. A recorded pair must name
-// variants this version has; among those, one measured on this version wins,
-// then one whose tuned variant is the default.
-export function comparison(variants: IndexVariant[], version: string, tuning?: Tuning[]): Comparison | null {
+// The pair shown for a model's variants, each at the version shown. A recorded
+// pair must name variants listed; among those, one measured on the tuned
+// variant's shown version wins, then one whose tuned variant is the default.
+export function comparison(
+  variants: Pick<ModelVariant, "id" | "version" | "default" | "description">[],
+  tuning?: Tuning[],
+): Comparison | null {
+  const shown = new Map(variants.map((v) => [v.id, v.version]));
   if (tuning?.length) {
-    const ids = new Set(variants.map((v) => v.id));
-    const fits = tuning.filter((t) => ids.has(t.baseline) && ids.has(t.optimized));
+    const fits = tuning.filter((t) => shown.has(t.baseline.id) && shown.has(t.optimized.id));
     const def = variants.find((v) => v.default)?.id;
-    const t = fits.find((t) => t.version === version) ?? fits.find((t) => t.optimized === def) ?? fits[0];
-    return t
-      ? {
-          baseline: t.baseline,
-          optimized: t.optimized,
-          uplift: t.uplift ?? null,
-          version: t.version,
-          report: t.report,
-          workloads: t.workloads ?? [],
-        }
-      : null;
+    const t =
+      fits.find((t) => t.optimized.version === shown.get(t.optimized.id)) ??
+      fits.find((t) => t.optimized.id === def) ??
+      fits[0];
+    if (!t) return null;
+    const current = shown.get(t.optimized.id) ?? "";
+    const version = t.optimized.version || current;
+    return {
+      baseline: t.baseline.id,
+      optimized: t.optimized.id,
+      uplift: t.uplift ?? null,
+      version,
+      older: version !== current,
+      report: t.report,
+      workloads: t.workloads ?? [],
+    };
   }
   const base = variants.find((v) => guessKind(v).baseline);
   const tuned = variants.filter((v) => guessKind(v).optimized);
   const opt = tuned.find((v) => v.default) ?? tuned[0];
   if (!base || !opt) return null;
-  return { baseline: base.id, optimized: opt.id, uplift: upliftOf(opt.description), version, workloads: [] };
+  return {
+    baseline: base.id,
+    optimized: opt.id,
+    uplift: upliftOf(opt.description),
+    version: opt.version,
+    older: false,
+    workloads: [],
+  };
 }
 
 // What an uplift number means, for tooltips. Workload names are the report's:
@@ -149,15 +165,20 @@ export function reportLink(site: string | undefined, model: string, report?: str
   }
 }
 
-export function latestVersion(m: IndexModel) {
-  return m.versions.find((v) => v.version === m.latest) ?? m.versions[0];
+// The version every variant is at, as on a v1 catalog where they share their
+// entry's. Undefined when they differ, as v2 variants may.
+export function sharedVersion(variants: Pick<ModelVariant, "version">[]): string | undefined {
+  const first = variants[0]?.version;
+  return first && variants.every((v) => v.version === first) ? first : undefined;
 }
 
 // What the page filters, sorts and summarizes on, one per model.
 export interface Facets {
-  model: IndexModel;
-  // The latest version's, default first.
-  variants: IndexVariant[];
+  model: CatalogModel;
+  // As listed now, default first.
+  variants: ModelVariant[];
+  // The one version they all share, else undefined.
+  version?: string;
   // One per variant, so a summary can count variants per engine.
   engines: string[];
   hardware: string[];
@@ -168,8 +189,8 @@ export interface Facets {
   text: string;
 }
 
-export function facetsOf(m: IndexModel): Facets {
-  const variants = latestVersion(m).variants
+export function facetsOf(m: CatalogModel): Facets {
+  const variants = m.variants
     .slice()
     .sort((a, b) => Number(!!b.default) - Number(!!a.default));
   const hardware = Array.from(new Set(variants.flatMap((v) => gpuModels(v.requires)))).sort();
@@ -189,10 +210,11 @@ export function facetsOf(m: IndexModel): Facets {
   return {
     model: m,
     variants,
+    version: sharedVersion(variants),
     engines: variants.map((v) => v.engine),
     hardware,
     kinds: Object.fromEntries(variants.map((v) => [v.id, variantKind(v, m.tuning)])),
-    cmp: comparison(variants, m.latest, m.tuning),
+    cmp: comparison(variants, m.tuning),
     deprecated: !!m.deprecated,
     text,
   };

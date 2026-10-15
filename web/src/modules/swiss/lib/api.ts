@@ -37,6 +37,9 @@ export interface CatalogInfo {
   ref?: string;
   // The catalog a page opens in when none is named.
   default?: boolean;
+  // The index's schema, else the profile's schemaVersion. Absent when neither
+  // says, and from a swissd that predates it.
+  schema?: CatalogSchema;
 }
 
 // One other swissd, by name and address. The url is where a browser goes; no
@@ -95,43 +98,40 @@ export interface Requires {
   rdma?: boolean;
 }
 
-export interface IndexVariant {
+// v1 is the legacy schema: read-only, and still what a catalog with no
+// schemaVersion reads. v2 is the one new catalogs publish.
+export type CatalogSchema = "v1" | "v2";
+
+// One variant as its catalog lists it now, at its pin: on v2 each variant file
+// has its own version and digest, on v1 every variant shares its entry's.
+export interface ModelVariant {
   id: string;
+  version: string;
+  digest: string;
   engine: string;
   default?: boolean;
   description?: string;
   link?: string;
   chart: Chart;
   requires: Requires;
-}
-
-export interface IndexVersion {
-  version: string;
-  path: string;
-  digest: string;
-  variants: IndexVariant[];
-}
-
-export interface IndexModel {
-  name: string;
-  displayName?: string;
-  description?: string;
-  family?: string;
-  tags?: string[];
-  // true, or the reason as a string. Existing deploys still resolve it.
+  // v2 only.
+  servedName?: string;
   deprecated?: boolean | string;
-  tuning?: Tuning[];
-  source: { hf: string; revision?: string; sizeGiB?: number };
-  latest: string;
-  versions: IndexVersion[];
+  replaces?: string;
 }
 
-// A measured result from metadata.yaml: a tuned variant against a baseline, in
-// one version. Display only, and not checked by swissd -- ids may dangle.
+// A variant at a version. Version is absent when the catalog recorded none.
+export interface VariantRef {
+  id: string;
+  version?: string;
+}
+
+// A measured result from metadata.yaml: a tuned variant against a baseline,
+// each at the version it was measured at. Display only, and not checked by
+// swissd -- ids may dangle.
 export interface Tuning {
-  version: string;
-  baseline: string;
-  optimized: string;
+  baseline: VariantRef;
+  optimized: VariantRef;
   // The headline: percent gained on the tuning benchmark, 44 meaning +44%.
   uplift?: number;
   // Every workload the benchmark ran, when it ran more than one.
@@ -140,32 +140,70 @@ export interface Tuning {
   report?: string;
 }
 
+// A model as its index lists it now, the same for either schema.
+export interface CatalogModel {
+  name: string;
+  displayName?: string;
+  description?: string;
+  family?: string;
+  tags?: string[];
+  // true, or the reason as a string. Existing deploys still resolve it.
+  deprecated?: boolean | string;
+  source: { hf: string; revision?: string; sizeGiB?: number };
+  defaultVariant: string;
+  variants: ModelVariant[];
+  tuning?: Tuning[];
+}
+
 export interface CatalogResponse {
   name: string;
   ref: string;
   source: string;
-  // site is where the catalog's own site is published, perf reports included.
-  index: { apiVersion: string; site?: string; count: number; models: IndexModel[] };
+  schema: CatalogSchema;
+  // Where the catalog's own site is published, perf reports included.
+  site?: string;
+  models: CatalogModel[];
 }
 
-export interface Variant extends IndexVariant {
+// A variant as a deploy composes it, values and image included, at the pin it
+// is composed at.
+export interface Variant extends Omit<ModelVariant, "servedName" | "deprecated" | "replaces"> {
+  servedName: string;
   image?: { repository: string; tag: string; digest?: string };
   values?: Record<string, unknown>;
 }
 
-export interface Entry {
-  apiVersion: string;
-  name: string;
+export interface ModelResponse {
+  ref: string;
+  schema: CatalogSchema;
+  model: CatalogModel;
+  variant: Variant;
+  // What the site's template resolves to for this model, so a form can show
+  // the real default rather than describe the template.
+  localPath?: string;
+  pathTemplate?: string;
+  // Each variant's image after the site's mirror rewrite, by variant id, so the
+  // form can offer that rewrite as a choice.
+  imageRepository?: Record<string, string>;
+}
+
+// One published version of a variant. Commit, releaseDate and subject are v2's.
+export interface CatalogRevision {
   version: string;
-  digest?: string;
-  servedName?: string;
-  displayName?: string;
-  description?: string;
-  family?: string;
-  license?: string;
-  tags?: string[];
-  source: { hf: string; revision?: string; sizeGiB?: number };
-  variants: Variant[];
+  digest: string;
+  releaseDate?: string;
+  commit?: string;
+  subject?: string;
+  // The one the index lists now.
+  current?: boolean;
+}
+
+export interface HistoryResponse {
+  ref: string;
+  schema: CatalogSchema;
+  model: string;
+  variant: string;
+  revisions: CatalogRevision[];
 }
 
 export interface Run {
@@ -221,7 +259,8 @@ export interface SiteProfile {
   namespace?: string;
   // The catalogs this site deploys from. Set here they win over swissd's config
   // file; empty falls back to it.
-  catalogs?: { name: string; url: string; default?: boolean }[];
+  // schemaVersion unset reads v1.
+  catalogs?: { name: string; url: string; schemaVersion?: CatalogSchema; default?: boolean }[];
   // The single-catalog spelling from before the list, read as one catalog
   // named "default". The form rewrites it as catalogs.
   catalog?: string;
@@ -381,18 +420,13 @@ export const api = {
   // may be left out.
   catalog: (catalog?: string) =>
     get<CatalogResponse>("/api/catalog" + (catalog ? `?catalog=${encodeURIComponent(catalog)}` : "")),
-  model: (name: string, version?: string, catalog?: string) =>
-    // localPath is what the site's template resolves to for this model, so a
-    // form can show the real default rather than describe the template.
-    // imageRepository is each variant's image after the site's mirror rewrite,
-    // by variant id, so the form can offer that rewrite as a choice.
-    get<{
-      ref: string;
-      entry: Entry;
-      localPath?: string;
-      pathTemplate?: string;
-      imageRepository?: Record<string, string>;
-    }>(`/api/catalog/${encodeURIComponent(name)}` + query({ version, catalog })),
+  // A model and one variant of it resolved: the default unless one is named,
+  // at its current version unless one is named.
+  model: (name: string, opts: { catalog?: string; variant?: string; version?: string } = {}) =>
+    get<ModelResponse>(`/api/catalog/${encodeURIComponent(name)}` + query(opts)),
+  // A variant's published versions, newest first; the default's unless one is named.
+  history: (name: string, opts: { catalog?: string; variant?: string } = {}) =>
+    get<HistoryResponse>(`/api/catalog/${encodeURIComponent(name)}/history` + query(opts)),
   // The chart versions a variant's chart.version allows, newest first. A pinned
   // variant has its one; a range lists the chart repository, which can fail.
   chartVersions: (name: string, opts: { catalog?: string; version?: string; variant?: string }) =>
@@ -470,6 +504,9 @@ export interface Plan {
     version?: string;
     digest?: string;
     variant: string;
+    // "v2" when composed from a v2 catalog, whose version and digest pin one
+    // variant file. Absent on v1.
+    schema?: CatalogSchema;
   };
   chart: { name: string; version: string; repo?: string; path?: string };
   engine: string;

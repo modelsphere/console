@@ -1,36 +1,26 @@
 import { describe, expect, it } from "vitest";
-import type { Entry } from "@swiss/lib/api";
+import type { Variant } from "@swiss/lib/api";
 import { catalogValues, lineDiff, modelText } from "./CatalogModelDiff";
 
-const entry = {
-  apiVersion: "catalog.swiss/v1",
-  name: "m",
+const variant = {
+  id: "v",
   version: "1.0.0",
+  digest: "sha256:def",
   servedName: "served",
-  source: { hf: "org/m" },
-  variants: [
-    {
-      id: "v",
-      engine: "sglang",
-      chart: { name: "sglang", version: "0.8.0" },
-      requires: { gpus: 2 },
-      image: { repository: "repo", tag: "t", digest: "sha256:abc" },
-      values: { extraArgs: ["--tp-size=2"], model: { name: "from-values" } },
-    },
-  ],
-} as Entry;
+  engine: "sglang",
+  chart: { name: "sglang", version: "0.8.0" },
+  requires: { gpus: 2 },
+  image: { repository: "repo", tag: "t", digest: "sha256:abc" },
+  values: { extraArgs: ["--tp-size=2"], model: { name: "from-values" } },
+} as Variant;
 
 describe("catalogValues", () => {
-  it("projects a variant the way the catalog layer does", () => {
-    expect(catalogValues(entry, "v").tree).toEqual({
+  it("projects a variant the way the catalog layer does, image digest left out", () => {
+    expect(catalogValues(variant).tree).toEqual({
       extraArgs: ["--tp-size=2"],
       model: { name: "served", gpus: "2" },
-      image: { repository: "repo", tag: "t", digest: "sha256:abc" },
+      image: { repository: "repo", tag: "t" },
     });
-  });
-
-  it("is empty when the variant is no longer listed", () => {
-    expect(catalogValues(entry, "missing")).toEqual({});
   });
 });
 

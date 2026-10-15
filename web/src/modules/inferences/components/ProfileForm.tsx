@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Button, Checkbox, FieldHint, FieldInput, FloatingField, FormSection, Input, Switch } from "@modelsphere/ui";
+import { Button, Checkbox, DataSelect, FieldHint, FieldInput, FloatingField, FormSection, Input, Switch } from "@modelsphere/ui";
 import { Plus, X } from "lucide-react";
 import type { RouteAuth, SiteProfile } from "@swiss/lib/api";
 import { useT } from "@/modules/inferences/i18n";
@@ -52,9 +52,20 @@ export function ProfileForm({ value: p, onChange, submitted, collapsible }: { va
         <>
           <Group label={f("catalogs")} hint={f("catalogsHint")}>
             {(p.catalogs ?? []).map((c, i) => (
-              <div key={i} className="grid grid-cols-[10rem_1fr_auto_auto] items-center gap-2">
+              <div key={i} className="grid grid-cols-[10rem_1fr_auto_auto_auto] items-center gap-2">
                 <Input value={c.name} onChange={(e) => set({ catalogs: p.catalogs!.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} placeholder={f("catalogName")} aria-label={f("catalogName")} />
                 <Input value={c.url} onChange={(e) => set({ catalogs: p.catalogs!.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)) })} placeholder={f("catalogUrl")} aria-label={f("catalogUrl")} className="font-mono text-xs" />
+                {/* Unset is v1, so v1 is written as unset. */}
+                <DataSelect
+                  className="w-40"
+                  aria-label={f("catalogSchema")}
+                  value={c.schemaVersion === "v2" ? "v2" : "v1"}
+                  onValueChange={(v) => set({ catalogs: p.catalogs!.map((x, j) => (j === i ? { ...x, schemaVersion: v === "v2" ? "v2" : undefined } : x)) })}
+                  options={[
+                    { value: "v1", label: f("catalogSchemaV1") },
+                    { value: "v2", label: f("catalogSchemaV2") },
+                  ]}
+                />
                 <label className="flex items-center gap-1.5 text-sm whitespace-nowrap">
                   <Checkbox checked={!!c.default} onCheckedChange={(on) => set({ catalogs: markDefault(p.catalogs!, i, !!on) })} />
                   {f("catalogDefault")}
@@ -62,7 +73,7 @@ export function ProfileForm({ value: p, onChange, submitted, collapsible }: { va
                 <Remove onClick={() => set({ catalogs: p.catalogs!.filter((_, j) => j !== i) })} />
               </div>
             ))}
-            <Add label={f("catalogAdd")} onClick={() => set({ catalogs: [...(p.catalogs ?? []), { name: "", url: "" }] })} />
+            <Add label={f("catalogAdd")} onClick={() => set({ catalogs: [...(p.catalogs ?? []), { name: "", url: "", schemaVersion: "v2" }] })} />
           </Group>
           {input(f("chartRepo"), p.chartRepo, (v) => set({ chartRepo: str(v) }), { hint: f("chartRepoHint"), placeholder: "https://modelsphere.github.io/helm-charts", mono: true })}
           {input(f("chartPath"), p.chartPath, (v) => set({ chartPath: str(v) }), { placeholder: f("chartPathHint"), mono: true })}

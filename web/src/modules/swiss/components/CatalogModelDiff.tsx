@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, type Entry } from "@swiss/lib/api";
+import { api, type Variant } from "@swiss/lib/api";
 import { toYaml } from "@swiss/lib/yaml";
 import { Badge } from "@swiss/components/ui/badge";
 import { Dialog } from "@swiss/components/ui/dialog";
@@ -34,15 +34,15 @@ export function CatalogModelDiff({
 }) {
   const ready = !!model && !!version && !!variant;
   const entry = useQuery({
-    queryKey: ["catalog-model", catalog, model, version],
-    queryFn: () => api.model(model!, version, catalog),
+    queryKey: ["catalog-model", catalog, model, variant, version],
+    queryFn: () => api.model(model!, { catalog, variant, version }),
     enabled: open && ready,
     retry: false,
     staleTime: Infinity,
   });
 
-  const published = entry.data ? catalogValues(entry.data.entry, variant!) : undefined;
-  const publishedVariant = entry.data?.entry.variants.find((item) => item.id === variant);
+  const publishedVariant = entry.data?.variant;
+  const published = publishedVariant ? catalogValues(publishedVariant) : undefined;
   const diff =
     published?.tree && publishedVariant
       ? lineDiff(
@@ -71,10 +71,6 @@ export function CatalogModelDiff({
         <ErrorState what="the catalog model" error={entry.error} />
       ) : published?.error ? (
         <p className="text-sm text-muted-foreground">{published.error}</p>
-      ) : published && !published.tree ? (
-        <p className="text-sm text-muted-foreground">
-          The catalog no longer lists variant {variant} on version {version}.
-        </p>
       ) : (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -97,14 +93,11 @@ export function CatalogModelDiff({
   );
 }
 
-export function catalogValues(
-  entry: Entry,
-  variantId: string,
-): { tree?: Record<string, unknown>; error?: string } {
-  const variant = entry.variants.find((item) => item.id === variantId);
-  if (!variant) return {};
+// The catalog layer compose writes for a variant. A variant's image.digest stays
+// out, as it does there: the charts' schema rejects it.
+export function catalogValues(variant: Variant): { tree?: Record<string, unknown>; error?: string } {
   const tree: Record<string, unknown> = structuredClone(variant.values ?? {});
-  const name = setPath(tree, "model.name", entry.servedName || entry.name);
+  const name = setPath(tree, "model.name", variant.servedName);
   if (name) return { error: name };
   const gpus = setPath(tree, "model.gpus", String(variant.requires.gpus));
   if (gpus) return { error: gpus };
@@ -112,7 +105,6 @@ export function catalogValues(
     for (const [key, value] of [
       ["image.repository", variant.image.repository],
       ["image.tag", variant.image.tag],
-      ["image.digest", variant.image.digest],
     ] as const) {
       if (!value) continue;
       const err = setPath(tree, key, value);

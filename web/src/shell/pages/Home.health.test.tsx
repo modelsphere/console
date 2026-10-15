@@ -18,7 +18,7 @@ const row = (release: string): Deployment => ({ release, namespace: "models", re
 const status = (release: string, ready: number, total: number, extra: Partial<ReleaseStatus> = {}): ReleaseStatus => ({ release, namespace: "models", exists: true, revision: 1, pods: [], ready, total, ...extra });
 const nodes: NodesResponse = { cluster: "c", nodes: [], summary: { nodes: 1, gpus: 1, gpusUsed: 0 } };
 const cluster: ClusterInfo = { name: "c", profile: "p", catalog: "u", version: "0", allowDeploy: true, catalogs: [{ name: "default", url: "u", source: "u", default: true }] };
-const catalog: CatalogResponse = { name: "default", ref: "r", source: "u", index: { apiVersion: "catalog.swiss/v1", count: 0, models: [] } };
+const catalog: CatalogResponse = { name: "default", ref: "r", source: "u", schema: "v2", models: [] };
 
 function client() {
   return new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } });

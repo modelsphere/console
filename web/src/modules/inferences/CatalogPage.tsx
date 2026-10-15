@@ -24,7 +24,7 @@ import {
 } from "@modelsphere/ui";
 import { Boxes, Library, MoreHorizontal, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
-import { api } from "@swiss/lib/api";
+import { api, type CatalogInfo } from "@swiss/lib/api";
 import { facetsOf, formatUplift, sorters, type Facets } from "@swiss/lib/catalog";
 import { useCatalogChoice } from "@swiss/components/CatalogChoice";
 import { useT } from "@/modules/inferences/i18n";
@@ -41,7 +41,7 @@ export function CatalogPage() {
     queryFn: () => api.catalog(choice.selected),
     enabled: !!choice.selected,
   });
-  const all = useMemo(() => catalog.data?.index.models.map(facetsOf) ?? [], [catalog.data]);
+  const all = useMemo(() => catalog.data?.models.map(facetsOf) ?? [], [catalog.data]);
   const options = useMemo(() => facetOptions(all), [all]);
   const f = filtersFrom(params);
   const set = (patch: Partial<CatalogFilters>) => setParams((prev) => withFilters(prev, patch), { replace: true });
@@ -70,10 +70,15 @@ export function CatalogPage() {
             {choice.several && (
               <FilterSelect
                 title={t("catalog.catalog")}
-                options={choice.catalogs.map((c) => ({ value: c.name, label: c.name }))}
+                options={choice.catalogs.map((c) => ({ value: c.name, label: c.name, description: c.schema === "v1" ? t("catalog.legacy") : undefined }))}
                 value={choice.selected}
                 onValueChange={(v) => v && choice.choose(v)}
               />
+            )}
+            {catalog.data?.schema === "v1" && (
+              <Badge variant="warning" title={t("catalog.legacyHint")}>
+                {t("catalog.legacy")}
+              </Badge>
             )}
             {facet("family")}
             {facet("engine")}
@@ -181,7 +186,7 @@ function ModelCard({ x, catalog, to, onDeploy }: { x: Facets; catalog: string; t
         <span className="truncate" title={m.source.hf}>
           {m.source.hf}
         </span>
-        <span>v{m.latest}</span>
+        {x.version && <span>v{x.version}</span>}
         <span>{t("catalog.variants", { n: x.variants.length })}</span>
       </div>
 
@@ -207,7 +212,7 @@ function ModelCard({ x, catalog, to, onDeploy }: { x: Facets; catalog: string; t
   );
 }
 
-function NoCatalog({ catalogs, choose }: { catalogs: { name: string; source: string; default?: boolean }[]; choose: (name: string) => void }) {
+function NoCatalog({ catalogs, choose }: { catalogs: CatalogInfo[]; choose: (name: string) => void }) {
   const t = useT();
   const p = useModulePath();
   if (catalogs.length === 0) {
@@ -231,6 +236,11 @@ function NoCatalog({ catalogs, choose }: { catalogs: { name: string; source: str
         <button key={c.name} type="button" onClick={() => choose(c.name)} className="flex w-full items-center gap-3 rounded-lg border bg-card p-3 text-left hover:border-primary/40">
           <span className="font-medium">{c.name}</span>
           {c.default && <Badge variant="secondary">{t("catalog.default")}</Badge>}
+          {c.schema === "v1" && (
+            <Badge variant="warning" title={t("catalog.legacyHint")}>
+              {t("catalog.legacy")}
+            </Badge>
+          )}
           <span className="ms-auto truncate text-xs text-muted-foreground">{c.source}</span>
         </button>
       ))}

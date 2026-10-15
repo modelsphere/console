@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, TriangleAlert } from "lucide-react";
 import { api, deployApi, type ApplyResult, type DiffResult, type Plan } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
@@ -8,13 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/c
 import { DeploySettings, EMPTY, imageOf, planRequest, type Form } from "@swiss/components/DeploySettings";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
-import { CatalogBadge, CatalogGate, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
-import { chartVersionChoice, TargetRow } from "@swiss/components/ChartVersion";
+import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
+import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { isChartRange } from "@swiss/lib/upgrade";
 
 export function Deploy() {
   const { name = "" } = useParams();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const variantId = params.get("variant") ?? "";
   const version = params.get("version") ?? "";
   // The catalog is chosen before anything is composed: the same model name in
@@ -22,14 +22,24 @@ export function Deploy() {
   const choice = useCatalogChoice();
   const catalog = choice.selected;
 
+  // The variant resolved at the version picked, its current one by default:
+  // on v2 a version is the variant's own, on v1 its entry's.
   const model = useQuery({
-    queryKey: ["model", catalog, name, version],
-    queryFn: () => api.model(name, version || undefined, catalog),
+    queryKey: ["model", catalog, name, variantId, version],
+    queryFn: () => api.model(name, { catalog, variant: variantId || undefined, version: version || undefined }),
     enabled: !!catalog,
+    // Picking another version keeps the page, and the form, while it resolves.
+    placeholderData: keepPreviousData,
+  });
+  const history = useQuery({
+    queryKey: ["history", catalog, name, variantId],
+    queryFn: () => api.history(name, { catalog, variant: variantId || undefined }),
+    enabled: !!catalog,
+    retry: false,
   });
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes });
-  const chartVariant = model.data?.entry.variants.find((v) => v.id === variantId) ?? model.data?.entry.variants[0];
+  const chartVariant = model.data?.variant;
   const chartRange = !!chartVariant && isChartRange(chartVariant.chart.version);
   const chartVersions = useQuery({
     queryKey: ["chart-versions", catalog, name, version, chartVariant?.id],
@@ -37,6 +47,15 @@ export function Deploy() {
     enabled: chartRange,
     retry: false,
   });
+  const pickVersion = (v: string) => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (v) next.set("version", v);
+      else next.delete("version");
+      return next;
+    });
+    update({});
+  };
   const [chartVersion, setChartVersion] = useState("");
   useEffect(() => setChartVersion(""), [catalog, name, version, variantId]);
 
@@ -86,7 +105,8 @@ export function Deploy() {
   if (model.isPending || cluster.isPending) return <Loading what="the model" />;
   if (model.error) return <ErrorState what={name} error={model.error} />;
 
-  const entry = model.data.entry;
+  const { model: m, variant, schema } = model.data;
+  const current = m.variants.find((v) => v.id === variant.id)?.version;
   const chart = chartVersionChoice({
     list: chartVersions,
     value: chartVersion,
@@ -95,7 +115,6 @@ export function Deploy() {
       update({});
     },
   });
-  const variant = entry.variants.find((v) => v.id === variantId) ?? entry.variants[0];
 
   if (!cluster.data?.allowDeploy) {
     return (
@@ -112,12 +131,13 @@ export function Deploy() {
 
       <div>
         <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
-          Deploy {entry.displayName ?? entry.name}
+          Deploy {m.displayName ?? m.name}
           <CatalogBadge name={catalog} show={choice.several} />
+          <SchemaBadge schema={schema} />
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           <Badge variant="outline">{variant.id}</Badge>{" "}
-          <Badge variant="muted">v{entry.version}</Badge>{" "}
+          <Badge variant="muted">v{variant.version}</Badge>{" "}
           {variant.engine} · {variant.requires.gpus} GPU
           {variant.requires.nodes && variant.requires.nodes > 1
             ? ` × ${variant.requires.nodes} nodes`
@@ -129,16 +149,37 @@ export function Deploy() {
 
       {planM.error && <ErrorState what="the request" error={planM.error} />}
 
-      {chartRange && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Chart version</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              This model's catalog allows a range of {variant.chart.name} charts. The plan records the
-              exact version installed, and later upgrades keep it until asked to move.
-            </p>
-          </CardHeader>
-          <CardContent className="divide-y pt-0">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Version</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            The plan records the version and its digest
+            {chartRange && `, and the exact ${variant.chart.name} chart installed from the range the catalog allows`}.
+            Later upgrades keep both until asked to move.
+          </p>
+        </CardHeader>
+        <CardContent className="divide-y pt-0">
+          <TargetRow
+            label={schema === "v2" ? "Variant version" : "Model version"}
+            hint={
+              schema === "v2"
+                ? "Each variant of a v2 catalog has its own versions."
+                : "A v1 version is the model's: every variant of it moves together."
+            }
+            changing={!!version && version !== current}
+            caption={history.error ? `Could not list versions: ${history.error.message}` : undefined}
+            tone={history.error ? "destructive" : "muted"}
+          >
+            <Select
+              value={version}
+              onChange={pickVersion}
+              options={(history.data?.revisions ?? [])
+                .filter((r) => r.version !== current)
+                .map((r) => ({ value: r.version, label: r.releaseDate ? `${r.version} · ${r.releaseDate}` : r.version }))}
+              emptyLabel={current ? `latest (${current})` : "latest"}
+            />
+          </TargetRow>
+          {chartRange && (
             <TargetRow
               label="Chart version"
               hint="Left on the default, the newest version the catalog allows is installed."
@@ -148,9 +189,9 @@ export function Deploy() {
             >
               {chart.control}
             </TargetRow>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
 
       {/* The settings are the page. Plan, diff and apply are what is done with
           them, so they sit below as tabs rather than holding the form inside

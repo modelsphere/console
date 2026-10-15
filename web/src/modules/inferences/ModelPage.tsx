@@ -6,7 +6,6 @@ import {
   AlertDescription,
   Badge,
   Button,
-  DataSelect,
   DetailHeader,
   Empty,
   EmptyHeader,
@@ -21,8 +20,8 @@ import {
 } from "@modelsphere/ui";
 import { TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
-import { api, type Node, type Variant } from "@swiss/lib/api";
-import { comparison, formatUplift, httpLink, reportLink, variantKind, workloadSummary, type Kind } from "@swiss/lib/catalog";
+import { api, type ModelVariant, type Node } from "@swiss/lib/api";
+import { comparison, formatUplift, httpLink, reportLink, sharedVersion, variantKind, workloadSummary, type Kind } from "@swiss/lib/catalog";
 import { gpuModels, vendorLabel } from "@swiss/lib/gpu";
 import { useCatalogChoice } from "@swiss/components/CatalogChoice";
 import { useT } from "@/modules/inferences/i18n";
@@ -35,19 +34,19 @@ export function ModelPage() {
   const navigate = useNavigate();
   const { name = "" } = useParams();
   const [params, setParams] = useSearchParams();
-  const version = params.get("version") ?? undefined;
   const tab = params.get("tab") === "info" ? "info" : "variants";
   const choice = useCatalogChoice();
+  // The default variant resolved, for what only its file says: the served name.
   const model = useQuery({
-    queryKey: ["model", name, version, choice.selected],
-    queryFn: () => api.model(name, version, choice.selected),
+    queryKey: ["model", choice.selected, name, "", ""],
+    queryFn: () => api.model(name, { catalog: choice.selected }),
     enabled: !!choice.selected,
   });
   const index = useQuery({ queryKey: ["catalog", choice.selected], queryFn: () => api.catalog(choice.selected), enabled: !!choice.selected });
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes, retry: false });
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
   const [deploying, setDeploying] = useState<DeployTarget | null>(null);
-  const onDeploy = cluster.data?.allowDeploy ? (x: { model: string; catalog: string; version?: string; variant?: string }) => setDeploying({ kind: "deploy", ...x }) : undefined;
+  const onDeploy = cluster.data?.allowDeploy ? (x: { model: string; catalog: string; variant?: string }) => setDeploying({ kind: "deploy", ...x }) : undefined;
 
   const setParam = (k: string, v?: string) =>
     setParams((prev) => {
@@ -74,43 +73,41 @@ export function ModelPage() {
     );
   }
 
-  const e = model.data.entry;
-  const im = index.data?.index.models.find((m) => m.name === name);
-  const versions = im?.versions.map((v) => v.version) ?? [e.version];
-  const deprecated = im?.deprecated;
-  const cmp = comparison(e.variants, e.version, im?.tuning);
-  const site = index.data?.index.site;
-  const variants = [...e.variants].sort((a, b) => Number(!!b.default) - Number(!!a.default));
+  const { model: m, variant: resolved, schema } = model.data;
+  const deprecated = m.deprecated;
+  const cmp = comparison(m.variants, m.tuning);
+  const site = index.data?.site;
+  const variants = [...m.variants].sort((a, b) => Number(!!b.default) - Number(!!a.default));
+  // On v1 every variant is at its entry's version; on v2 each is at its own.
+  const shared = sharedVersion(variants);
+  const digest = shared ? variants[0].digest : undefined;
 
   return page(
     <Tabs value={tab} onValueChange={(v) => setParam("tab", v === "info" ? "info" : undefined)} className="flex-col gap-4">
       <DetailHeader
         onBack={back}
         backLabel={t("model.back")}
-        title={e.displayName || e.name}
-        subtitle={e.description}
+        title={m.displayName || m.name}
+        subtitle={m.description}
         notice={deprecated ? { tone: "warning", title: t("model.deprecated", { reason: typeof deprecated === "string" ? deprecated : "" }) } : undefined}
         actions={
           onDeploy
-            ? [{ key: "deploy", label: t("model.deploy"), onClick: () => onDeploy({ model: name, catalog: choice.selected, version }) }]
+            ? [{ key: "deploy", label: t("model.deploy"), onClick: () => onDeploy({ model: name, catalog: choice.selected }) }]
             : undefined
         }
         meta={[
-          { label: t("model.fields.family"), value: e.family || "-" },
-          { label: t("model.fields.source"), value: <span title={e.source.hf}>{e.source.hf}</span> },
-          { label: t("model.fields.license"), value: e.license || "-" },
+          { label: t("model.fields.family"), value: m.family || "-" },
+          { label: t("model.fields.source"), value: <span title={m.source.hf}>{m.source.hf}</span> },
+          { label: t("model.fields.version"), value: shared ?? t("model.perVariant") },
           {
-            label: t("model.fields.version"),
+            label: t("model.fields.schema"),
             value:
-              versions.length > 1 ? (
-                <DataSelect
-                  className="h-7 w-32"
-                  value={e.version}
-                  onValueChange={(v) => setParam("version", v === im?.latest ? undefined : v)}
-                  options={versions.map((v) => ({ value: v, label: v === im?.latest ? `${v} (${t("model.latest")})` : v }))}
-                />
+              schema === "v1" ? (
+                <Badge variant="warning" title={t("catalog.legacyHint")}>
+                  {t("catalog.legacy")}
+                </Badge>
               ) : (
-                e.version
+                schema
               ),
           },
         ]}
@@ -136,11 +133,12 @@ export function ModelPage() {
               <VariantCard
                 key={v.id}
                 v={v}
-                kind={variantKind(v, im?.tuning)}
+                kind={variantKind(v, m.tuning)}
+                version={shared ? undefined : v.version}
                 uplift={cmp && cmp.optimized === v.id ? cmp : null}
                 report={cmp && cmp.optimized === v.id ? reportLink(site, name, cmp.report) : undefined}
                 nodes={nodes.data?.nodes}
-                onDeploy={onDeploy ? () => onDeploy({ model: name, catalog: choice.selected, version, variant: v.id }) : undefined}
+                onDeploy={onDeploy ? () => onDeploy({ model: name, catalog: choice.selected, variant: v.id }) : undefined}
               />
             ))}
           </div>
@@ -153,13 +151,12 @@ export function ModelPage() {
             columns={1}
             labelClassName="w-28 shrink-0"
             items={[
-              { label: t("model.fields.source"), value: [e.source.hf, e.source.revision].filter(Boolean).join(" @ ") },
-              { label: t("model.fields.servedName"), value: e.servedName },
-              { label: t("model.fields.license"), value: e.license },
-              { label: t("model.fields.version"), value: e.version },
-              { label: t("model.fields.digest"), value: e.digest && <code className="font-mono text-xs break-all">{e.digest}</code> },
-              { label: t("model.fields.tags"), value: e.tags?.length ? e.tags.join(", ") : undefined },
-              { label: t("model.fields.sizeLabel"), value: e.source.sizeGiB ? t("model.fields.size", { n: e.source.sizeGiB }) : undefined },
+              { label: t("model.fields.source"), value: [m.source.hf, m.source.revision].filter(Boolean).join(" @ ") },
+              { label: t("model.fields.servedName"), value: resolved.servedName },
+              { label: t("model.fields.version"), value: shared },
+              { label: t("model.fields.digest"), value: digest && <code className="font-mono text-xs break-all">{digest}</code> },
+              { label: t("model.fields.tags"), value: m.tags?.length ? m.tags.join(", ") : undefined },
+              { label: t("model.fields.sizeLabel"), value: m.source.sizeGiB ? t("model.fields.size", { n: m.source.sizeGiB }) : undefined },
             ].filter((i) => i.value)}
           />
         </SectionCard>
@@ -172,13 +169,16 @@ export function ModelPage() {
 function VariantCard({
   v,
   kind,
+  version,
   uplift,
   report,
   nodes,
   onDeploy,
 }: {
-  v: Variant;
+  v: ModelVariant;
   kind: Kind;
+  // The variant's own version, when the model's variants are not all at one.
+  version?: string;
   uplift: ReturnType<typeof comparison>;
   report?: string;
   nodes?: Node[];
@@ -193,7 +193,13 @@ function VariantCard({
       title={
         <span className="inline-flex flex-wrap items-center gap-2">
           <span className="font-mono">{v.id}</span>
+          {version && <span className="text-xs text-muted-foreground">v{version}</span>}
           {v.default && <Badge variant="secondary">{t("model.default")}</Badge>}
+          {v.deprecated && (
+            <Badge variant="warning" title={typeof v.deprecated === "string" ? v.deprecated : undefined}>
+              {t("catalog.deprecated")}
+            </Badge>
+          )}
           {kind.optimized && <Badge variant="success">{t("model.optimized")}</Badge>}
           {kind.baseline && <Badge variant="outline">{t("model.baseline")}</Badge>}
           <Badge variant="outline">{v.engine}</Badge>

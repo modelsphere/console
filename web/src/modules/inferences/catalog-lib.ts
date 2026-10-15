@@ -1,4 +1,4 @@
-import type { IndexVariant, Node } from "@swiss/lib/api";
+import type { ModelVariant, Node } from "@swiss/lib/api";
 import type { Facets, SortKey } from "@swiss/lib/catalog";
 import { matchesVendor } from "@swiss/lib/gpu";
 
@@ -92,7 +92,7 @@ export interface Fit {
 
 // Whether the cluster has nodes a variant can land on right now: schedulable,
 // enough GPUs of the right vendor and product, as many as it spans.
-export function fitness(v: Pick<IndexVariant, "requires">, nodes?: Node[]): Fit | null {
+export function fitness(v: Pick<ModelVariant, "requires">, nodes?: Node[]): Fit | null {
   if (!nodes) return null;
   const matching = nodes.filter(
     (n) =>

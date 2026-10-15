@@ -84,7 +84,7 @@ export function ProfileForm({
       >
         <Field
           label="Catalogs"
-          hint="Each an https base or an absolute path, under the name the pages select it by. With several, pages open in the one marked default, or ask which one first when none is. Set here they win over swissd's config file, so catalogs change without a helm upgrade."
+          hint="Each an https base or an absolute path, under the name the pages select it by. With several, pages open in the one marked default, or ask which one first when none is. Set here they win over swissd's config file, so catalogs change without a helm upgrade. Schema v2 is recommended; v1 is the read-only legacy index, and what a catalog with no schema set reads."
         >
           <Catalogs value={catalogs} onChange={setCatalogs} configured={configuredCatalog} />
         </Field>
@@ -291,7 +291,7 @@ export function ProfileForm({
   );
 }
 
-type CatalogRepo = { name: string; url: string; default?: boolean };
+type CatalogRepo = NonNullable<SiteProfile["catalogs"]>[number];
 
 // Catalogs is the list a page selects from. swissd refuses the profile over a
 // row without a name or url, a name that is not lowercase, a name or url listed
@@ -348,6 +348,16 @@ function Catalogs({
             placeholder="https://modelsphere.github.io/model-catalog/"
             aria-label="catalog url"
           />
+          {/* Unset is v1, so v1 is written as unset. */}
+          <select
+            className="h-9 rounded-md border bg-background px-2 text-xs"
+            value={c.schemaVersion === "v2" ? "v2" : ""}
+            onChange={(e) => patch(i, { schemaVersion: e.target.value === "v2" ? "v2" : undefined })}
+            aria-label={`schema of ${c.name || "catalog"}`}
+          >
+            <option value="">v1 · legacy</option>
+            <option value="v2">v2 · recommended</option>
+          </select>
           {/* At most one default: checking one clears the others. */}
           <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <input
@@ -379,7 +389,7 @@ function Catalogs({
         type="button"
         size="sm"
         variant="outline"
-        onClick={() => onChange([...value, { name: "", url: "" }])}
+        onClick={() => onChange([...value, { name: "", url: "", schemaVersion: "v2" }])}
       >
         <Plus className="size-4" /> Add catalog
       </Button>

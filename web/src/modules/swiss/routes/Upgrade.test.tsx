@@ -2,24 +2,22 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
-import { Upgrade, VariantChoices } from "./Upgrade";
+import { republishWarning, Upgrade, VariantChoices } from "./Upgrade";
 import type { Plan } from "@swiss/lib/api";
 import { ModuleProvider } from "@/shell/module";
 
 const variant = (id: string, engine: string, extra = {}) => ({
-  id, engine, chart: { name: engine, version: ">=0.7.1" }, requires: { gpus: 2, gpuProduct: ["H100"] }, ...extra,
+  id, engine, version: "1.1.0", digest: "d", chart: { name: engine, version: ">=0.7.1" }, requires: { gpus: 2, gpuProduct: ["H100"] }, ...extra,
 });
-const index = (hf: string) => ({
-  name: "x", ref: "r", source: "s",
-  index: { apiVersion: "v1", site: "https://site.example/", count: 1, models: [{
-    name: "m", source: { hf }, latest: "1.1.0",
-    tuning: [{ version: "1.1.0", baseline: "a", optimized: "c", uplift: 40, report: "perf.html" }],
-    versions: [
-      { version: "1.1.0", path: "p", digest: "d", variants: [
-        variant("a", "sglang", { default: true, description: "TP2 on H100", link: "https://docs.example/a" }),
-        variant("b", "vllm"), variant("c", "sglang", { description: "tuned" })] },
-      { version: "1.0.0", path: "p", digest: "d", variants: [variant("a", "sglang")] },
-    ] }] },
+const listing = (hf: string) => ({
+  name: "x", ref: "r", source: "s", schema: "v1", site: "https://site.example/",
+  models: [{
+    name: "m", source: { hf }, defaultVariant: "a",
+    tuning: [{ baseline: { id: "a", version: "1.1.0" }, optimized: { id: "c", version: "1.1.0" }, uplift: 40, report: "perf.html" }],
+    variants: [
+      variant("a", "sglang", { default: true, description: "TP2 on H100", link: "https://docs.example/a" }),
+      variant("b", "vllm"), variant("c", "sglang", { description: "tuned" })],
+  }],
 });
 
 const deployed = {
@@ -29,18 +27,17 @@ const deployed = {
 } as Plan;
 
 const cards = (moving: boolean, selected: string) => {
-  const m = index("org/m").index.models[0];
+  const m = listing("org/m").models[0];
   const html = renderToString(
     <ModuleProvider module={{ id: "swiss", title: "s", basePath: "/swiss", pages: [] }}>
       <MemoryRouter>
         <VariantChoices
-          variants={m.versions[0].variants}
+          variants={m.variants}
           current={deployed}
           moving={moving}
           selected={selected}
           onPick={() => {}}
           tuning={m.tuning}
-          version="1.1.0"
           report="https://site.example/models/m/perf.html"
           nodes={[{ Name: "n1", GPUProduct: "H100", GPUs: 8, Schedulable: true } as never]}
         />
@@ -78,8 +75,10 @@ describe("Upgrade page", () => {
     qc.setQueryData(["cluster"], { allowDeploy: true, namespace: "models", catalogs: [
       { name: "public", url: "u1", source: "s1", ref: "r", default: true }, { name: "internal", url: "u2", source: "s2", ref: "r" }] });
     qc.setQueryData(["nodes"], { nodes: [{ Name: "n1", GPUProduct: "H100", GPUs: 8, Schedulable: true }] });
-    qc.setQueryData(["catalog", "public"], index("org/m"));
-    qc.setQueryData(["catalog", "internal"], index("org/m"));
+    qc.setQueryData(["catalog", "public"], listing("org/m"));
+    qc.setQueryData(["catalog", "internal"], listing("org/m"));
+    qc.setQueryData(["history", "public", "m", "a"], { ref: "r", schema: "v1", model: "m", variant: "a", revisions: [
+      { version: "1.1.0", digest: "d", current: true }, { version: "1.0.0", digest: "sha256:0123456789abcdef0123" }] });
     qc.setQueryData(["chart-versions", "public", "m", "", "a"], { chart: "sglang", range: ">=0.7.1", variant: "a", versions: ["0.8.6", "0.7.1"] });
     const html = renderToString(
       <QueryClientProvider client={qc}>
@@ -97,5 +96,25 @@ describe("Upgrade page", () => {
     }
     // The cards live in the dialog, closed until the variant field is clicked.
     expect(text).not.toContain("Choose a variant");
+  });
+});
+
+describe("republishWarning", () => {
+  const source = (version: string, digest: string, schema?: "v2") =>
+    ({ ...deployed.source, version, digest, schema }) as Plan["source"];
+  const revisions = [{ version: "1.1.0", digest: "d2" }, { version: "1.0.0", digest: "d1" }];
+  const changed = "version 1.0.0 variant a: upstream digest changed since this was deployed";
+
+  it("warns only while the target stays on the deployed version and variant", () => {
+    expect(republishWarning(source("1.0.0", "d1"), "v1", revisions, "1.0.0", "a")).toBeUndefined();
+    expect(republishWarning(source("1.0.0", "old"), "v1", revisions, "1.0.0", "a")).toBe(changed);
+    expect(republishWarning(source("1.0.0", "old"), "v1", revisions, "1.1.0", "a")).toBeUndefined();
+    expect(republishWarning(source("1.0.0", "old"), "v1", revisions, "1.0.0", "b")).toBeUndefined();
+  });
+
+  it("compares within the schema the plan was composed from", () => {
+    expect(republishWarning(source("1.0.0", "old", "v2"), "v2", revisions, "1.0.0", "a")).toBe(changed);
+    // A v1 plan against its catalog switched to v2 is a migration, not a rewrite.
+    expect(republishWarning(source("1.0.0", "old"), "v2", revisions, "1.0.0", "a")).toBeUndefined();
   });
 });

@@ -19,18 +19,19 @@ export interface DeploymentTimeline {
   complete: boolean;
 }
 
+// A recipe is a variant at the pin its catalog lists now. Older versions are
+// left out: a v2 index lists only current pins, and counting history would
+// cost a fetch per variant.
 export function supportedTotals(catalogs: CatalogResponse[]): { models: number; recipes: number } {
   const models = new Set<string>();
   const recipes = new Set<string>();
   for (const catalog of catalogs) {
-    for (const model of catalog.index.models) {
+    for (const model of catalog.models) {
       if (model.deprecated) continue;
       const identity = [model.name, model.source.hf, model.source.revision ?? ""];
       models.add(JSON.stringify(identity));
-      for (const version of model.versions) {
-        for (const variant of version.variants) {
-          recipes.add(JSON.stringify([...identity, version.version, version.digest, variant.id]));
-        }
+      for (const variant of model.variants) {
+        recipes.add(JSON.stringify([...identity, variant.id, variant.version, variant.digest]));
       }
     }
   }

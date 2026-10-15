@@ -19,54 +19,37 @@ const catalog: CatalogResponse = {
   name: "default",
   ref: "main",
   source: "https://catalog.example",
-  index: {
-    apiVersion: "catalog.swiss/v1",
-    count: 1,
-    models: [
-      {
-        name: "alpha",
-        source: { hf: "org/alpha" },
-        latest: "2",
-        versions: [
-          {
-            version: "1",
-            path: "alpha-1.yaml",
-            digest: "old",
-            variants: [{ id: "base", engine: "vllm", chart: { name: "vllm", version: "1" }, requires: { gpus: 1 } }],
-          },
-          {
-            version: "2",
-            path: "alpha-2.yaml",
-            digest: "new",
-            variants: [
-              { id: "base", engine: "vllm", chart: { name: "vllm", version: "2" }, requires: { gpus: 1 } },
-              { id: "tuned", engine: "sglang", chart: { name: "sglang", version: "2" }, requires: { gpus: 2 } },
-            ],
-          },
-        ],
-      },
-    ],
-  },
+  schema: "v2",
+  models: [
+    {
+      name: "alpha",
+      source: { hf: "org/alpha" },
+      defaultVariant: "base",
+      variants: [
+        { id: "base", version: "2", digest: "b2", engine: "vllm", chart: { name: "vllm", version: "2" }, requires: { gpus: 1 } },
+        { id: "tuned", version: "1", digest: "t1", engine: "sglang", chart: { name: "sglang", version: "2" }, requires: { gpus: 2 } },
+      ],
+    },
+  ],
 };
 
 describe("supported catalog totals", () => {
-  it("counts every supported version recipe, not a sample or only the latest", () =>
-    expect(supportedTotals([catalog])).toEqual({ models: 1, recipes: 3 }));
+  it("counts every variant at the pin its catalog lists now", () =>
+    expect(supportedTotals([catalog])).toEqual({ models: 1, recipes: 2 }));
   it("does not double-count mirrored catalog entries", () =>
-    expect(supportedTotals([catalog, { ...catalog, name: "mirror" }])).toEqual({ models: 1, recipes: 3 }));
+    expect(supportedTotals([catalog, { ...catalog, name: "mirror" }])).toEqual({ models: 1, recipes: 2 }));
   it("does not count deprecated models as current support", () => {
-    const old = {
-      ...catalog,
-      index: { ...catalog.index, models: catalog.index.models.map((m) => ({ ...m, deprecated: "retired" })) },
-    };
+    const old = { ...catalog, models: catalog.models.map((m) => ({ ...m, deprecated: "retired" })) };
     expect(supportedTotals([old])).toEqual({ models: 0, recipes: 0 });
   });
-  it("distinguishes different model sources and recipe revisions", () => {
-    const other = {
+  it("distinguishes different model sources and recipe pins", () => {
+    const other = { ...catalog, models: catalog.models.map((m) => ({ ...m, source: { hf: "other/alpha" } })) };
+    const moved = {
       ...catalog,
-      index: { ...catalog.index, models: catalog.index.models.map((m) => ({ ...m, source: { hf: "other/alpha" } })) },
+      models: catalog.models.map((m) => ({ ...m, variants: m.variants.map((v) => ({ ...v, version: "3", digest: "x" })) })),
     };
-    expect(supportedTotals([catalog, other])).toEqual({ models: 2, recipes: 6 });
+    expect(supportedTotals([catalog, other])).toEqual({ models: 2, recipes: 4 });
+    expect(supportedTotals([catalog, moved])).toEqual({ models: 1, recipes: 4 });
   });
 });
 

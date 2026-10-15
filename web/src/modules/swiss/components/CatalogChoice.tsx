@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from "@swiss/lib/host";
 import { useQuery } from "@tanstack/react-query";
 import { Library } from "lucide-react";
-import { api, type CatalogInfo } from "@swiss/lib/api";
+import { api, type CatalogInfo, type CatalogSchema } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Empty } from "@swiss/components/States";
 
@@ -101,6 +101,7 @@ export function CatalogGate({
               <span className="flex items-center gap-2 font-semibold">
                 {c.name}
                 {c.default && <Badge variant="muted">default</Badge>}
+                <SchemaBadge schema={c.schema} />
               </span>
               <span className="mt-0.5 block font-mono text-xs break-all text-muted-foreground">{c.url}</span>
               {!c.ref && <span className="mt-1 block text-xs text-warning">could not be read right now</span>}
@@ -134,7 +135,9 @@ export function CatalogSwitch({
       >
         {catalogs.map((c) => (
           <option key={c.name} value={c.name}>
-            {c.default ? `${c.name} (default)` : c.name}
+            {c.name}
+            {c.default ? " (default)" : ""}
+            {c.schema === "v1" ? " · v1 legacy" : ""}
           </option>
         ))}
       </select>
@@ -151,6 +154,20 @@ export function CatalogBadge({ name, show }: { name: string; show: boolean }) {
     <Badge variant="outline" className="gap-1">
       <Library className="size-3 text-muted-foreground" />
       {name}
+    </Badge>
+  );
+}
+
+// v1 is marked: the legacy schema, read-only. v2 is what a catalog should be
+// set to, so it needs no badge.
+export function SchemaBadge({ schema }: { schema?: CatalogSchema }) {
+  if (schema !== "v1") return null;
+  return (
+    <Badge
+      variant="warning"
+      title="Catalog schema v1 is the read-only legacy index, and what a catalog with no schemaVersion reads. Set schemaVersion: v2 on it in the site profile."
+    >
+      v1 legacy
     </Badge>
   );
 }

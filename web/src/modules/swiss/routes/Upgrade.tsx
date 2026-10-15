@@ -6,10 +6,12 @@ import {
   api,
   deployApi,
   type ApplyResult,
+  type CatalogSchema,
   type DiffResult,
-  type IndexVariant,
+  type ModelVariant,
   type Node,
   type Plan,
+  type CatalogRevision,
   type Tuning,
 } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
@@ -24,7 +26,7 @@ import {
 } from "@swiss/components/DeploySettings";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
-import { CatalogBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
+import { CatalogBadge, SchemaBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
 import { movableCatalogs } from "@swiss/lib/upgrade";
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
@@ -32,7 +34,7 @@ import { VariantCard } from "@swiss/components/VariantCard";
 import { Dialog } from "@swiss/components/ui/dialog";
 import { gpuCount } from "@swiss/lib/gpu";
 import { Button } from "@swiss/components/ui/button";
-import { comparison, formatUplift, reportLink, variantKind, workloadSummary } from "@swiss/lib/catalog";
+import { comparison, formatUplift, reportLink, sharedVersion, variantKind, workloadSummary } from "@swiss/lib/catalog";
 
 export function Upgrade() {
   const { namespace = "", release = "" } = useParams();
@@ -78,23 +80,31 @@ export function Upgrade() {
       enabled: !rollbackTo,
     })),
   });
-  const modelIn = (name?: string) =>
-    indexes[catalogs.findIndex((c) => c.name === name)]?.data?.index.models.find(
-      (m) => m.name === recorded?.model,
-    );
+  const listing = (name?: string) => indexes[catalogs.findIndex((c) => c.name === name)]?.data;
+  const modelIn = (name?: string) => listing(name)?.models.find((m) => m.name === recorded?.model);
   const { hf, movable } = movableCatalogs(catalogs, recorded ?? {}, releaseCatalog, (c) => modelIn(c)?.source.hf);
-  // For the model path default, which is the site's template resolved against
-  // this model's hf -- the same value the deploy page shows.
-  const entry = useQuery({
-    queryKey: ["model", catalogName, current.data?.source.model ?? "", version],
-    queryFn: () => api.model(current.data!.source.model, version || undefined, catalogName),
-    enabled: !!current.data && !!catalogName,
-  });
   const model = modelIn(catalogName);
-  const versions = model?.versions.map((v) => v.version) ?? [];
-  const variants = model?.versions.find((v) => v.version === (version || model.latest))?.variants ?? [];
+  const schema = listing(catalogName)?.schema;
+  // The variants as listed now. A version is chosen for the kept variant from
+  // its own history: on v2 versions are per variant, on v1 the model's.
+  const variants = model?.variants ?? [];
   const keptVariant = variant || recorded?.variant || "";
-  const variantMissing = !!model && !variants.some((v) => v.id === keptVariant);
+  const keptPin = variants.find((v) => v.id === keptVariant);
+  const variantMissing = !!model && !keptPin;
+  const history = useQuery({
+    queryKey: ["history", catalogName, recorded?.model, keptVariant],
+    queryFn: () => api.history(recorded!.model, { catalog: catalogName, variant: keptVariant }),
+    enabled: !!recorded && !!catalogName && !variantMissing && !rollbackTo,
+    retry: false,
+  });
+  const versions = history.data?.revisions.map((r) => r.version) ?? [];
+  // For the model path default, which is the site's template resolved against
+  // this model's hf -- the same value the deploy page shows -- and the image.
+  const entry = useQuery({
+    queryKey: ["model", catalogName, recorded?.model ?? "", keptVariant, version],
+    queryFn: () => api.model(recorded!.model, { catalog: catalogName, variant: keptVariant, version: version || undefined }),
+    enabled: !!recorded && !!catalogName && !variantMissing,
+  });
   const chartVersions = useQuery({
     queryKey: ["chart-versions", catalogName, recorded?.model, version, keptVariant],
     queryFn: () =>
@@ -168,17 +178,17 @@ export function Upgrade() {
   }
 
   const cur = current.data;
-  const targetVersion = version || model?.latest;
+  const targetVersion = version || keptPin?.version;
   // A move is a different catalog's entry, not a republish of this one.
   const digestWarn = moving
     ? undefined
-    : republishWarning(cur.source, model?.versions, targetVersion, variant || cur.source.variant);
-  const site = indexes[catalogs.findIndex((c) => c.name === catalogName)]?.data?.index.site;
-  const optimized = targetVersion ? comparison(variants, targetVersion, model?.tuning) : null;
-  const report = optimized && model ? reportLink(site, model.name, optimized.report) : undefined;
-  const keptInfo = variants.find((v) => v.id === keptVariant);
+    : republishWarning(cur.source, schema, history.data?.revisions, targetVersion, keptVariant);
+  const optimized = comparison(variants, model?.tuning);
+  const report = optimized && model ? reportLink(listing(catalogName)?.site, model.name, optimized.report) : undefined;
   const pickVariant = (id: string) => {
     setVariant(id === cur.source.variant ? "" : id);
+    // On v2 another variant has versions of its own.
+    setVersion("");
     setChartVersion("");
     setPicking(false);
     reset();
@@ -220,7 +230,8 @@ export function Upgrade() {
         </h1>
         <p className="mt-1 flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
           <Badge variant="outline">{namespace}</Badge>
-          <CatalogBadge name={releaseCatalog ?? ""} show={catalogs.length > 1} /> {cur.source.model}
+          <CatalogBadge name={releaseCatalog ?? ""} show={catalogs.length > 1} />
+          <SchemaBadge schema={catalogs.find((c) => c.name === releaseCatalog)?.schema} /> {cur.source.model}
           {cur.source.version && ` v${cur.source.version}`} · {cur.source.variant} · chart{" "}
           {cur.chart.name}-{cur.chart.version}
         </p>
@@ -298,7 +309,12 @@ export function Upgrade() {
               </TargetRow>
             )}
             <TargetRow
-              label="Model version"
+              label={schema === "v2" ? "Variant version" : "Model version"}
+              hint={
+                schema === "v2"
+                  ? "Each variant of a v2 catalog has its own versions; another variant starts on its latest."
+                  : "A v1 version is the model's: every variant of it moves together."
+              }
               from={cur.source.version ?? "unpinned"}
               changing={!!targetVersion && targetVersion !== cur.source.version}
               caption={digestWarn}
@@ -312,8 +328,8 @@ export function Upgrade() {
                   setChartVersion("");
                   reset();
                 }}
-                options={versions}
-                emptyLabel={model?.latest ? `latest (${model.latest})` : "latest"}
+                options={versions.filter((v) => v !== keptPin?.version)}
+                emptyLabel={keptPin ? `latest (${keptPin.version})` : "latest"}
               />
             </TargetRow>
             <TargetRow
@@ -321,7 +337,7 @@ export function Upgrade() {
               hint="Parallelism and hardware. Moving to another catalog keeps the engine, so variants on another one are disabled."
               from={cur.source.variant}
               changing={!!variant && variant !== cur.source.variant}
-              caption={variantMissing ? `${catalogName} has no ${keptVariant} in this version: choose another.` : undefined}
+              caption={variantMissing ? `${catalogName} no longer lists ${keptVariant}: choose another.` : undefined}
               tone="warning"
             >
               <button
@@ -332,9 +348,9 @@ export function Upgrade() {
                 className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-3 text-left text-sm hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-1 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <span className="truncate font-mono">{keptVariant}</span>
-                {keptInfo && (
+                {keptPin && (
                   <span className="hidden truncate text-xs text-muted-foreground sm:inline">
-                    {keptInfo.engine} · {gpuCount(keptInfo.requires)}
+                    {keptPin.engine} · {gpuCount(keptPin.requires)}
                   </span>
                 )}
                 {!variant && <Badge variant="muted">kept</Badge>}
@@ -374,7 +390,7 @@ export function Upgrade() {
           subtitle={
             <>
               {cur.source.model}
-              {targetVersion && ` v${targetVersion}`}
+              {sharedVersion(variants) && ` v${sharedVersion(variants)}`}
               {catalogs.length > 1 && catalogName && ` · ${catalogName}`}
               {moving && ` · a catalog move keeps ${cur.engine}`}
             </>
@@ -394,7 +410,6 @@ export function Upgrade() {
             selected={keptVariant}
             onPick={pickVariant}
             tuning={model?.tuning}
-            version={targetVersion}
             report={report}
             nodes={nodes.data?.nodes}
           />
@@ -417,10 +432,7 @@ export function Upgrade() {
         clusterGPUs={nodes.data?.nodes.map((n) => n.GPUProduct)}
         localPathDefault={entry.data?.localPath}
         localPathPlaceholder={entry.data?.pathTemplate}
-        image={imageOf(
-          entry.data?.entry.variants.find((v) => v.id === (variant || cur.source.variant)),
-          entry.data?.imageRepository,
-        )}
+        image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
         lockIdentity
         readOnly={rollbackTo > 0}
       />
@@ -453,23 +465,23 @@ export function Upgrade() {
   );
 }
 
-// The catalog republished the version this release is on. Only while the
-// target stays on that version and variant: picking another version is a
-// different upgrade, and the index already carries the digest to compare.
-function republishWarning(
+// The catalog republished the version this release is on: the same variant at
+// the same version, under another digest. Only while the target stays on that
+// version and variant, and only against a catalog of the schema the plan was
+// composed from -- a v1 digest is of a version file, a v2 one of a variant file.
+export function republishWarning(
   source: Plan["source"],
-  versions: { version: string; digest: string; variants: { id: string }[] }[] | undefined,
+  schema: CatalogSchema | undefined,
+  revisions: Pick<CatalogRevision, "version" | "digest">[] | undefined,
   targetVersion: string | undefined,
   variant: string,
 ): string | undefined {
-  if (!source.digest || !source.version || !targetVersion || targetVersion !== source.version || !versions) {
-    return;
-  }
-  const published = versions.find((v) => v.version === targetVersion);
-  if (!published || published.digest === source.digest || !published.variants.some((v) => v.id === variant)) {
-    return;
-  }
-  return `version ${targetVersion} variant ${variant}: upstream digest changed since this was deployed`;
+  if (!source.digest || !source.version || !revisions) return;
+  if (targetVersion !== source.version || variant !== source.variant) return;
+  if ((source.schema ?? "v1") !== (schema ?? "v1")) return;
+  const published = revisions.find((r) => r.version === source.version);
+  if (!published || published.digest === source.digest) return;
+  return `version ${source.version} variant ${variant}: upstream digest changed since this was deployed`;
 }
 
 // The cards the model page shows, as an upgrade's choice: the deployed one
@@ -482,21 +494,20 @@ export function VariantChoices({
   selected,
   onPick,
   tuning,
-  version,
   report,
   nodes,
 }: {
-  variants: IndexVariant[];
+  variants: ModelVariant[];
   current: Plan;
   moving: boolean;
   selected: string;
   onPick: (id: string) => void;
   tuning?: Tuning[];
-  version?: string;
   report?: string;
   nodes?: Node[];
 }) {
-  const cmp = version ? comparison(variants, version, tuning) : null;
+  const cmp = comparison(variants, tuning);
+  const shared = sharedVersion(variants);
   return (
     <div className="grid gap-3 md:grid-cols-2">
       {variants.map((v) => {
@@ -509,14 +520,19 @@ export function VariantChoices({
             kind={variantKind(v, tuning)}
             uplift={
               optimized && cmp.uplift != null
-                ? formatUplift(cmp.uplift) + (cmp.version !== version ? ` on v${cmp.version}` : "")
+                ? formatUplift(cmp.uplift) + (cmp.older ? ` on v${cmp.version}` : "")
                 : undefined
             }
             upliftTitle={optimized && cmp.workloads.length ? workloadSummary(cmp) : undefined}
             report={optimized ? report : undefined}
             workloads={optimized && cmp.workloads.length ? cmp.workloads : undefined}
             nodes={nodes}
-            tags={!moving && v.id === current.source.variant && <Badge variant="outline">deployed</Badge>}
+            tags={
+              <>
+                {!shared && <Badge variant="muted">v{v.version}</Badge>}
+                {!moving && v.id === current.source.variant && <Badge variant="outline">deployed</Badge>}
+              </>
+            }
             selected={v.id === selected}
             disabled={otherEngine ? `Runs on ${v.engine}; a catalog move keeps ${current.engine}` : undefined}
             action={
@@ -561,14 +577,14 @@ function WhatMoves({
       </CardHeader>
       <CardContent className="space-y-2">
         <Change label="Catalog" from={currentCatalog} to={proposed.source.catalogName ?? currentCatalog} />
-        <Change label="Model version" from={current.source.version} to={proposed.source.version} />
+        <Change label="Version" from={current.source.version} to={proposed.source.version} />
         <Change
           label="Chart"
           from={`${current.chart.name}-${current.chart.version}`}
           to={`${proposed.chart.name}-${proposed.chart.version}`}
         />
         <Change
-          label="Entry digest"
+          label="Digest"
           from={current.source.digest?.slice(7, 19)}
           to={proposed.source.digest?.slice(7, 19)}
         />
