@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FALLBACK_ROUTE_OPTIONS, readRouteOptions, routeDirectives, runtimeValue } from "./route-options";
+import { readRouteOptions } from "./api";
 
 const fetchMock = vi.fn();
 const catalog = {
@@ -35,30 +35,34 @@ describe("route options transport", () => {
   });
   it.each([401, 403, 500, 502, 503])("surfaces HTTP %s rather than silently using legacy defaults", async (status) => {
     fetchMock.mockResolvedValue(response({ error: "catalog failed" }, status));
-    await expect(readRouteOptions()).rejects.toThrow("catalog failed");
+    await expect(readRouteOptions()).rejects.toMatchObject({ status, message: "catalog failed" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it("surfaces non-JSON API failures", async () => {
+    fetchMock.mockResolvedValue(new Response("Bad Gateway", { status: 502, statusText: "Bad Gateway" }));
+    await expect(readRouteOptions()).rejects.toMatchObject({ status: 502, message: "Bad Gateway" });
+  });
+  it("surfaces network failures instead of reporting a legacy catalog", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Network unavailable"));
+    await expect(readRouteOptions()).rejects.toThrow("Network unavailable");
+  });
+  it("surfaces malformed JSON instead of reporting a legacy catalog", async () => {
+    fetchMock.mockResolvedValue(new Response("not JSON"));
+    await expect(readRouteOptions()).rejects.toBeInstanceOf(SyntaxError);
+  });
+  it("forwards query cancellation to the transport", async () => {
+    const controller = new AbortController();
+    fetchMock.mockResolvedValue(response(catalog));
+    await readRouteOptions("model", controller.signal);
+    expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
   });
   it.each([
-    {}, { ...catalog, directives: null }, { ...catalog, advanced: null },
+    {}, { ...catalog, route: "" }, { ...catalog, directives: null }, { ...catalog, advanced: null },
     { ...catalog, directives: [{ ...catalog.directives[0], value: {} }] },
     { ...catalog, directives: [{ ...catalog.directives[0], set: "false" }] },
     { ...catalog, advanced: catalog.directives },
   ])("rejects invalid catalog data", async (body) => {
     fetchMock.mockResolvedValue(response(body));
     await expect(readRouteOptions()).rejects.toThrow("Invalid route options response");
-  });
-});
-
-describe("legacy catalog", () => {
-  it("contains all 16 common and 24 advanced options without asserting engine defaults or route values", () => {
-    expect(FALLBACK_ROUTE_OPTIONS.directives).toHaveLength(16);
-    expect(FALLBACK_ROUTE_OPTIONS.advanced).toHaveLength(24);
-    for (const d of routeDirectives()) {
-      expect(d.fallback).toBe("");
-      expect(d.value).toBeUndefined();
-      expect(d.set).toBeUndefined();
-    }
-  });
-  it("keeps null, false and zero distinct", () => {
-    expect([null, false, true, 0, "the floor"].map(runtimeValue)).toEqual(["-", "off", "on", "0", "the floor"]);
   });
 });

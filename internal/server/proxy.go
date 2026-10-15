@@ -65,8 +65,12 @@ func (s *Server) mountBackends(mux *http.ServeMux) {
 		proxy := s.backendProxy(b)
 		prefix := strings.TrimSuffix(b.Prefix, "/")
 		catalogMounted = catalogMounted || prefix == "/api/llm"
+		catalogResolve := resolve
+		if b.Gateway != nil {
+			catalogResolve = gatewayResolver(gateway.NewResolver(b, s.kube, s.log).ResolveCatalog)
+		}
 		mux.HandleFunc(prefix+"/route-options", func(w http.ResponseWriter, r *http.Request) {
-			s.handleRouteOptions(w, r, b, resolve)
+			s.handleRouteOptions(w, r, b, catalogResolve)
 		})
 		mux.HandleFunc(strings.TrimSuffix(b.Prefix, "/")+"/", func(w http.ResponseWriter, r *http.Request) {
 			if !s.authorize(w, r, backendVerb(r.Method), backendResource, b.Name) {
@@ -126,7 +130,7 @@ func (s *Server) targetFunc(b config.Backend) (targetResolver, error) {
 		if s.kube == nil {
 			return nil, fmt.Errorf("gateway %+v needs cluster access, and this console has none", *b.Gateway)
 		}
-		return gatewayResolver(gateway.NewResolver(b, s.kube, s.log)), nil
+		return gatewayResolver(gateway.NewResolver(b, s.kube, s.log).Resolve), nil
 	}
 
 	target, err := url.Parse(b.URL)
@@ -144,9 +148,9 @@ func (s *Server) targetFunc(b config.Backend) (targetResolver, error) {
 	return func(context.Context) (*backendTarget, error) { return fixed, nil }, nil
 }
 
-func gatewayResolver(r *gateway.Resolver) targetResolver {
+func gatewayResolver(resolve func(context.Context) (*gateway.Entry, error)) targetResolver {
 	return func(ctx context.Context) (*backendTarget, error) {
-		entry, err := r.Resolve(ctx)
+		entry, err := resolve(ctx)
 		if err != nil {
 			return nil, err
 		}

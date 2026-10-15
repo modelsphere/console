@@ -91,7 +91,7 @@ func (r *Resolver) Resolve(ctx context.Context) (*Entry, error) {
 		return nil, r.err
 	}
 
-	entry, err := r.resolve(ctx)
+	entry, err := r.resolve(ctx, false)
 	r.at = time.Now()
 	switch {
 	case err != nil && r.entry != nil:
@@ -113,7 +113,12 @@ func (r *Resolver) Resolve(ctx context.Context) (*Entry, error) {
 	return entry, nil
 }
 
-func (r *Resolver) resolve(ctx context.Context) (*Entry, error) {
+// ResolveCatalog discovers existing routes without inference pinning or credentials.
+func (r *Resolver) ResolveCatalog(ctx context.Context) (*Entry, error) {
+	return r.resolve(ctx, true)
+}
+
+func (r *Resolver) resolve(ctx context.Context, catalog bool) (*Entry, error) {
 	gw := r.backend.Gateway
 	if gw == nil {
 		return nil, fmt.Errorf("backend %s is not a gateway", r.backend.Name)
@@ -143,7 +148,7 @@ func (r *Resolver) resolve(ctx context.Context) (*Entry, error) {
 		port = config.DefaultGatewayPort
 	}
 
-	routes, source, err := r.routes(ctx, profile, profileRef)
+	routes, source, err := r.routes(ctx, profile, profileRef, catalog)
 	if err != nil {
 		return nil, err
 	}
@@ -157,23 +162,22 @@ func (r *Resolver) resolve(ctx context.Context) (*Entry, error) {
 		Header: profile.Route.Auth.HeaderName(),
 		Source: source,
 	}
-	if err := r.credential(ctx, profile, svcNS, entry); err != nil {
-		return nil, err
+	if !catalog {
+		if err := r.credential(ctx, profile, svcNS, entry); err != nil {
+			return nil, err
+		}
 	}
 	return entry, nil
 }
 
-// routes lists the routes to talk to: the explicit one, else every route in the
-// route ConfigMap, aggregate ones (those serving several models) first. autoconfig
-// writes one plain route per model, so a gateway with no aggregate route is the
-// normal case, not an error.
-func (r *Resolver) routes(ctx context.Context, p profile, profileRef string) (routes []string, source string, err error) {
+// routes lists inference routes, or all configured routes for catalog discovery.
+func (r *Resolver) routes(ctx context.Context, p profile, profileRef string, catalog bool) (routes []string, source string, err error) {
 	gw := r.backend.Gateway
 	ref := gw.ConfigMap
 	if ref == "" {
 		ref = p.Route.NginxConfigMap
 	}
-	if gw.Route != "" {
+	if gw.Route != "" && (!catalog || ref == "") {
 		source = ref
 		if source == "" {
 			source = profileRef
@@ -181,6 +185,9 @@ func (r *Resolver) routes(ctx context.Context, p profile, profileRef string) (ro
 		return []string{gw.Route}, source, nil
 	}
 	if ref == "" {
+		if catalog {
+			return nil, "", ErrNoRoutes
+		}
 		return nil, "", fmt.Errorf("no gateway.route and no route configmap to choose one from: set gateway.route")
 	}
 	ns, name, err := splitRef(ref, "")

@@ -16,6 +16,63 @@ import (
 
 const routeOptionsFixture = `{"route":"model","directives":[{"key":"tps_limit_tps","label":"Decode rate threshold","group":"Thresholds","kind":"number","fallback":"73","detail":"Deployment default","value":81,"set":true}],"advanced":[],"peers":{"count":3},"adaptive_cc_derived":{"_":{"static_max":200,"min":80,"init":80}}}`
 
+type routeOptionsTransport func(*http.Request) (*http.Response, error)
+
+func (f routeOptionsTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRouteOptionsDiscoversCatalogDespiteInferencePin(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" || r.Header.Get("X-Remote-User") != "" {
+			t.Error("credentials or identity forwarded to public route catalog")
+		}
+		if r.URL.Path != "/model/_route_opts" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(routeOptionsFixture))
+	}))
+	defer up.Close()
+	base, _ := url.Parse(up.URL)
+	transport := http.DefaultTransport
+	http.DefaultTransport = routeOptionsTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "openresty.llm.svc:8080" {
+			t.Errorf("gateway host = %q", r.URL.Host)
+		}
+		clone := r.Clone(r.Context())
+		clone.URL.Scheme, clone.URL.Host = base.Scheme, base.Host
+		return transport.RoundTrip(clone)
+	})
+	t.Cleanup(func() { http.DefaultTransport = transport })
+	for _, tc := range []struct {
+		name string
+		gw   config.Gateway
+	}{
+		{"video", config.Gateway{Profile: "llm/site-profile", Route: "video"}},
+		{"stale", config.Gateway{Profile: "llm/site-profile", Route: "stale"}},
+		{"explicit without configmap", config.Gateway{Service: "llm/openresty", Route: "model", SecretRef: "llm/missing-keys"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			objects := gatewayObjects(t)[:2]
+			objects[1].(*unstructured.Unstructured).Object["data"] = map[string]any{
+				"session_route_video.conf": "peers_by_model = {}",
+				"session_route_model.conf": "set $route model;",
+			}
+			cfg := &config.Config{Backends: []config.Backend{{Name: "llm", Prefix: "/api/llm", Gateway: &tc.gw}}}
+			h := testServerWithConfig(t, cfg, objects...).Handler()
+			admin := login(t, h, "admin", "admin-pw")
+			for _, path := range []string{"/api/llm/route-options", "/api/llm/route-options?route=model"} {
+				rec := do(h, "GET", path, admin, "")
+				if rec.Code != http.StatusOK || rec.Body.String() != routeOptionsFixture {
+					t.Fatalf("catalog with %q = %d %s", tc.name, rec.Code, rec.Body.String())
+				}
+			}
+			if rec := do(h, "GET", "/api/llm/route-options?route=stale", admin, ""); rec.Code != http.StatusNotFound {
+				t.Fatalf("unknown route = %d %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestRouteOptionsWithoutGatewayDoesNotServeSPA(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Server.Auth.Disabled = true
@@ -46,16 +103,16 @@ func TestRouteOptionsLiveCatalog(t *testing.T) {
 	}))
 	defer up.Close()
 	base, _ := url.Parse(up.URL)
-	srv := testServerWithConfig(t, &config.Config{Backends: []config.Backend{{Name: "llm", Prefix: "/api/llm", Gateway: &config.Gateway{ConfigMap: "llm/routes", Service: "llm/openresty"}}}})
-	srv.targetsOnce.Do(func() {
-		srv.targets = map[string]targetResolver{"llm": func(context.Context) (*backendTarget, error) {
-			return &backendTarget{url: *base, routes: []string{"video", "model"}, key: "secret", header: "Authorization"}, nil
-		}}
-	})
-	h := srv.Handler()
-	admin := login(t, h, "admin", "admin-pw")
+	b := config.Backend{Name: "llm", Prefix: "/api/llm", Gateway: &config.Gateway{ConfigMap: "llm/routes", Service: "llm/openresty"}}
+	cfg := &config.Config{Backends: []config.Backend{b}}
+	cfg.Server.Auth.Disabled = true
+	srv := testServerWithConfig(t, cfg)
+	resolve := func(context.Context) (*backendTarget, error) {
+		return &backendTarget{url: *base, routes: []string{"video", "model"}, key: "secret", header: "Authorization"}, nil
+	}
+	h := srv.authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { srv.handleRouteOptions(w, r, b, resolve) }))
 	for _, path := range []string{"/api/llm/route-options", "/api/llm/route-options?route=model"} {
-		rec := do(h, "GET", path, admin, "")
+		rec := do(h, "GET", path, "", "")
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"fallback":"73"`) || !strings.Contains(rec.Body.String(), `"value":81`) {
 			t.Fatalf("live catalog = %d %s", rec.Code, rec.Body.String())
 		}
@@ -70,6 +127,7 @@ func TestRouteOptionsEmptyGatewayAndResolutionFailure(t *testing.T) {
 		ref  string
 		want int
 	}{
+		{"", http.StatusNotFound},
 		{"llm/openresty-conf", http.StatusNotFound},
 		{"llm/missing-conf", http.StatusBadGateway},
 	} {

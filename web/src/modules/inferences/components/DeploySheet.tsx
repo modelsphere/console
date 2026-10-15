@@ -37,7 +37,7 @@ import { useT } from "@/modules/inferences/i18n";
 import { detailPath } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, defaultServiceId, gpuOptions, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
-import { readRouteOptions } from "@/modules/inferences/route-options";
+import { readRouteOptions } from "@/modules/inferences/api";
 
 export type DeployTarget =
   | { kind: "deploy"; model: string; catalog: string; version?: string; variant?: string }
@@ -305,7 +305,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               gpuOptions={gpuOptions(v?.requires.gpuProduct, nodes.data?.nodes.map((n) => n.GPUProduct))}
               expanded={expanded}
               onExpand={(s, o) => setExpanded((e) => ({ ...e, [s]: o }))}
-              routeOptions={routeOptions.data}
+              routeOptions={routeOptions.isSuccess ? routeOptions.data : undefined}
               catalogRoute={catalogRoute}
               idPrefix={ID_PREFIX}
             />

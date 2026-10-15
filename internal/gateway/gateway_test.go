@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"slices"
 	"strings"
@@ -97,6 +98,76 @@ func resolveOne(t *testing.T, cfg *config.Gateway, c *fakeCluster) (*Entry, erro
 	t.Helper()
 	b := config.Backend{Name: "llm", Prefix: "/api/llm", Gateway: cfg}
 	return NewResolver(b, c, slog.New(slog.DiscardHandler)).Resolve(t.Context())
+}
+
+func TestResolveCatalogIndependentOfInferencePin(t *testing.T) {
+	for _, pin := range []string{"video", "stale"} {
+		t.Run(pin, func(t *testing.T) {
+			c := fixture()
+			b := config.Backend{Name: "llm", Gateway: &config.Gateway{Profile: "llm/site-profile", Route: pin}}
+			r := NewResolver(b, c, slog.New(slog.DiscardHandler))
+			inference, err := r.Resolve(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			catalog, err := r.ResolveCatalog(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if catalog.Base != "http://openresty.llm.svc:8080" || !slices.Equal(catalog.Routes, []string{"llm-gateway", "glm-5.1", "kimi-k2.6"}) || catalog.Key != "" {
+				t.Fatalf("catalog = %+v", catalog)
+			}
+			again, err := r.Resolve(t.Context())
+			if err != nil || again != inference || !slices.Equal(again.Routes, []string{pin}) || again.Key != "Bearer k1" {
+				t.Fatalf("inference pin or credential changed: %+v, %v", again, err)
+			}
+		})
+	}
+}
+
+func TestResolveCatalogWithoutCredentialSecret(t *testing.T) {
+	c := fixture()
+	c.secrets = nil
+	t.Setenv("CONSOLE_TEST_CATALOG_KEY", "secret")
+	for _, keyEnv := range []string{"", "CONSOLE_TEST_CATALOG_KEY"} {
+		b := config.Backend{Name: "llm", APIKeyEnv: keyEnv, Gateway: &config.Gateway{Profile: "llm/site-profile"}}
+		entry, err := NewResolver(b, c, slog.New(slog.DiscardHandler)).ResolveCatalog(t.Context())
+		if err != nil || entry.Key != "" || entry.KeySource != "" {
+			t.Fatalf("catalog required or exposed a credential: %+v, %v", entry, err)
+		}
+	}
+}
+
+func TestResolveCatalogRouteSources(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		gw     config.Gateway
+		routes []string
+		err    error
+	}{
+		{"explicit without configmap", config.Gateway{Service: "llm/openresty", Route: "model", Port: 9000}, []string{"model"}, nil},
+		{"no route source", config.Gateway{Service: "llm/openresty"}, nil, ErrNoRoutes},
+		{"empty configmap despite pin", config.Gateway{Service: "llm/openresty", ConfigMap: "llm/empty-conf", Route: "stale"}, nil, ErrNoRoutes},
+		{"missing configmap despite pin", config.Gateway{Service: "llm/openresty", ConfigMap: "llm/missing", Route: "stale"}, nil, errNotFound},
+		{"explicit configmap overrides profile", config.Gateway{Profile: "llm/site-profile", ConfigMap: "llm/many-routes-conf", Route: "stale"}, []string{"a", "b"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := config.Backend{Name: "llm", Gateway: &tc.gw}
+			entry, err := NewResolver(b, fixture(), slog.New(slog.DiscardHandler)).ResolveCatalog(t.Context())
+			if tc.err != nil {
+				if !errors.Is(err, tc.err) {
+					t.Fatalf("err = %v, want %v", err, tc.err)
+				}
+				return
+			}
+			if err != nil || !slices.Equal(entry.Routes, tc.routes) {
+				t.Fatalf("entry = %+v, err = %v", entry, err)
+			}
+			if tc.gw.Port == 9000 && entry.Base != "http://openresty.llm.svc:9000" {
+				t.Fatalf("explicit port ignored: %+v", entry)
+			}
+		})
+	}
 }
 
 func TestResolveFromProfile(t *testing.T) {

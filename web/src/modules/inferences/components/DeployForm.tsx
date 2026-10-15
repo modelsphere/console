@@ -24,7 +24,7 @@ import { Plus, X } from "lucide-react";
 import type { ClusterInfo } from "@swiss/lib/api";
 import { effective, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
-import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/route-options";
+import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
 import { useT } from "@/modules/inferences/i18n";
 import { NAMED_VALUES, extraValue, fracOutOfRange, serviceIdError, type Section } from "@/modules/inferences/deploy-lib";
 
@@ -284,7 +284,7 @@ export function RouteExtras({ form, onChange, options, showRuntime = false }: { 
   const f = (k: string, v?: Record<string, string | number>) => t(`deploy.fields.${k}`, v);
   const [custom, setCustom] = useState("");
   const controlsId = useId();
-  const catalog = options ?? FALLBACK_ROUTE_OPTIONS;
+  const catalog = options === null ? FALLBACK_ROUTE_OPTIONS : options ?? { route: "", directives: [], advanced: [] };
   const byKey = new Map(routeDirectives(catalog).map((d) => [d.key, d]));
   const taken = [...NAMED_VALUES, ...form.nginxExtras.map((r) => r.key)];
   const used = NAMED_VALUES.size + form.nginxExtras.length;
