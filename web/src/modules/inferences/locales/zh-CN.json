@@ -401,6 +401,8 @@
       "applyWith": "安装方式",
       "applyWithHint": "安装时确定：之后的升级和回滚都沿用",
       "applyWithDefault": "默认",
+      "applyWithExperimental": "实验性",
+      "applyWithExperimentalNote": "LLMService 为实验性功能",
       "applyWithMethod": {
         "helm": "Plan ConfigMap",
         "llmsvc": "LLMService"

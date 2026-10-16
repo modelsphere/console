@@ -412,6 +412,8 @@
       "applyWith": "Install method",
       "applyWithHint": "Fixed at install: upgrades and rollbacks stay on it",
       "applyWithDefault": "default",
+      "applyWithExperimental": "Experimental",
+      "applyWithExperimentalNote": "LLMService is experimental",
       "applyWithMethod": {
         "helm": "Plan ConfigMap",
         "llmsvc": "LLMService"

@@ -18,6 +18,7 @@ import { AccessPoint } from "@swiss/components/Endpoint";
 import { useT } from "@/modules/inferences/i18n";
 import { installSteps, modelLine, releaseState, type Step, type StepState } from "@/modules/inferences/lib";
 import { StatusDot } from "@/modules/inferences/components/StatusDot";
+import { InstallMethodLabel } from "@/modules/inferences/components/InstallMethodLabel";
 import { LoadHint } from "@/modules/inferences/components/LoadHint";
 import { EventRow, useReleaseEvents } from "@/modules/inferences/tabs/Events";
 
@@ -87,7 +88,7 @@ export function Overview({
               { label: t("detail.fields.catalog"), value: catalog },
               { label: t("detail.fields.chart"), value: plan && `${plan.chart.name}-${plan.chart.version}` },
               { label: t("detail.fields.revision"), value: s.exists ? String(s.revision) : undefined },
-              { label: t("deploy.fields.applyWith"), value: s.backend && t(`deploy.fields.applyWithMethod.${s.backend}`) },
+              { label: t("deploy.fields.applyWith"), value: s.backend && <InstallMethodLabel method={s.backend} /> },
               { label: t("detail.fields.route"), value: s.route && <code className="font-mono text-xs">/{s.route}/</code> },
               { label: t("detail.fields.namespace"), value: namespace },
               { label: t("detail.fields.updated"), value: updated && formatDateTime(updated) },

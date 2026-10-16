@@ -24,7 +24,7 @@ import {
   useAnchorNav,
   useDirty,
 } from "@modelsphere/ui";
-import { ArrowRight, TriangleAlert } from "lucide-react";
+import { ArrowRight, FlaskConical, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
 import { EMPTY, formFromPlan, imageOf, planRequest, type Form } from "@swiss/components/DeploySettings";
@@ -38,6 +38,7 @@ import { useT } from "@/modules/inferences/i18n";
 import { detailPath } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, defaultServiceId, gpuOptions, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
+import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
 import { readRouteOptions } from "@/modules/inferences/api";
 
 export type DeployTarget =
@@ -283,15 +284,33 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
           <FieldSelect
             value={method}
             onValueChange={(x) => x && setPicked(x as ApplyWith)}
-            options={(["helm", "llmsvc"] as const).map((m) => ({
-              value: m,
-              label: t(`deploy.fields.applyWithMethod.${m}`),
-              description: t(`deploy.fields.applyWithDesc.${m}`),
-              badge: m === installMethod(undefined, llm, "v2") ? t("deploy.fields.applyWithDefault") : undefined,
-              disabled: m === "llmsvc" && !!block,
-            }))}
+            options={(["helm", "llmsvc"] as const).map((m) => {
+              const isDefault = m === installMethod(undefined, llm, "v2");
+              return {
+                value: m,
+                label: t(`deploy.fields.applyWithMethod.${m}`),
+                description: t(`deploy.fields.applyWithDesc.${m}`),
+                badge:
+                  m === "llmsvc" ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <ExperimentalBadge />
+                      {isDefault && t("deploy.fields.applyWithDefault")}
+                    </span>
+                  ) : isDefault ? (
+                    t("deploy.fields.applyWithDefault")
+                  ) : undefined,
+                disabled: m === "llmsvc" && !!block,
+              };
+            })}
           />
         </FloatingField>
+      )}
+      {/* The select shows only the label once closed, so the mark is repeated here. */}
+      {!upgrade && method === "llmsvc" && (
+        <p className="-mt-1 flex items-center gap-1.5 text-xs text-warning">
+          <FlaskConical className="size-3.5 shrink-0" />
+          {t("deploy.fields.applyWithExperimentalNote")}
+        </p>
       )}
     </>
   );
@@ -476,8 +495,9 @@ export function Review({
         </SectionCard>
       )}
       {method && (
-        <p className="text-sm text-muted-foreground">
+        <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
           {t(state.action === "install" ? "deploy.review.applyWith" : "deploy.review.applyWithKept", { method: t(`deploy.fields.applyWithMethod.${method}`) })}
+          {method === "llmsvc" && <ExperimentalBadge />}
         </p>
       )}
       <FloatingField label={t("deploy.review.note")} hint={t("deploy.review.noteHint")} multiline>
