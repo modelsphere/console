@@ -26,13 +26,14 @@ import {
 } from "@modelsphere/ui";
 import { ArrowRight, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
-import { api, deployApi, type ApplyResult, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
+import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
 import { EMPTY, formFromPlan, imageOf, planRequest, type Form } from "@swiss/components/DeploySettings";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
 import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
 import { gpuShort } from "@swiss/lib/gpu";
 import { isChartRange, movableCatalogs } from "@swiss/lib/upgrade";
+import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, defaultServiceId, gpuOptions, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
@@ -76,6 +77,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const [variant, setVariant] = useState(upgrade ? "" : (target.variant ?? ""));
   const [moveTo, setMoveTo] = useState("");
   const [chartVersion, setChartVersion] = useState("");
+  const [picked, setPicked] = useState<ApplyWith>();
   const catalogName = moveTo || ownCatalog;
 
   const indexes = useQueries({
@@ -112,6 +114,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     retry: false,
   });
   const chart = chartChoice(chartList, chartVersion, upgrade ? current.data?.chart : undefined);
+  const llm = cluster.data?.llmservice;
+  const block = llmsvcBlock(llm, entry.data?.schema);
+  const method = installMethod(picked, llm, entry.data?.schema);
 
   const initial = useMemo<Form>(() => (upgrade ? (current.data ? formFromPlan(current.data) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(target.model) }), [upgrade, current.data, target]);
   const [form, setForm] = useState<Form>(initial);
@@ -161,7 +166,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const dryRun = useMutation({ mutationFn: (pl: Plan) => deployApi.diff({ planHash: pl.hash }), onSuccess: setDiff });
   const state = pipelineState({ diff, exists: live.data?.exists, applied: !!applied });
   const apply = useMutation({
-    mutationFn: () => (state.action === "install" ? deployApi.install(plan!.hash, note.trim()) : deployApi.apply(plan!.hash, diff?.revision, note.trim(), force)),
+    mutationFn: () => (state.action === "install" ? deployApi.install(plan!.hash, note.trim(), method) : deployApi.apply(plan!.hash, diff?.revision, note.trim(), force)),
     onSuccess: (r) => {
       setApplied(r);
       for (const key of REFRESH) qc.invalidateQueries({ queryKey: key });
@@ -273,6 +278,21 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
           )}
         </FloatingField>
       )}
+      {!upgrade && (
+        <FloatingField label={t("deploy.fields.applyWith")} hint={block ? t(`deploy.fields.applyWithBlocked.${block}`) : t("deploy.fields.applyWithHint")}>
+          <FieldSelect
+            value={method}
+            onValueChange={(x) => x && setPicked(x as ApplyWith)}
+            options={(["helm", "llmsvc"] as const).map((m) => ({
+              value: m,
+              label: t(`deploy.fields.applyWithMethod.${m}`),
+              description: t(`deploy.fields.applyWithDesc.${m}`),
+              badge: m === installMethod(undefined, llm, "v2") ? t("deploy.fields.applyWithDefault") : undefined,
+              disabled: m === "llmsvc" && !!block,
+            }))}
+          />
+        </FloatingField>
+      )}
     </>
   );
 
@@ -348,6 +368,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               onNote={setNote}
               force={force}
               onForce={setForce}
+              method={state.action === "install" ? method : live.data?.backend}
             />
           )
         )}
@@ -391,6 +412,7 @@ export function Review({
   onNote,
   force,
   onForce,
+  method,
 }: {
   upgrade: boolean;
   rollback?: boolean;
@@ -405,6 +427,8 @@ export function Review({
   onNote: (v: string) => void;
   force: boolean;
   onForce: (v: boolean) => void;
+  // The install method: the one picked on an install, the release's own otherwise.
+  method?: ApplyWith;
 }) {
   const t = useT();
   const moves = current && (upgrade || rollback) ? whatMoves(current, plan, currentCatalog) : null;
@@ -450,6 +474,11 @@ export function Review({
         <SectionCard title={t("deploy.review.plan")} collapsible defaultExpanded={false}>
           <Provenance plan={plan} />
         </SectionCard>
+      )}
+      {method && (
+        <p className="text-sm text-muted-foreground">
+          {t(state.action === "install" ? "deploy.review.applyWith" : "deploy.review.applyWithKept", { method: t(`deploy.fields.applyWithMethod.${method}`) })}
+        </p>
       )}
       <FloatingField label={t("deploy.review.note")} hint={t("deploy.review.noteHint")} multiline>
         <FieldTextarea value={note} onChange={(e) => onNote(e.target.value)} rows={3} />

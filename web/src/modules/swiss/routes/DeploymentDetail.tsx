@@ -37,6 +37,7 @@ import { AccessPoint } from "@swiss/components/Endpoint";
 import { ReleaseStatus } from "@swiss/components/ReleaseStatus";
 import { SLODialog } from "@swiss/components/SLOCard";
 import { ErrorState, Loading } from "@swiss/components/States";
+import { METHODS } from "@swiss/components/InstallMethod";
 import { cn, timeAgo } from "@swiss/lib/utils";
 
 export function DeploymentDetail() {
@@ -232,6 +233,11 @@ function InstallStatus({ status, objects }: { status: Status; objects?: ObjectRe
         <div className="flex flex-wrap items-center gap-1.5">
           {p && <PhaseBadge phase={p.phase} />}
           {status.helmStatus && <Badge variant="outline">helm {status.helmStatus}</Badge>}
+          {status.backend && (
+            <Badge variant="muted" title={`install method: ${METHODS[status.backend].hint}`}>
+              {METHODS[status.backend].label}
+            </Badge>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

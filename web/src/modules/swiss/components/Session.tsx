@@ -1,7 +1,8 @@
 import { createContext, use, useEffect } from "react";
 import { loginPath, Navigate, useLocation } from "@swiss/lib/host";
-import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { api, onUnauthorized, type Session } from "@swiss/lib/api";
+import { setupRedirect } from "@swiss/lib/setup";
 import { ErrorState, Loading } from "@swiss/components/States";
 
 // The session is asked for once, at the root, and read from everywhere else.
@@ -25,9 +26,19 @@ export function useSessionQuery(): UseQueryResult<Session> {
   });
 }
 
+// markSetUp follows a profile save. What was just stored parses -- swissd
+// refuses one that does not -- so the site is set up. Said before the session
+// is re-asked, or the gate acts on the old answer and sends the next page back
+// to setup.
+export function markSetUp(qc: QueryClient) {
+  qc.setQueryData<Session>(["session"], (s) => s && { ...s, initialized: true, setUp: true });
+  qc.invalidateQueries({ queryKey: ["session"] });
+}
+
 // Gate is what every page is rendered inside: not logged in goes to the login,
 // and a site with no profile yet goes to the setup page before anything else --
 // there is nothing to show until swissd knows what this cluster looks like.
+// setupRedirect says which pages setup is for.
 export function Gate({ children }: { children: React.ReactNode }) {
   const session = useSessionQuery();
   const { pathname } = useLocation();
@@ -48,8 +59,7 @@ export function Gate({ children }: { children: React.ReactNode }) {
     if (loginPath) return <Navigate to={loginPath} replace state={{ from: pathname }} />;
     return <ErrorState what="swissd" error={new Error("swissd did not accept console; give console swissd's proxyKey (swiss chart auth.proxyKey)")} />;
   }
-  if (!session.data.initialized && !pathname.endsWith("/setup")) {
-    return <Navigate to="/setup" replace />;
-  }
+  const to = setupRedirect(session.data, pathname);
+  if (to) return <Navigate to={to} replace />;
   return <SessionContext value={session.data}>{children}</SessionContext>;
 }

@@ -25,6 +25,22 @@ export interface ClusterInfo {
   // The other swissd instances this site knows about, from its profile.
   sites?: Site[];
   warnings?: string[];
+  // Absent from a swissd that predates the LLMService backend.
+  llmservice?: LLMServiceInfo;
+}
+
+// How a release is stored: helm keeps the plan in a ConfigMap beside a release
+// swissd installs; llmsvc is an LLMService that llm-operator installs.
+export type ApplyWith = "helm" | "llmsvc";
+
+export interface LLMServiceInfo {
+  // The CRD is served (discovery, not operator readiness).
+  served: boolean;
+  // An install may name llmsvc: served, and swissd is not known to lack the grant.
+  available?: boolean;
+  // The site profile's applyWith, and what an install naming none gets.
+  applyWith: ApplyWith;
+  newInstalls: ApplyWith;
 }
 
 // One selectable catalog. source is its location as a plan records it, which
@@ -68,6 +84,9 @@ export interface Deployment {
   // The path the entrypoint publishes this release on. Absent when the plan
   // names no route.
   route?: string;
+  backend?: ApplyWith;
+  // An LLMService swiss did not write.
+  external?: boolean;
 }
 
 export interface DeploymentsResponse {
@@ -288,7 +307,12 @@ export interface SiteProfile {
     auth?: RouteAuth;
   };
   schedule?: { priorityClassName?: string; schedulerName?: string };
-  nodes?: { gpusPerNode?: number };
+  nodes?: {
+    gpusPerNode?: number;
+    // Catalog GPU product -> node label selectors ("key=value[,key=value]"),
+    // for nodes a vendor install does not label with the catalog's name.
+    gpuProductAliases?: Record<string, string[]>;
+  };
   sites?: Site[];
   extra?: Record<string, unknown>;
 }
@@ -396,9 +420,13 @@ export interface Session {
   authenticated: boolean;
   user?: string;
   expiresAt?: string;
-  // Absent until authenticated: whether the site profile has been written yet.
-  // A fresh install has none, and the first login lands on the setup page.
+  // Absent until authenticated: whether the site profile is stored and parses,
+  // so swissd can compose against it.
   initialized?: boolean;
+  // Whether setup has run: a profile is stored, parsing or not. False only when
+  // swissd found none, which is the one state the setup page is for. Absent
+  // from a swissd older than the field.
+  setUp?: boolean;
   // This swissd runs with no login at all.
   authDisabled?: boolean;
 }
@@ -519,6 +547,8 @@ export interface Plan {
   layers: Record<string, Record<string, unknown>>;
   helmfile?: string;
   hash: string;
+  // What compose accepted but a person should see, such as a forced GPU product.
+  warnings?: string[];
 }
 
 export interface DiffResult {
@@ -551,6 +581,9 @@ export interface PlanRequest {
   serviceId?: string;
   localPath?: string;
   gpuProducts?: string[];
+  // Accepts gpuProducts the variant does not list, provided each is on this
+  // cluster under the variant's vendor. The plan then carries a warning.
+  forceGpuProducts?: boolean;
   overrides?: Record<string, unknown>;
   overridesYAML?: string;
   editsYAML?: string;
@@ -610,6 +643,8 @@ export interface ReleaseStatus {
   // Written beside the release on every apply. The only thing that can say an
   // apply was started and never finished -- helm reports the last one that did.
   planStatus?: PlanStatus;
+  // Set when swiss manages the release; it never changes after install.
+  backend?: ApplyWith;
 }
 
 export interface ObjectRef {
@@ -874,8 +909,8 @@ export const deployApi = {
   // decision about this one upgrade rather than about the release.
   apply: (planHash: string, expectRevision?: number, note?: string, forceConflicts?: boolean) =>
     post<ApplyResult>("/api/apply", { planHash, expectRevision, note, forceConflicts }),
-  install: (planHash: string, note?: string) =>
-    post<ApplyResult>("/api/install", { planHash, note }),
+  install: (planHash: string, note?: string, applyWith?: ApplyWith) =>
+    post<ApplyResult>("/api/install", { planHash, note, applyWith }),
   probe: (ns: string, release: string, auth: EntrypointAuth = {}) =>
     post<ProbeResult>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/probe`,

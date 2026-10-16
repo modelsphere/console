@@ -66,3 +66,35 @@ export function matchesVendor(
   }
   return node.GPUResource === expected;
 }
+
+// The products this cluster reports on a vendor's nodes: what a variant of that
+// vendor can be scheduled onto, whether the catalog lists them or not. swissd
+// accepts the same set when a deploy forces a product the variant does not list.
+export function vendorProducts(
+  nodes: { GPUProduct?: string; GPUResource?: string }[] | undefined,
+  vendor: string | undefined,
+): string[] {
+  const out = new Set<string>();
+  for (const n of nodes ?? []) if (n.GPUProduct && matchesVendor(vendor, n)) out.add(n.GPUProduct);
+  return [...out].sort();
+}
+
+// The selected products a variant does not list. A variant naming none accepts
+// any card of its vendor, so for it nothing is unlisted.
+export function unlistedProducts(listed: string[] | undefined, selected: string[]): string[] {
+  return listed?.length ? selected.filter((p) => !listed.includes(p)) : [];
+}
+
+// What the product picker offers: every product of the variant's vendor this
+// cluster reports, the listed ones first. With no inventory -- nothing reported,
+// or the nodes not read -- the variant's own list stands in. A product already
+// selected is always offered, so it can be cleared.
+export function productChoices(
+  listed: string[] | undefined,
+  present: string[] | undefined,
+  selected: string[],
+): string[] {
+  const base = present?.length ? present : (listed ?? []);
+  const off = (p: string) => (unlistedProducts(listed, [p]).length ? 1 : 0);
+  return [...new Set([...base, ...selected])].sort((a, b) => off(a) - off(b) || a.localeCompare(b));
+}

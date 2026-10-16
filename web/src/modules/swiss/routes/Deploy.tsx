@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, TriangleAlert } from "lucide-react";
-import { api, deployApi, type ApplyResult, type DiffResult, type Plan } from "@swiss/lib/api";
+import { api, deployApi, type ApplyResult, type ApplyWith, type DiffResult, type Plan } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
 import { DeploySettings, EMPTY, imageOf, planRequest, type Form } from "@swiss/components/DeploySettings";
@@ -11,6 +11,9 @@ import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { isChartRange } from "@swiss/lib/upgrade";
+import { unlistedProducts, vendorProducts } from "@swiss/lib/gpu";
+import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
+import { InstallMethodChoice } from "@swiss/components/InstallMethod";
 
 export function Deploy() {
   const { name = "" } = useParams();
@@ -58,6 +61,7 @@ export function Deploy() {
   };
   const [chartVersion, setChartVersion] = useState("");
   useEffect(() => setChartVersion(""), [catalog, name, version, variantId]);
+  const [picked, setPicked] = useState<ApplyWith>();
 
   const [form, setForm] = useState<Form>({ ...EMPTY, serviceId: name });
   // serviceId is the identity everything else is named after: the helm release,
@@ -83,7 +87,14 @@ export function Deploy() {
   const planM = useMutation({
     mutationFn: () =>
       deployApi.plan(
-        planRequest(form, { model: name, version, variant: variantId, catalog, chartVersion: chartVersion || undefined }),
+        planRequest(form, {
+          model: name,
+          version,
+          variant: variantId,
+          catalog,
+          chartVersion: chartVersion || undefined,
+          forceGpuProducts: unlistedProducts(model.data?.variant.requires.gpuProduct, form.gpuProducts).length > 0,
+        }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping
     // it here rather than on the way back means a failed compose leaves
@@ -107,6 +118,8 @@ export function Deploy() {
 
   const { model: m, variant, schema } = model.data;
   const current = m.variants.find((v) => v.id === variant.id)?.version;
+  const llm = cluster.data?.llmservice;
+  const method = installMethod(picked, llm, schema);
   const chart = chartVersionChoice({
     list: chartVersions,
     value: chartVersion,
@@ -193,6 +206,24 @@ export function Deploy() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Install method</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            How a new release is stored. It is fixed at install: upgrades and rollbacks stay on it,
+            and an existing release keeps its own.
+          </p>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <InstallMethodChoice
+            value={method}
+            onChange={setPicked}
+            blocked={llmsvcBlock(llm, schema)}
+            fallback={installMethod(undefined, llm, "v2")}
+          />
+        </CardContent>
+      </Card>
+
       {/* The settings are the page. Plan, diff and apply are what is done with
           them, so they sit below as tabs rather than holding the form inside
           one of them. */}
@@ -205,7 +236,7 @@ export function Deploy() {
         localPathPlaceholder={model.data.pathTemplate}
         image={imageOf(variant, model.data.imageRepository)}
         supportedGPUs={variant?.requires.gpuProduct}
-        clusterGPUs={nodes.data?.nodes.map((n) => n.GPUProduct)}
+        clusterGPUs={vendorProducts(nodes.data?.nodes, variant?.requires.vendor)}
       />
 
       <Pipeline
@@ -219,6 +250,7 @@ export function Deploy() {
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
         composeDisabled={!form.serviceId}
+        applyWith={method}
         onDiff={setDiff}
         onApplied={setApplied}
       />

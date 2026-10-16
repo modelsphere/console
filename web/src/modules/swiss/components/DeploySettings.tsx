@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { ChevronDown, Plus, X } from "lucide-react";
+import { ChevronDown, Plus, TriangleAlert, X } from "lucide-react";
 import type { ClusterInfo, Plan, PlanRequest, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
+import { productChoices, unlistedProducts } from "@swiss/lib/gpu";
 import {
   DIRECTIVES,
   DIRECTIVES_BY_KEY,
@@ -137,8 +138,9 @@ export function DeploySettings({
   image?: { catalog: string; site: string };
   lockIdentity?: boolean;
   readOnly?: boolean;
-  // Products the chosen variant declares, and those a node in this cluster
-  // actually reports. The intersection is what is worth offering.
+  // Products the chosen variant declares, and those this cluster reports on
+  // nodes of the variant's vendor. Every one of the second is offered; one the
+  // first does not name is marked, and selecting it is a forced deploy.
   supportedGPUs?: string[];
   clusterGPUs?: string[];
 }) {
@@ -621,7 +623,8 @@ export function DeploySettings({
             <Products
               selected={form.gpuProducts}
               onChange={(v) => onChange({ gpuProducts: v })}
-              options={gpuOptions(supportedGPUs, clusterGPUs)}
+              options={productChoices(supportedGPUs, clusterGPUs, form.gpuProducts)}
+              listed={supportedGPUs}
             />
           </Row>
           <Row label="Tolerations" note="lets this deploy land on tainted GPU nodes">
@@ -726,9 +729,6 @@ function Row({
   );
 }
 
-// The products worth offering are those the variant declares and a node in
-// this cluster reports. Either list alone is a guess: the catalog does not know
-// what is racked here, and the cluster does not know what the model supports.
 function tolerationsOf(o: Record<string, unknown>): Toleration[] {
   if (!Array.isArray(o.tolerations)) return [];
   return o.tolerations.flatMap((t): Toleration[] => {
@@ -773,13 +773,6 @@ function gpuProductsOf(o: Record<string, unknown>): string[] {
     }
   }
   return [];
-}
-
-function gpuOptions(supported?: string[], present?: string[]): string[] {
-  const has = new Set(present?.filter(Boolean) ?? []);
-  if (!supported?.length) return [...has].sort();
-  const both = supported.filter((p) => has.has(p));
-  return (both.length ? both : supported).slice().sort();
 }
 
 // Tab fills an empty field with the default it is showing, the way a shell
@@ -1000,14 +993,19 @@ function Select({
   );
 }
 
+// Products offers every card of the variant's vendor on this cluster, the ones
+// the catalog lists first and the rest after an "untested" mark: the catalog
+// does not know what is racked here.
 function Products({
   selected,
   onChange,
   options,
+  listed,
 }: {
   selected: string[];
   onChange: (v: string[]) => void;
   options: string[];
+  listed?: string[];
 }) {
   if (options.length === 0) {
     return (
@@ -1016,32 +1014,53 @@ function Products({
       </span>
     );
   }
+  const untested = (o: string) => unlistedProducts(listed, [o]).length > 0;
+  const supported = options.filter((o) => !untested(o));
+  const others = options.filter(untested);
+  const forced = unlistedProducts(listed, selected);
+  const chip = (o: string) => {
+    const active = selected.includes(o);
+    const off = untested(o);
+    return (
+      <button
+        key={o}
+        type="button"
+        aria-pressed={active}
+        title={off ? "untested with this variant" : undefined}
+        onClick={() => onChange(active ? selected.filter((p) => p !== o) : [...selected, o])}
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors",
+          !active && "bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+          active && !off && "border-success/40 bg-success/15 font-medium text-success",
+          active && off && "border-warning/50 bg-warning/15 font-medium text-warning",
+        )}
+      >
+        {active && off && <TriangleAlert className="size-3" />}
+        {o}
+      </button>
+    );
+  };
   return (
-    <div className="flex w-full flex-wrap gap-1.5">
-      {options.map((o) => {
-        const active = selected.includes(o);
-        return (
-          <button
-            key={o}
-            type="button"
-            aria-pressed={active}
-            onClick={() =>
-              onChange(active ? selected.filter((p) => p !== o) : [...selected, o])
-            }
-            className={
-              active
-                ? "rounded-full border border-success/40 bg-success/15 px-2.5 py-1 text-xs font-medium text-success"
-                : "rounded-full border bg-background px-2.5 py-1 text-xs text-muted-foreground hover:border-foreground/30 hover:text-foreground"
-            }
-          >
-            {o}
-          </button>
-        );
-      })}
-      {selected.length === 0 && (
-        <span className="self-center text-xs text-muted-foreground">
-          none selected — any product the variant supports
-        </span>
+    <div className="w-full space-y-1.5">
+      {/* Two units, so a wrap moves the label with its chips. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        {supported.length > 0 && (
+          <span className="inline-flex flex-wrap items-center gap-1.5">{supported.map(chip)}</span>
+        )}
+        {others.length > 0 && (
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground">untested</span>
+            {others.map(chip)}
+          </span>
+        )}
+      </div>
+      {forced.length > 0 ? (
+        <p className="flex items-center gap-1.5 text-xs text-warning">
+          <TriangleAlert className="size-3.5 shrink-0" />
+          {forced.join(", ")} untested with this variant, deployed as forced
+        </p>
+      ) : (
+        selected.length === 0 && <p className="text-xs text-muted-foreground">none selected: any supported product</p>
       )}
     </div>
   );
@@ -1327,6 +1346,9 @@ export function planRequest(
     fromRelease?: string;
     catalog?: string;
     chartVersion?: string;
+    // Accept gpuProducts the variant does not list; swissd still requires each
+    // on this cluster under the variant's vendor.
+    forceGpuProducts?: boolean;
   },
 ): PlanRequest {
   const overrides: Record<string, unknown> = {};
@@ -1428,6 +1450,7 @@ export function planRequest(
     version: opts.version || undefined,
     editsYAML: f.edits.trim() || undefined,
     gpuProducts: f.gpuProducts.length ? f.gpuProducts : undefined,
+    forceGpuProducts: f.gpuProducts.length > 0 && opts.forceGpuProducts ? true : undefined,
     variant: opts.variant || undefined,
     release: f.serviceId.trim() || undefined,
     namespace: f.namespace.trim() || undefined,

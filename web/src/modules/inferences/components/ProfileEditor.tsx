@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription, Button, FieldTextarea, FloatingField, Tabs, TabsList, TabsTrigger } from "@modelsphere/ui";
 import { TriangleAlert } from "lucide-react";
 import { api, type ProfileResponse, type SiteProfile } from "@swiss/lib/api";
+import { markSetUp } from "@swiss/components/Session";
 import { useT } from "@/modules/inferences/i18n";
 import { profileErrors } from "@/modules/inferences/profile-lib";
 import { ProfileForm } from "@/modules/inferences/components/ProfileForm";
@@ -18,7 +19,8 @@ export function useProfileEditor(profile: SiteProfile, yaml: string, onSaved: (r
   const save = useMutation({
     mutationFn: () => (mode === "form" ? api.saveProfile({ profile: form }) : api.saveProfile({ yaml: text })),
     onSuccess: (r) => {
-      for (const key of [["profile"], ["cluster"], ["catalog"], ["session"]]) qc.invalidateQueries({ queryKey: key });
+      markSetUp(qc);
+      for (const key of [["profile"], ["cluster"], ["catalog"]]) qc.invalidateQueries({ queryKey: key });
       onSaved(r);
     },
   });

@@ -5,6 +5,7 @@ import { api, type SiteProfile } from "@swiss/lib/api";
 import { Button } from "@swiss/components/ui/button";
 import { ErrorState } from "@swiss/components/States";
 import { ProfileForm } from "@swiss/components/ProfileForm";
+import { markSetUp } from "@swiss/components/Session";
 
 type Mode = "form" | "yaml";
 
@@ -39,7 +40,7 @@ export function ProfileEditor({
     mutationFn: () => (mode === "form" ? api.saveProfile({ profile: form }) : api.saveProfile({ yaml })),
     onSuccess: (saved) => {
       qc.setQueryData(["profile"], saved);
-      qc.invalidateQueries({ queryKey: ["session"] });
+      markSetUp(qc);
       qc.invalidateQueries({ queryKey: ["cluster"] });
       // Whichever half was not edited is now stale. A save that came back
       // without a profile did not parse, which the server refuses -- so this is

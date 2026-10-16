@@ -26,27 +26,30 @@ function keepDistEmbeddable(): Plugin {
 //
 // | mode             | entry                        | @swiss/lib/host | @swiss/components/ui | /api goes to            | out          |
 // |------------------|------------------------------|-----------------|----------------------|-------------------------|--------------|
-// | (default)        | index.html, console shell    | console.ts      | rise                 | console, :8080          | dist/        |
+// | (default)        | index.html, console shell    | console.ts      | rise                 | console, $CONSOLE       | dist/        |
 // | `--mode swiss`   | modules/swiss/standalone     | standalone.ts   | shadcn               | swissd, $SWISSD         | dist-swiss/  |
 const src = path.resolve(import.meta.dirname, "src");
 const swissDir = path.join(src, "modules/swiss");
 
 const egressProxy = process.env.http_proxy ?? process.env.HTTP_PROXY;
-// The swissd that `npm run dev:swiss` talks to: SWISSD=http://<host>:<port> npm run dev:swiss
+// What the dev server proxies to:
+//   CONSOLE=http://<host>:<port> npm run dev        a console; default the local `go run` on :8080
+//   SWISSD=http://<host>:<port> npm run dev:swiss   a swissd
+const consoleTarget = process.env.CONSOLE ?? "http://localhost:8080";
 const remote = process.env.SWISSD ?? "http://127.0.0.1:8080";
+
+// Through the egress proxy, except to this machine, which the proxy cannot reach.
+function via(target: string): ProxyOptions {
+  const local = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(target);
+  return { target, changeOrigin: true, agent: egressProxy && !local ? new HttpProxyAgent(egressProxy) : undefined };
+}
 
 export default defineConfig(({ mode }) => {
   const swiss = mode === "swiss";
   const proxy: Record<string, string | ProxyOptions> = swiss
     ? // swissd's own login: its session cookie is host-only and plain-http here, so it rides the proxy.
-      {
-        "/api": {
-          target: remote,
-          changeOrigin: true,
-          agent: egressProxy ? new HttpProxyAgent(egressProxy) : undefined,
-        },
-      }
-    : { "/api": "http://localhost:8080", "/oauth": "http://localhost:8080" };
+      { "/api": via(remote) }
+    : { "/api": via(consoleTarget), "/oauth": via(consoleTarget) };
   return {
     root: swiss ? path.join(swissDir, "standalone") : undefined,
     plugins: [react(), tailwindcss(), ...(swiss ? [] : [keepDistEmbeddable()])],

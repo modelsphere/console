@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, FlaskConical, Layers, Loader2, Rocket, TriangleAlert, Undo2 } from "lucide-react";
-import { api, deployApi, type ApplyResult, type DiffResult, type Plan } from "@swiss/lib/api";
+import { api, deployApi, type ApplyResult, type ApplyWith, type DiffResult, type Plan } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
@@ -14,6 +14,7 @@ import { DiffView } from "@swiss/components/DiffView";
 import { Provenance } from "@swiss/components/Provenance";
 import { ReleaseStatus } from "@swiss/components/ReleaseStatus";
 import { Empty, ErrorState } from "@swiss/components/States";
+import { METHODS } from "@swiss/components/InstallMethod";
 
 // Pipeline is compose -> dry run -> apply -> status, shared by Deploy, Upgrade
 // and rollback.
@@ -43,6 +44,7 @@ export function Pipeline({
   onDiff,
   onApplied,
   rollbackTo,
+  applyWith,
   children,
 }: {
   namespace: string;
@@ -62,6 +64,8 @@ export function Pipeline({
   // re-applied. There is nothing to compose -- the plan came out of the
   // cluster exactly as it ran -- so the button opens the dialog directly.
   rollbackTo?: number;
+  // How an install stores the release. An existing release keeps its own.
+  applyWith?: ApplyWith;
   // Rendered on the Plan tab above the composed plan: what moves, on upgrade.
   children?: React.ReactNode;
 }) {
@@ -117,6 +121,7 @@ export function Pipeline({
   });
   const exists = diff?.exists ?? live.data?.exists;
   const install = exists === false;
+  const method = install ? applyWith : live.data?.backend;
 
   const applyM = useMutation({
     mutationFn: () =>
@@ -132,7 +137,7 @@ export function Pipeline({
             note.trim(),
           )
         : install
-          ? deployApi.install(plan!.hash, note.trim())
+          ? deployApi.install(plan!.hash, note.trim(), applyWith)
           : // expectRevision is the optimistic lock the dry run computed. It
             // always exists here: nothing reaches this call without one.
             deployApi.apply(plan!.hash, diff?.revision, note.trim(), force),
@@ -239,6 +244,11 @@ export function Pipeline({
                 chart {plan.chart.name}-{plan.chart.version}
               </span>
               <span className="font-mono text-xs break-all">{plan.hash}</span>
+              {method && (
+                <Badge variant="muted" title={install ? "install method" : "installed with this; it does not change"}>
+                  {METHODS[method].label}
+                </Badge>
+              )}
             </span>
           )
         }
@@ -249,6 +259,7 @@ export function Pipeline({
               known={known}
               rollbackTo={rollbackTo}
               install={install}
+              method={method}
               diff={diff}
               applied={applied}
               note={note}
@@ -298,6 +309,17 @@ export function Pipeline({
         {tab === "plan" && plan && (
           <div className="space-y-4">
             {children}
+            {/* What compose accepted but a person should see; kept with the release. */}
+            {!!plan.warnings?.length && (
+              <div className="space-y-1 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
+                {plan.warnings.map((w) => (
+                  <p key={w} className="flex items-start gap-2">
+                    <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+                    {w}
+                  </p>
+                ))}
+              </div>
+            )}
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Composed plan</CardTitle>
@@ -366,6 +388,7 @@ function Action({
   known,
   rollbackTo,
   install,
+  method,
   diff,
   applied,
   note,
@@ -384,6 +407,7 @@ function Action({
   known: boolean;
   rollbackTo?: number;
   install: boolean;
+  method?: ApplyWith;
   diff: DiffResult | null;
   applied: ApplyResult | null;
   note: string;
@@ -415,8 +439,9 @@ function Action({
       }.`
     : canApply && diff
       ? (diff.exists
-          ? `Asserting the release is still at revision ${diff.revision}.`
-          : "The release does not exist; this creates it.") +
+          ? `Asserting the release is still at revision ${diff.revision}.` +
+            (method ? ` Install method stays ${METHODS[method].label}.` : "")
+          : `The release does not exist; this creates it${method ? ` with ${METHODS[method].label}` : ""}.`) +
         (force ? " Fields a hand edit left kubectl owning will be overwritten." : "")
       : "";
 

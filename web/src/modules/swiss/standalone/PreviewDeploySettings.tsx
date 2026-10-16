@@ -39,7 +39,8 @@ export function PreviewDeploySettings() {
           site: "ghcr.io/modelsphere/sglang:latest",
         }}
         supportedGPUs={["NVIDIA-H100-80GB-HBM3", "NVIDIA-B300-SXM6-AC"]}
-        clusterGPUs={["NVIDIA-H100-80GB-HBM3", "NVIDIA-B300-SXM6-AC"]}
+        // H20 is racked here but not listed by the variant: offered dashed, and a forced deploy when picked.
+        clusterGPUs={["NVIDIA-H100-80GB-HBM3", "NVIDIA-B300-SXM6-AC", "NVIDIA-H20"]}
       />
     </div>
   );

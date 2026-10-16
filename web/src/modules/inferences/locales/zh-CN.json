@@ -398,6 +398,22 @@
       "versionError": "无法列出版本：{error}",
       "deployed": "已部署",
       "chartVersion": "Chart 版本",
+      "applyWith": "安装方式",
+      "applyWithHint": "安装时确定：之后的升级和回滚都沿用",
+      "applyWithDefault": "默认",
+      "applyWithMethod": {
+        "helm": "Plan ConfigMap",
+        "llmsvc": "LLMService"
+      },
+      "applyWithDesc": {
+        "helm": "swissd 执行 helm，计划存放在 release 旁的 ConfigMap",
+        "llmsvc": "swissd 写入 LLMService，由 llm-operator 执行 helm"
+      },
+      "applyWithBlocked": {
+        "unserved": "LLMService 不可用：集群未提供该 CRD",
+        "unavailable": "LLMService 不可用：swissd 无法使用，见集群告警",
+        "schema": "LLMService 不可用：需要 v2 schema 目录中的模型"
+      },
       "serviceId": "服务名",
       "serviceIdHint": "作为 helm release、路由、伸缩器和 SLO 的名字",
       "serviceIdLocked": "升级时不能改：路由、伸缩器和 SLO 都以它命名",
@@ -499,6 +515,8 @@
       "noteHint": "为什么做这次变更；会记入操作记录并写在 release 旁",
       "force": "强制接管冲突字段",
       "forceHint": "helm 字段归属冲突时强制覆盖，只对这一次生效",
+      "applyWith": "安装方式：{method}",
+      "applyWithKept": "沿用 {method}：已有 release 不改变安装方式",
       "back": "返回修改",
       "compose": "生成计划",
       "composing": "生成中…",
@@ -614,6 +632,7 @@
     "saving": "保存中…",
     "unset": "未设置",
     "parseError": "站点配置解析失败：{error}",
+    "repairHint": "点击编辑，在 YAML 标签页中修正已存储的文档。表单从默认配置开始，从表单保存会替换整个配置。",
     "groups": {
       "placement": "调度",
       "catalog": "目录、Chart 与镜像",
@@ -641,6 +660,11 @@
       "priorityClass": "优先级类",
       "gpusPerNode": "每节点 GPU 数",
       "gpusPerNodeHint": "一个满配 GPU 节点的卡数，用来推算 cache.maxSlotsPerNode",
+      "gpuAliases": "GPU 型号别名",
+      "gpuAliasesHint": "用于厂商安装未按模型库 GPU 型号名打标签的节点。每行填写一个模型库 GPU 型号和一个节点标签选择器，所有 key=value 都须匹配。同时匹配两个型号的节点取匹配对数更多的那个",
+      "gpuAliasProduct": "模型库 GPU 型号",
+      "gpuAliasSelector": "节点标签",
+      "gpuAliasAdd": "添加别名",
       "chartDefault": "chart 默认值",
       "catalogs": "模型目录",
       "catalogsHint": "每项是 https 地址或绝对路径，以名字区分。配置多个时页面默认打开标记为默认的那个；这里的设置优先于 swissd 的配置文件。推荐 schema v2；v1 是只读的旧版索引，未设置 schema 时按 v1 读取",
@@ -700,12 +724,33 @@
     "setup": {
       "title": "初始化站点",
       "description": "这个 swissd 还没有站点配置。先说明这个集群的情况：模型目录、chart 仓库、模型路径。保存后就可以开始部署。",
-      "save": "保存并开始",
-      "saveExisting": "保存配置"
+      "save": "保存并开始"
     },
     "errors": {
       "name": "集群名必填",
-      "pathTemplate": "路径模板必填"
+      "pathTemplate": "路径模板必填",
+      "catalog": {
+        "name": {
+          "required": "名称必填",
+          "format": "仅限小写字母、数字和 . - _",
+          "duplicate": "名称与其他目录重复"
+        },
+        "url": {
+          "required": "地址必填",
+          "format": "http:// 或 https:// 地址，或绝对路径",
+          "duplicate": "相同 schema 下已有此地址"
+        }
+      },
+      "gpuAlias": {
+        "product": {
+          "required": "请填写型号"
+        },
+        "selector": {
+          "required": "请填写标签",
+          "format": "逗号分隔的 key=value",
+          "conflict": "节点可能同时匹配另一个型号，请再加一个标签"
+        }
+      }
     }
   },
   "events": {

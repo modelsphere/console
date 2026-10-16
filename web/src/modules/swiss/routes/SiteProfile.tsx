@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Navigate } from "@swiss/lib/host";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Pencil } from "lucide-react";
-import { api } from "@swiss/lib/api";
+import { api, type ProfileResponse } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { ProfileEditor } from "@swiss/components/ProfileEditor";
@@ -22,9 +21,9 @@ export function SiteProfile() {
   if (error) return <ErrorState what="the site profile" error={error} />;
 
   // The stored document does not parse, so there is nothing to show as parsed.
-  // Setup is where it gets fixed -- it opens on the same text -- and the site
-  // reports itself uninitialised anyway, which is the state this is.
-  if (!data.profile) return <Navigate to="/setup" replace />;
+  // It is fixed here rather than at setup: setup is for a site with nothing
+  // stored, and starting over from the default would lose the whole profile.
+  if (!data.profile) return <Repair data={data} />;
 
   const p = data.profile;
   const auth = p.route?.auth;
@@ -87,6 +86,9 @@ export function SiteProfile() {
           >
             <Row label="Namespace" value={p.namespace} fallback="the chart's default" />
             <Row label="GPUs per node" value={p.nodes?.gpusPerNode} />
+            {Object.entries(p.nodes?.gpuProductAliases ?? {}).map(([product, sels]) => (
+              <Row key={product} label={`${product} (GPU alias)`} value={sels.join(" or ")} mono />
+            ))}
             <Row
               label="Scheduler"
               value={p.schedule?.schedulerName}
@@ -234,6 +236,46 @@ export function SiteProfile() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// Repair opens on a stored profile that does not parse. The two halves of the
+// editor start differently on purpose: the YAML tab holds the stored text,
+// which is exactly what has to be edited, and the form -- which binds to a
+// parsed profile and has none -- starts from the server's default.
+function Repair({ data }: { data: ProfileResponse }) {
+  const template = useQuery({ queryKey: ["profileTemplate"], queryFn: api.profileTemplate });
+  if (template.isPending) return <Loading what="the site profile" />;
+  if (template.error) return <ErrorState what="the site profile" error={template.error} />;
+  if (!template.data.profile) {
+    return <ErrorState what="the site profile" error={new Error("the default profile does not parse")} />;
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-xl font-semibold">Site profile</h1>
+        <p className="mt-1 font-mono text-xs text-muted-foreground">{data.source}</p>
+      </div>
+      <Card>
+        <CardContent className="p-4 text-sm">
+          <div className="font-medium text-warning">
+            The stored profile does not parse, so swissd has nothing to compose against.
+          </div>
+          <pre className="mt-2 overflow-x-auto font-mono text-xs text-muted-foreground">{data.error}</pre>
+          <p className="mt-2 text-muted-foreground">
+            The YAML tab below opens on the stored document — fix the line it names and save.
+            The form tab starts from the default instead, and saving from it would replace the
+            whole profile.
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="p-4">
+          <ProfileEditor profile={template.data.profile} yaml={data.yaml ?? ""} submitLabel="Save profile" />
+        </CardContent>
+      </Card>
     </div>
   );
 }

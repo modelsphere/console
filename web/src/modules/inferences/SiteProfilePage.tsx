@@ -22,7 +22,7 @@ import {
 } from "@modelsphere/ui";
 import { SlidersHorizontal, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
-import { api, type ProfileResponse, type SiteProfile } from "@swiss/lib/api";
+import { api, type SiteProfile } from "@swiss/lib/api";
 import { toYaml } from "@swiss/lib/yaml";
 import { useT } from "@/modules/inferences/i18n";
 import { ProfileEditorBody, SaveButton, useProfileEditor } from "@/modules/inferences/components/ProfileEditor";
@@ -31,10 +31,15 @@ export function SiteProfilePage() {
   const t = useT();
   const p = useModulePath();
   const profile = useQuery({ queryKey: ["profile"], queryFn: api.profile });
+  // A stored profile that does not parse has nothing for the form to bind to:
+  // the form starts from the default, and the YAML tab holds the stored text,
+  // which is what has to be fixed.
+  const template = useQuery({ queryKey: ["profile-template"], queryFn: api.profileTemplate, enabled: !!profile.data && !profile.data.profile });
   const [editing, setEditing] = useState(false);
 
   if (profile.data && !profile.data.profile && !profile.data.error) return <Navigate to={p("setup")} replace />;
   const d = profile.data;
+  const start = d?.profile ?? template.data?.profile;
 
   return (
     <div className="flex h-full flex-col">
@@ -42,7 +47,7 @@ export function SiteProfilePage() {
         title={t("profile.title")}
         description={t("profile.description")}
         icon={<SlidersHorizontal className="size-5" />}
-        actions={d && <Button onClick={() => setEditing(true)}>{t("profile.edit")}</Button>}
+        actions={start && <Button onClick={() => setEditing(true)}>{t("profile.edit")}</Button>}
       />
       <div className="min-h-0 flex-1 space-y-4 overflow-auto bg-surface-page p-4">
         {profile.isPending ? (
@@ -57,7 +62,10 @@ export function SiteProfilePage() {
             {d?.error && (
               <Alert variant="destructive">
                 <TriangleAlert />
-                <AlertDescription>{t("profile.parseError", { error: d.error })}</AlertDescription>
+                <AlertDescription>
+                  <p>{t("profile.parseError", { error: d.error })}</p>
+                  <p>{t("profile.repairHint")}</p>
+                </AlertDescription>
               </Alert>
             )}
             {d?.source && <p className="text-xs text-muted-foreground">{t("profile.source", { source: d.source })}</p>}
@@ -65,7 +73,7 @@ export function SiteProfilePage() {
           </>
         )}
       </div>
-      {editing && d && <EditSheet data={d} onClose={() => setEditing(false)} />}
+      {editing && d && start && <EditSheet profile={start} yaml={d.yaml ?? ""} onClose={() => setEditing(false)} />}
     </div>
   );
 }
@@ -75,6 +83,23 @@ function ProfileView({ p }: { p: SiteProfile }) {
   const f = (k: string) => t(`profile.fields.${k}`);
   const v = (x: unknown) => (x === undefined || x === null || x === "" ? <span className="text-muted-foreground">{t("profile.unset")}</span> : String(x));
   const mono = (x?: string) => (x ? <code className="font-mono text-xs break-all">{x}</code> : v(x));
+  const aliases = (a?: Record<string, string[]>) =>
+    a && Object.keys(a).length ? (
+      <span className="flex flex-col gap-1">
+        {Object.entries(a).map(([product, sels]) => (
+          <span key={product} className="flex flex-wrap items-center gap-1">
+            <span className="font-medium">{product}</span>
+            {sels.map((sel) => (
+              <Badge key={sel} variant="secondary" className="font-mono font-normal">
+                {sel}
+              </Badge>
+            ))}
+          </span>
+        ))}
+      </span>
+    ) : (
+      v(undefined)
+    );
   const kv = (r?: Record<string, string>) => (r && Object.keys(r).length ? <span className="flex flex-wrap gap-1">{Object.entries(r).map(([k, x]) => <Badge key={k} variant="secondary" className="font-mono font-normal">{k}={x}</Badge>)}</span> : v(undefined));
   const card = (g: string, items: { label: string; value: React.ReactNode }[]) => (
     <SectionCard title={t(`profile.groups.${g}`)}>
@@ -89,6 +114,7 @@ function ProfileView({ p }: { p: SiteProfile }) {
         { label: f("scheduler"), value: v(p.schedule?.schedulerName) },
         { label: f("priorityClass"), value: v(p.schedule?.priorityClassName) },
         { label: f("gpusPerNode"), value: v(p.nodes?.gpusPerNode) },
+        { label: f("gpuAliases"), value: aliases(p.nodes?.gpuProductAliases) },
       ])}
       {card("catalog", [
         {
@@ -159,9 +185,9 @@ function ProfileView({ p }: { p: SiteProfile }) {
   );
 }
 
-function EditSheet({ data, onClose }: { data: ProfileResponse; onClose: () => void }) {
+function EditSheet({ profile, yaml, onClose }: { profile: SiteProfile; yaml: string; onClose: () => void }) {
   const t = useT();
-  const editor = useProfileEditor(data.profile!, data.yaml ?? "", onClose);
+  const editor = useProfileEditor(profile, yaml, onClose);
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()} dirty={editor.dirty} onDiscard={onClose}>
       <SheetContent size="2xl" className="gap-0">

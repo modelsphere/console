@@ -1,9 +1,12 @@
 import { useState, type ReactNode } from "react";
-import { Button, Checkbox, DataSelect, FieldHint, FieldInput, FloatingField, FormSection, Input, Switch } from "@modelsphere/ui";
+import { Button, Checkbox, FieldHint, FieldInput, FieldSelect, FloatingField, FormSection, Input, Switch } from "@modelsphere/ui";
 import { Plus, X } from "lucide-react";
 import type { RouteAuth, SiteProfile } from "@swiss/lib/api";
 import { useT } from "@/modules/inferences/i18n";
-import { fromRows, markDefault, toRows, type Row } from "@/modules/inferences/profile-lib";
+import { fromRows, markDefault, toRows, withNodes, type Row } from "@/modules/inferences/profile-lib";
+import { aliasErrors, aliasMap, aliasRows, catalogErrors, type AliasError, type AliasRow, type CatalogError } from "@swiss/lib/profile";
+
+type CatalogRepo = NonNullable<SiteProfile["catalogs"]>[number];
 
 const GROUPS = ["placement", "catalog", "model", "routing", "auth", "scaler", "sites"] as const;
 
@@ -16,6 +19,8 @@ export function ProfileForm({ value: p, onChange, submitted, collapsible }: { va
   const auth = (patch: RouteAuth) => route({ auth: { ...p.route?.auth, ...patch } });
   const scaler = (patch: NonNullable<SiteProfile["scaler"]>) => set({ scaler: { ...p.scaler, ...patch } });
   const str = (v: string) => v || undefined;
+  const catalogs = p.catalogs ?? [];
+  const catalogErrs = catalogErrors(catalogs);
   const group = (g: (typeof GROUPS)[number], children: ReactNode) => (
     <FormSection
       title={t(`profile.groups.${g}`)}
@@ -43,7 +48,8 @@ export function ProfileForm({ value: p, onChange, submitted, collapsible }: { va
             {input(f("scheduler"), p.schedule?.schedulerName, (v) => set({ schedule: { ...p.schedule, schedulerName: str(v) } }), { placeholder: f("chartDefault") })}
             {input(f("priorityClass"), p.schedule?.priorityClassName, (v) => set({ schedule: { ...p.schedule, priorityClassName: str(v) } }), { placeholder: f("chartDefault") })}
           </div>
-          {input(f("gpusPerNode"), p.nodes?.gpusPerNode, (v) => set({ nodes: v.replace(/\D/g, "") ? { gpusPerNode: Number(v.replace(/\D/g, "")) } : undefined }), { hint: f("gpusPerNodeHint") })}
+          {input(f("gpusPerNode"), p.nodes?.gpusPerNode, (v) => set({ nodes: withNodes(p.nodes, { gpusPerNode: v.replace(/\D/g, "") ? Number(v.replace(/\D/g, "")) : undefined }) }), { hint: f("gpusPerNodeHint") })}
+          <GpuAliases value={p.nodes?.gpuProductAliases} submitted={submitted} onChange={(a) => set({ nodes: withNodes(p.nodes, { gpuProductAliases: a }) })} />
         </>,
       )}
 
@@ -51,29 +57,17 @@ export function ProfileForm({ value: p, onChange, submitted, collapsible }: { va
         "catalog",
         <>
           <Group label={f("catalogs")} hint={f("catalogsHint")}>
-            {(p.catalogs ?? []).map((c, i) => (
-              <div key={i} className="grid grid-cols-[10rem_1fr_auto_auto_auto] items-center gap-2">
-                <Input value={c.name} onChange={(e) => set({ catalogs: p.catalogs!.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} placeholder={f("catalogName")} aria-label={f("catalogName")} />
-                <Input value={c.url} onChange={(e) => set({ catalogs: p.catalogs!.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)) })} placeholder={f("catalogUrl")} aria-label={f("catalogUrl")} className="font-mono text-xs" />
-                {/* Unset is v1, so v1 is written as unset. */}
-                <DataSelect
-                  className="w-40"
-                  aria-label={f("catalogSchema")}
-                  value={c.schemaVersion === "v2" ? "v2" : "v1"}
-                  onValueChange={(v) => set({ catalogs: p.catalogs!.map((x, j) => (j === i ? { ...x, schemaVersion: v === "v2" ? "v2" : undefined } : x)) })}
-                  options={[
-                    { value: "v1", label: f("catalogSchemaV1") },
-                    { value: "v2", label: f("catalogSchemaV2") },
-                  ]}
-                />
-                <label className="flex items-center gap-1.5 text-sm whitespace-nowrap">
-                  <Checkbox checked={!!c.default} onCheckedChange={(on) => set({ catalogs: markDefault(p.catalogs!, i, !!on) })} />
-                  {f("catalogDefault")}
-                </label>
-                <Remove onClick={() => set({ catalogs: p.catalogs!.filter((_, j) => j !== i) })} />
-              </div>
+            {catalogs.map((c, i) => (
+              <CatalogRow
+                key={i}
+                value={c}
+                errors={submitted ? catalogErrs[i] : {}}
+                onChange={(patch) => set({ catalogs: catalogs.map((x, j) => (j === i ? { ...x, ...patch } : x)) })}
+                onDefault={(on) => set({ catalogs: markDefault(catalogs, i, on) })}
+                onRemove={() => set({ catalogs: catalogs.filter((_, j) => j !== i) })}
+              />
             ))}
-            <Add label={f("catalogAdd")} onClick={() => set({ catalogs: [...(p.catalogs ?? []), { name: "", url: "", schemaVersion: "v2" }] })} />
+            <Add label={f("catalogAdd")} onClick={() => set({ catalogs: [...catalogs, { name: "", url: "", schemaVersion: "v2" }] })} />
           </Group>
           {input(f("chartRepo"), p.chartRepo, (v) => set({ chartRepo: str(v) }), { hint: f("chartRepoHint"), placeholder: "https://modelsphere.github.io/helm-charts", mono: true })}
           {input(f("chartPath"), p.chartPath, (v) => set({ chartPath: str(v) }), { placeholder: f("chartPathHint"), mono: true })}
@@ -163,6 +157,92 @@ export function ProfileForm({ value: p, onChange, submitted, collapsible }: { va
         </Group>,
       )}
     </div>
+  );
+}
+
+function CatalogRow({
+  value: c,
+  errors,
+  onChange,
+  onDefault,
+  onRemove,
+}: {
+  value: CatalogRepo;
+  errors: { name?: CatalogError; url?: CatalogError };
+  onChange: (patch: Partial<CatalogRepo>) => void;
+  onDefault: (on: boolean) => void;
+  onRemove: () => void;
+}) {
+  const t = useT();
+  const f = (k: string) => t(`profile.fields.${k}`);
+  const err = (field: "name" | "url", e?: CatalogError) => e && t(`profile.errors.catalog.${field}.${e}`);
+  return (
+    <div className="grid gap-3 rounded-md border bg-surface-page p-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+      <FloatingField label={f("catalogName")} required error={err("name", errors.name)}>
+        <FieldInput value={c.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="public" />
+      </FloatingField>
+      <FloatingField label={f("catalogUrl")} required error={err("url", errors.url)}>
+        <FieldInput value={c.url} onChange={(e) => onChange({ url: e.target.value })} placeholder="https://modelsphere.github.io/model-catalog" className="font-mono text-xs" />
+      </FloatingField>
+      {/* Unset is v1, so v1 is written as unset. */}
+      <FloatingField label={f("catalogSchema")}>
+        <FieldSelect
+          value={c.schemaVersion === "v2" ? "v2" : "v1"}
+          onValueChange={(v) => v && onChange({ schemaVersion: v === "v2" ? "v2" : undefined })}
+          options={[
+            { value: "v2", label: f("catalogSchemaV2") },
+            { value: "v1", label: f("catalogSchemaV1") },
+          ]}
+        />
+      </FloatingField>
+      <div className="flex items-center gap-2 px-1">
+        <label className="flex items-center gap-1.5 text-sm whitespace-nowrap">
+          <Checkbox checked={!!c.default} onCheckedChange={(on) => onDefault(!!on)} />
+          {f("catalogDefault")}
+        </label>
+        <span className="ms-auto">
+          <Remove onClick={onRemove} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function GpuAliases({ value, submitted, onChange }: { value?: Record<string, string[]>; submitted: boolean; onChange: (v?: Record<string, string[]>) => void }) {
+  const t = useT();
+  const f = (k: string) => t(`profile.fields.${k}`);
+  // Rows live here while typed; see aliasRows.
+  const [rows, setRows] = useState<AliasRow[]>(() => aliasRows(value));
+  const errs = aliasErrors(rows);
+  const err = (field: "product" | "selector", e?: AliasError) => (submitted && e ? t(`profile.errors.gpuAlias.${field}.${e}`) : undefined);
+  const update = (next: AliasRow[]) => {
+    setRows(next);
+    onChange(aliasMap(next));
+  };
+  const edit = (i: number, patch: Partial<AliasRow>) => update(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  return (
+    <Group label={f("gpuAliases")} hint={f("gpuAliasesHint")}>
+      {/* An error line hangs below its field, so rows showing one need the room. */}
+      <div className={`flex flex-col gap-6 ${submitted && errs.some((e) => e.product || e.selector) ? "sm:gap-5" : "sm:gap-3"}`}>
+        {rows.map((r, i) => (
+          // Narrow, the remove button sits beside the product and the labels take the next line.
+          <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto]">
+            <FloatingField label={f("gpuAliasProduct")} required error={err("product", errs[i].product)}>
+              <FieldInput value={r.product} onChange={(e) => edit(i, { product: e.target.value })} placeholder="Ascend-910B3" />
+            </FloatingField>
+            <span className="sm:order-last">
+              <Remove onClick={() => update(rows.filter((_, j) => j !== i))} />
+            </span>
+            <div className="col-span-2 sm:col-span-1">
+              <FloatingField label={f("gpuAliasSelector")} required error={err("selector", errs[i].selector)}>
+                <FieldInput value={r.selector} onChange={(e) => edit(i, { selector: e.target.value })} placeholder="accelerator=huawei-Ascend910" className="font-mono text-xs" />
+              </FloatingField>
+            </div>
+          </div>
+        ))}
+      </div>
+      <Add label={f("gpuAliasAdd")} onClick={() => setRows([...rows, { product: "", selector: "" }])} />
+    </Group>
   );
 }
 

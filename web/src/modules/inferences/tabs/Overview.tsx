@@ -87,6 +87,7 @@ export function Overview({
               { label: t("detail.fields.catalog"), value: catalog },
               { label: t("detail.fields.chart"), value: plan && `${plan.chart.name}-${plan.chart.version}` },
               { label: t("detail.fields.revision"), value: s.exists ? String(s.revision) : undefined },
+              { label: t("deploy.fields.applyWith"), value: s.backend && t(`deploy.fields.applyWithMethod.${s.backend}`) },
               { label: t("detail.fields.route"), value: s.route && <code className="font-mono text-xs">/{s.route}/</code> },
               { label: t("detail.fields.namespace"), value: namespace },
               { label: t("detail.fields.updated"), value: updated && formatDateTime(updated) },

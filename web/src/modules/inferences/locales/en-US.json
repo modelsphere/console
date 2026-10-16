@@ -409,6 +409,22 @@
       "versionError": "Could not list versions: {error}",
       "deployed": "deployed",
       "chartVersion": "Chart version",
+      "applyWith": "Install method",
+      "applyWithHint": "Fixed at install: upgrades and rollbacks stay on it",
+      "applyWithDefault": "default",
+      "applyWithMethod": {
+        "helm": "Plan ConfigMap",
+        "llmsvc": "LLMService"
+      },
+      "applyWithDesc": {
+        "helm": "swissd runs helm; the plan sits in a ConfigMap beside the release",
+        "llmsvc": "llm-operator runs helm from an LLMService swissd writes"
+      },
+      "applyWithBlocked": {
+        "unserved": "LLMService unavailable: the CRD is not served on this cluster",
+        "unavailable": "LLMService unavailable: swissd cannot use it here; see the cluster warnings",
+        "schema": "LLMService unavailable: it needs a catalog schema v2 model"
+      },
       "serviceId": "Service name",
       "serviceIdHint": "Names the helm release, the route, the scaler and the SLO",
       "serviceIdLocked": "Fixed on an upgrade: the route, the scaler and the SLO are named after it",
@@ -510,6 +526,8 @@
       "noteHint": "Why this is done; kept with the run and beside the release",
       "force": "Force conflicting fields",
       "forceHint": "Takes over fields helm sees owned by someone else, for this apply only",
+      "applyWith": "Installs with {method}",
+      "applyWithKept": "Stays on {method}: an existing release keeps its install method",
       "back": "Back to edit",
       "compose": "Compose plan",
       "composing": "Composing…",
@@ -625,6 +643,7 @@
     "saving": "Saving…",
     "unset": "Not set",
     "parseError": "The site profile does not parse: {error}",
+    "repairHint": "Open Edit and fix it in the YAML tab, which holds the stored document. The form starts from the default, and saving from it replaces the whole profile.",
     "groups": {
       "placement": "Placement",
       "catalog": "Catalogs, charts and images",
@@ -652,6 +671,11 @@
       "priorityClass": "Priority class",
       "gpusPerNode": "GPUs per node",
       "gpusPerNodeHint": "A full GPU node, used to derive cache.maxSlotsPerNode",
+      "gpuAliases": "GPU product aliases",
+      "gpuAliasesHint": "For nodes a vendor install does not label with the catalog GPU product name. Each row names a catalog product and a node label selector; every key=value must match. A node matching two products takes the one with more pairs",
+      "gpuAliasProduct": "Catalog GPU product",
+      "gpuAliasSelector": "Node labels",
+      "gpuAliasAdd": "Add alias",
       "chartDefault": "the chart's default",
       "catalogs": "Catalogs",
       "catalogsHint": "Each an https base or an absolute path, under a name. With several, pages open in the default one. Set here they win over swissd's config file. Schema v2 is recommended; v1 is the read-only legacy index, and what a catalog with no schema set reads",
@@ -711,12 +735,33 @@
     "setup": {
       "title": "Set up this site",
       "description": "This swissd has no site profile yet. Describe the cluster first: the model catalog, the chart repo, the model paths. Deploying starts once it is saved.",
-      "save": "Save and start",
-      "saveExisting": "Save profile"
+      "save": "Save and start"
     },
     "errors": {
       "name": "The cluster name is required",
-      "pathTemplate": "The path template is required"
+      "pathTemplate": "The path template is required",
+      "catalog": {
+        "name": {
+          "required": "Name is required",
+          "format": "Only lowercase letters, digits, . - _",
+          "duplicate": "Another catalog has this name"
+        },
+        "url": {
+          "required": "URL is required",
+          "format": "An http:// or https:// URL, or an absolute path",
+          "duplicate": "Already listed with this schema"
+        }
+      },
+      "gpuAlias": {
+        "product": {
+          "required": "Product is required"
+        },
+        "selector": {
+          "required": "Labels are required",
+          "format": "key=value pairs, comma separated",
+          "conflict": "A node could match another product as well; add a label"
+        }
+      }
     }
   },
   "events": {

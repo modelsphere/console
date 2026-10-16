@@ -5,6 +5,8 @@ import { api, type Site, type SiteProfile } from "@swiss/lib/api";
 import { Button } from "@swiss/components/ui/button";
 import { Field, Input } from "@swiss/components/ui/input";
 import { Switch } from "@swiss/components/ui/switch";
+import { aliasErrors, aliasMap, aliasRows, catalogErrors, type AliasRow } from "@swiss/lib/profile";
+import { cn } from "@swiss/lib/utils";
 
 // ProfileForm edits the site profile field by field, which is how it is
 // normally edited: the document is a fixed set of cluster facts, not free-form
@@ -76,18 +78,37 @@ export function ProfileForm({
             onChange={(e) => setIn("nodes", { gpusPerNode: num(e.target.value) })}
           />
         </Field>
+        {/* Not a Field: that is a <label>, and these rows hold several controls. */}
+        <div className="space-y-1 sm:col-span-2">
+          <span className="text-sm font-medium">GPU product aliases</span>
+          <GpuAliases
+            value={value.nodes?.gpuProductAliases}
+            onChange={(gpuProductAliases) => setIn("nodes", { gpuProductAliases })}
+          />
+          <p className="text-xs text-muted-foreground">
+            For nodes a vendor install does not label with the catalog's GPU product name. Each row names a
+            catalog product and a node label selector, every key=value of which must match. A node matching two
+            products takes the one with more pairs. The GPU view then reports the catalog's name, and a deploy
+            restricted to that product may land on the node.
+          </p>
+        </div>
       </Group>
 
       <Group
         title="Catalog, charts and images"
         hint="Where the models come from, and the registries the catalog deliberately does not name."
       >
-        <Field
-          label="Catalogs"
-          hint="Each an https base or an absolute path, under the name the pages select it by. With several, pages open in the one marked default, or ask which one first when none is. Set here they win over swissd's config file, so catalogs change without a helm upgrade. Schema v2 is recommended; v1 is the read-only legacy index, and what a catalog with no schema set reads."
-        >
+        {/* Not a Field: that is a <label>, and these rows hold several controls. */}
+        <div className="space-y-1 sm:col-span-2">
+          <span className="text-sm font-medium">Catalogs</span>
           <Catalogs value={catalogs} onChange={setCatalogs} configured={configuredCatalog} />
-        </Field>
+          <p className="text-xs text-muted-foreground">
+            Each an https base or an absolute path, under the name the pages select it by. With several, pages
+            open in the one marked default, or ask which one first when none is. Set here they win over
+            swissd's config file, so catalogs change without a helm upgrade. Schema v2 is recommended; v1 is
+            the read-only legacy index, and what a catalog with no schema set reads.
+          </p>
+        </div>
         <Field label="Chart repo" hint="An https helm repo or oci:// registry, e.g. https://modelsphere.github.io/helm-charts. Empty means a local chart path.">
           <Input
             value={value.chartRepo ?? ""}
@@ -307,17 +328,9 @@ function Catalogs({
 }) {
   const patch = (i: number, p: Partial<CatalogRepo>) =>
     onChange(value.map((c, j) => (i === j ? { ...c, ...p } : c)));
-  const names = value.map((c) => c.name.trim());
-  const urls = value.map((c) => c.url.trim());
-  const problem = value.some(
-    (_, i) =>
-      !names[i] ||
-      !urls[i] ||
-      !/^[a-z0-9][a-z0-9._-]*$/.test(names[i]) ||
-      names.indexOf(names[i]) !== i ||
-      urls.indexOf(urls[i]) !== i ||
-      !/^(https?:\/\/|\/)/.test(urls[i]),
-  );
+  const errs = catalogErrors(value);
+  const problem = errs.some((e) => e.name || e.url);
+  const bad = "border-destructive";
 
   return (
     <div className="space-y-2">
@@ -335,14 +348,16 @@ function Catalogs({
       {value.map((c, i) => (
         <div key={i} className="flex flex-wrap items-center gap-2">
           <Input
-            className="w-40"
+            className={cn("w-40", errs[i].name && bad)}
+            aria-invalid={!!errs[i].name}
             value={c.name}
             onChange={(e) => patch(i, { name: e.target.value })}
             placeholder="name"
             aria-label="catalog name"
           />
           <Input
-            className="min-w-0 flex-1 font-mono text-xs"
+            className={cn("min-w-64 flex-1 font-mono text-xs", errs[i].url && bad)}
+            aria-invalid={!!errs[i].url}
             value={c.url}
             onChange={(e) => patch(i, { url: e.target.value })}
             placeholder="https://modelsphere.github.io/model-catalog/"
@@ -350,7 +365,7 @@ function Catalogs({
           />
           {/* Unset is v1, so v1 is written as unset. */}
           <select
-            className="h-9 rounded-md border bg-background px-2 text-xs"
+            className="h-9 w-44 rounded-md border bg-background px-3 text-sm"
             value={c.schemaVersion === "v2" ? "v2" : ""}
             onChange={(e) => patch(i, { schemaVersion: e.target.value === "v2" ? "v2" : undefined })}
             aria-label={`schema of ${c.name || "catalog"}`}
@@ -359,7 +374,7 @@ function Catalogs({
             <option value="v2">v2 · recommended</option>
           </select>
           {/* At most one default: checking one clears the others. */}
-          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <label className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
             <input
               type="checkbox"
               checked={!!c.default}
@@ -381,8 +396,9 @@ function Catalogs({
       ))}
       {problem && (
         <p className="text-xs text-warning">
-          Every catalog needs a unique lowercase name and a unique url starting with http://, https:// or
-          /; swissd will refuse the profile otherwise.
+          Every catalog needs a unique lowercase name (letters, digits, . - _), and a url starting with
+          http://, https:// or / that is not listed twice under one schema; swissd will refuse the profile
+          otherwise.
         </p>
       )}
       <Button
@@ -392,6 +408,70 @@ function Catalogs({
         onClick={() => onChange([...value, { name: "", url: "", schemaVersion: "v2" }])}
       >
         <Plus className="size-4" /> Add catalog
+      </Button>
+    </div>
+  );
+}
+
+// GpuAliases names catalog GPU products by node labels. swissd refuses a row
+// missing either half, a selector that is not key=value pairs, and two products
+// one node could match with as many pairs -- flagged here so the save is not
+// the first to say.
+function GpuAliases({
+  value,
+  onChange,
+}: {
+  value?: Record<string, string[]>;
+  onChange: (v: Record<string, string[]> | undefined) => void;
+}) {
+  // Rows live here while typed; see aliasRows.
+  const [rows, setRows] = useState<AliasRow[]>(() => aliasRows(value));
+  const errs = aliasErrors(rows);
+  const push = (next: AliasRow[]) => {
+    setRows(next);
+    onChange(aliasMap(next));
+  };
+  const patch = (i: number, p: Partial<AliasRow>) => push(rows.map((r, j) => (i === j ? { ...r, ...p } : r)));
+  const bad = "border-destructive";
+
+  return (
+    <div className="space-y-2">
+      {rows.map((r, i) => (
+        <div key={i} className="flex flex-wrap items-center gap-2">
+          <Input
+            className={cn("w-48", errs[i].product && bad)}
+            aria-invalid={!!errs[i].product}
+            value={r.product}
+            onChange={(e) => patch(i, { product: e.target.value })}
+            placeholder="catalog GPU product"
+            aria-label="GPU product"
+          />
+          <Input
+            className={cn("min-w-64 flex-1 font-mono text-xs", errs[i].selector && bad)}
+            aria-invalid={!!errs[i].selector}
+            value={r.selector}
+            onChange={(e) => patch(i, { selector: e.target.value })}
+            placeholder="accelerator=huawei-Ascend910"
+            aria-label="node labels"
+          />
+          <button
+            type="button"
+            onClick={() => push(rows.filter((_, j) => j !== i))}
+            aria-label={`remove ${r.product || "alias"}`}
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      ))}
+      {errs.some((e) => e.product || e.selector) && (
+        <p className="text-xs text-warning">
+          Every alias needs a product and key=value labels, comma separated, and no node may match two products
+          with as many labels; swissd will refuse the profile otherwise.
+        </p>
+      )}
+      <Button type="button" size="sm" variant="outline" onClick={() => setRows([...rows, { product: "", selector: "" }])}>
+        <Plus className="size-4" /> Add alias
       </Button>
     </div>
   );

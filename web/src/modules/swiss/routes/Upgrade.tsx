@@ -32,7 +32,7 @@ import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVe
 import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { VariantCard } from "@swiss/components/VariantCard";
 import { Dialog } from "@swiss/components/ui/dialog";
-import { gpuCount } from "@swiss/lib/gpu";
+import { gpuCount, unlistedProducts, vendorProducts } from "@swiss/lib/gpu";
 import { Button } from "@swiss/components/ui/button";
 import { comparison, formatUplift, reportLink, sharedVersion, variantKind, workloadSummary } from "@swiss/lib/catalog";
 
@@ -149,6 +149,7 @@ export function Upgrade() {
           variant: variant || undefined,
           catalog: moving ? targetCatalog : undefined,
           chartVersion: chartVersion || undefined,
+          forceGpuProducts: unlistedProducts(keptPin?.requires.gpuProduct, form.gpuProducts).length > 0,
           // The server carries forward anything the form does not cover, so a
           // value set once from a flag survives the upgrade instead of being
           // dropped by a form that never knew about it.
@@ -428,8 +429,8 @@ export function Upgrade() {
         form={form}
         onChange={update}
         cluster={cluster.data}
-        supportedGPUs={variants.find((v) => v.id === (variant || cur.source.variant))?.requires.gpuProduct}
-        clusterGPUs={nodes.data?.nodes.map((n) => n.GPUProduct)}
+        supportedGPUs={keptPin?.requires.gpuProduct}
+        clusterGPUs={vendorProducts(nodes.data?.nodes, keptPin?.requires.vendor)}
         localPathDefault={entry.data?.localPath}
         localPathPlaceholder={entry.data?.pathTemplate}
         image={imageOf(entry.data?.variant, entry.data?.imageRepository)}

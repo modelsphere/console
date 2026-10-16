@@ -35,7 +35,9 @@ export function Login() {
       qc.setQueryData(["session"], s);
       qc.invalidateQueries({ queryKey: ["session"] });
       const from = (location.state as { from?: string } | null)?.from;
-      navigate(s.initialized ? (from ?? "/") : "/setup", { replace: true });
+      // Only a site with no profile stored goes to setup; the gate sends one
+      // whose profile does not parse to the profile page.
+      navigate((s.setUp ?? s.initialized) ? (from ?? "/") : "/setup", { replace: true });
     },
   });
 
