@@ -1,7 +1,7 @@
 import { useNavigate } from "@swiss/lib/host";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@swiss/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
+import { HoverHint } from "@swiss/components/ui/hint";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { ProfileEditor } from "@swiss/components/ProfileEditor";
 
@@ -42,23 +42,19 @@ export function Setup() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Site profile</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Pre-filled with a working default. Everything here can be changed later on the
-            Site profile page.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <ProfileEditor
-            profile={template.data.profile}
-            yaml={template.data.yaml ?? ""}
-            submitLabel="Save and start"
-            onSaved={() => navigate("/", { replace: true })}
-          />
-        </CardContent>
-      </Card>
+      <div className="space-y-3">
+        <h2>
+          <HoverHint text="Pre-filled with a working default. Everything here can be changed later on the Site profile page.">
+            <span className="text-base font-semibold">Site profile</span>
+          </HoverHint>
+        </h2>
+        <ProfileEditor
+          profile={template.data.profile}
+          yaml={template.data.yaml ?? ""}
+          submitLabel="Save and start"
+          onSaved={() => navigate("/", { replace: true })}
+        />
+      </div>
     </div>
   );
 }

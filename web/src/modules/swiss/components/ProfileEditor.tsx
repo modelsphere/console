@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save } from "lucide-react";
 import { api, type SiteProfile } from "@swiss/lib/api";
 import { Button } from "@swiss/components/ui/button";
+import { Card, CardContent } from "@swiss/components/ui/card";
 import { ErrorState } from "@swiss/components/States";
 import { ProfileForm } from "@swiss/components/ProfileForm";
 import { markSetUp } from "@swiss/components/Session";
@@ -73,13 +74,18 @@ export function ProfileEditor({
           )}
         </>
       ) : (
-        <textarea
-          value={yaml}
-          onChange={(e) => setYaml(e.target.value)}
-          spellCheck={false}
-          rows={24}
-          className="w-full rounded-md border bg-muted/40 p-3 font-mono text-xs leading-relaxed"
-        />
+        <Card>
+          <CardContent className="p-6">
+            <textarea
+              value={yaml}
+              onChange={(e) => setYaml(e.target.value)}
+              spellCheck={false}
+              rows={24}
+              aria-label="site profile YAML"
+              className="w-full rounded-md border bg-muted/40 p-3 font-mono text-xs leading-relaxed"
+            />
+          </CardContent>
+        </Card>
       )}
 
       {/* The server parses before it stores: a profile that does not parse
@@ -87,7 +93,8 @@ export function ProfileEditor({
           hand, so the refusal arrives here instead. */}
       {save.error && <ErrorState what="the profile" error={save.error} />}
 
-      <div className="flex items-center gap-3">
+      {/* Pinned: the form runs to eight sections, and saving should not need a scroll to the end. */}
+      <div className="sticky bottom-0 z-10 flex items-center gap-3 border-t bg-background/95 py-3 backdrop-blur">
         <Button
           onClick={() => save.mutate()}
           disabled={save.isPending || (mode === "yaml" ? !yaml.trim() : !form.name.trim())}

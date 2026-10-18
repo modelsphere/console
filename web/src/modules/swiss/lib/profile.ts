@@ -85,3 +85,23 @@ export function aliasErrors(rows: AliasRow[]): { product?: AliasError; selector?
     return e;
   });
 }
+
+// defaults.features, the switches a deploy starts from unless the variant sets
+// its own. Unset is on. Routing is route.enabled, a site fact.
+export type FeatureKey = keyof NonNullable<NonNullable<SiteProfile["defaults"]>["features"]>;
+export const FEATURES: FeatureKey[] = ["cart", "serviceMonitor", "sloRequirement", "scaler"];
+
+export function featureOn(defaults: SiteProfile["defaults"], key: FeatureKey): boolean {
+  return defaults?.features?.[key] ?? true;
+}
+
+// withFeature sets one switch. On is stored as unset, since unset is on, and a
+// section left with nothing set is no section at all.
+export function withFeature(defaults: SiteProfile["defaults"], key: FeatureKey, on: boolean): SiteProfile["defaults"] {
+  const features = { ...defaults?.features };
+  if (on) delete features[key];
+  else features[key] = false;
+  const next = { ...defaults, features: Object.keys(features).length ? features : undefined };
+  if (!next.features) delete next.features;
+  return Object.keys(next).length ? next : undefined;
+}

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { ChevronDown, Plus, TriangleAlert, X } from "lucide-react";
-import type { ClusterInfo, Plan, PlanRequest, Variant } from "@swiss/lib/api";
+import type { ClusterInfo, Plan, PlanRequest, ProfileResponse, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
 import { productChoices, unlistedProducts } from "@swiss/lib/gpu";
+import { FEATURES, featureOn } from "@swiss/lib/profile";
 import {
   DIRECTIVES,
   DIRECTIVES_BY_KEY,
@@ -104,6 +105,48 @@ export const EMPTY: Form = {
   monitorModel: "",
   monitorGpuType: "",
 };
+
+// The switches swissd gives a default for, by chart section.
+const DEFAULTED_SWITCHES = { modelRoute: "modelRoute", scaler: "scaler", cart: "cart", slo: "sloRequirement", serviceMonitor: "serviceMonitor" } as const;
+type DefaultedSwitch = keyof typeof DEFAULTED_SWITCHES;
+export type SwitchDefaults = Partial<Pick<Form, DefaultedSwitch>>;
+
+// switchDefaults is where a fresh deploy's switches start: the variant's own
+// <section>.enabled where it sets one, else the site's resolved default from
+// /api/profile. modelRoute is the site's alone, as compose has it. A switch
+// neither names keeps EMPTY's.
+export function switchDefaults(site: Record<string, boolean> | undefined, values: Record<string, unknown> | undefined): SwitchDefaults {
+  const out: SwitchDefaults = {};
+  for (const [field, section] of Object.entries(DEFAULTED_SWITCHES) as [DefaultedSwitch, string][]) {
+    const v = section === "modelRoute" ? undefined : values?.[section];
+    const own = v && typeof v === "object" ? (v as Record<string, unknown>).enabled : undefined;
+    const on = typeof own === "boolean" ? own : site?.[section];
+    if (typeof on === "boolean") out[field] = on;
+  }
+  return out;
+}
+
+// siteSwitchDefaults is the site half of switchDefaults: defaults.features with
+// unset as on, the rule the profile editor shows, and modelRoute from
+// route.enabled. Undefined when the profile is unread or does not parse.
+export function siteSwitchDefaults(r: ProfileResponse | undefined): Record<string, boolean> | undefined {
+  const p = r?.profile;
+  if (!p) return undefined;
+  return { ...Object.fromEntries(FEATURES.map((k) => [k, featureOn(p.defaults, k)])), modelRoute: !!p.route?.enabled };
+}
+
+// reseed moves the switches from prev's defaults to next's, keeping any
+// the operator has flipped since. It returns form itself when nothing moves.
+export function reseed(form: Form, prev: SwitchDefaults, next: SwitchDefaults): Form {
+  let out = form;
+  for (const field of Object.keys(DEFAULTED_SWITCHES) as DefaultedSwitch[]) {
+    const want = next[field] ?? EMPTY[field];
+    if (form[field] === (prev[field] ?? EMPTY[field]) && form[field] !== want) {
+      out = { ...out, [field]: want };
+    }
+  }
+  return out;
+}
 
 export function DeploySettings({
   form,

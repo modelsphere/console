@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, TriangleAlert } from "lucide-react";
 import { api, deployApi, type ApplyResult, type ApplyWith, type DiffResult, type Plan } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
-import { DeploySettings, EMPTY, imageOf, planRequest, type Form } from "@swiss/components/DeploySettings";
+import { DeploySettings, EMPTY, imageOf, planRequest, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
@@ -41,6 +41,9 @@ export function Deploy() {
     retry: false,
   });
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
+  // The site's defaults, which the form's switches start from. A profile it
+  // cannot read leaves the switches at EMPTY's.
+  const profile = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false });
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes });
   const chartVariant = model.data?.variant;
   const chartRange = !!chartVariant && isChartRange(chartVariant.chart.version);
@@ -72,6 +75,26 @@ export function Deploy() {
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [applied, setApplied] = useState<ApplyResult | null>(null);
   const [tab, setTab] = useState("plan");
+
+  // The form renders only once the model and profile have loaded, so the first
+  // seed lands before any plan; a later one is another variant or version, and
+  // the plan composed from the old switches goes with it.
+  const loaded = !!model.data && !profile.isPending;
+  const siteDefaults = useMemo(() => siteSwitchDefaults(profile.data), [profile.data]);
+  const variantValues = model.data?.variant.values;
+  const seeded = useRef<SwitchDefaults | null>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    const next = switchDefaults(siteDefaults, variantValues);
+    const prev = seeded.current;
+    seeded.current = next;
+    if (prev && JSON.stringify(prev) === JSON.stringify(next)) return;
+    setForm((f) => reseed(f, prev ?? {}, next));
+    if (prev) {
+      setPlan(null);
+      setDiff(null);
+    }
+  }, [loaded, siteDefaults, variantValues]);
 
   // A diff is bound to the plan it was computed from, so touching the form
   // invalidates both, and the pipeline walks back to Plan rather than leaving a
@@ -113,7 +136,7 @@ export function Deploy() {
   if (!catalog) {
     return <CatalogGate catalogs={choice.catalogs} named={choice.named} choose={choice.choose} what={`deploy ${name} from`} />;
   }
-  if (model.isPending || cluster.isPending) return <Loading what="the model" />;
+  if (model.isPending || cluster.isPending || profile.isPending) return <Loading what="the model" />;
   if (model.error) return <ErrorState what={name} error={model.error} />;
 
   const { model: m, variant, schema } = model.data;

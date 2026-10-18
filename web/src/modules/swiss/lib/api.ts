@@ -296,6 +296,8 @@ export interface SiteProfile {
     serverHeaders?: Record<string, string>;
   };
   route?: {
+    // modelRoute.enabled for every deploy here, above the catalog. Unset is off.
+    enabled?: boolean;
     // The public base URL openresty is served on; a model's URL is
     // <gateway>/<route>. Display only -- no check calls it.
     gateway?: string;
@@ -307,6 +309,9 @@ export interface SiteProfile {
     auth?: RouteAuth;
   };
   schedule?: { priorityClassName?: string; schedulerName?: string };
+  // The site's preferences, beneath the catalog: a variant overrides them.
+  // features unset is on (featureOn).
+  defaults?: { features?: { cart?: boolean; serviceMonitor?: boolean; sloRequirement?: boolean; scaler?: boolean } };
   nodes?: {
     gpusPerNode?: number;
     // Catalog GPU product -> node label selectors ("key=value[,key=value]"),

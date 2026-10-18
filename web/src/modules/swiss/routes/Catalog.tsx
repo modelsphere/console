@@ -1,4 +1,4 @@
-import { Fragment, createContext, useContext, useMemo, useState } from "react";
+import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "@swiss/lib/host";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChartColumn, ExternalLink, Eye, LayoutGrid, Rocket, RotateCcw, Search, Table2 } from "lucide-react";
@@ -245,6 +245,50 @@ function SummaryRow({ s }: { s: Summary }) {
 
 const selectClass = "h-9 rounded-md border bg-background px-2 text-sm";
 
+// The router applies URL changes in a transition, and an input controlled by
+// one loses keystrokes. The URL wins only when something else changed it.
+function SearchBox({ q, set, debounceMs }: { q: string; set: Update; debounceMs: number }) {
+  const [text, setText] = useState(q);
+  const written = useRef(q);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // set closes over the params of its render; a timer must not write stale ones.
+  const latestSet = useRef(set);
+  useEffect(() => {
+    latestSet.current = set;
+  });
+  useEffect(() => {
+    if (q !== written.current) {
+      clearTimeout(timer.current);
+      written.current = q;
+      setText(q);
+    }
+  }, [q]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const onChange = (v: string) => {
+    setText(v);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      written.current = v;
+      latestSet.current({ q: v });
+    }, debounceMs);
+  };
+
+  return (
+    <label className="relative min-w-60 flex-1">
+      <span className="sr-only">Search models</span>
+      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        type="search"
+        value={text}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search models, variants, hardware…"
+        className="pl-8"
+      />
+    </label>
+  );
+}
+
 function Toolbar({
   all,
   f,
@@ -258,20 +302,12 @@ function Toolbar({
   reset: () => void;
   count: number;
 }) {
+  // Remounting on reset drops a search still waiting to be written.
+  const [resets, setResets] = useState(0);
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        <label className="relative min-w-60 flex-1">
-          <span className="sr-only">Search models</span>
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            value={f.q}
-            onChange={(e) => set({ q: e.target.value })}
-            placeholder="Search models, variants, hardware…"
-            className="pl-8"
-          />
-        </label>
+        <SearchBox key={resets} q={f.q} set={set} debounceMs={300} />
         <FacetSelect
           label="Family"
           all="All families"
@@ -324,7 +360,14 @@ function Toolbar({
           <option value="family">Sort by family</option>
         </select>
         <ViewSwitch view={f.view} onChange={(view) => set({ view })} />
-        <Button variant="ghost" size="sm" onClick={reset}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setResets((n) => n + 1);
+            reset();
+          }}
+        >
           <RotateCcw className="size-4" /> Reset
         </Button>
       </div>

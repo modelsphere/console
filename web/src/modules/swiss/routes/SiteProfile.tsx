@@ -6,6 +6,7 @@ import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { ProfileEditor } from "@swiss/components/ProfileEditor";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
+import { HoverHint } from "@swiss/components/ui/hint";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { Code } from "@swiss/components/ui/code";
 import { toYaml } from "@swiss/lib/yaml";
@@ -58,24 +59,21 @@ export function SiteProfile() {
       </div>
 
       {editing && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Edit</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              swissd owns this document and writes it to{" "}
-              <span className="font-mono text-xs">{data.source}</span>. It is checked before it
-              is stored — a profile that does not parse would take the deploy form down.
-            </p>
-          </CardHeader>
-          <CardContent>
-            <ProfileEditor
-              profile={data.profile}
-              yaml={data.yaml ?? ""}
-              submitLabel="Save profile"
-              onSaved={() => setEditing(false)}
-            />
-          </CardContent>
-        </Card>
+        <div className="space-y-3">
+          <h2>
+            <HoverHint
+              text={`swissd owns this document and writes it to ${data.source}. It is checked before it is stored — a profile that does not parse would take the deploy form down.`}
+            >
+              <span className="text-base font-semibold">Edit</span>
+            </HoverHint>
+          </h2>
+          <ProfileEditor
+            profile={data.profile}
+            yaml={data.yaml ?? ""}
+            submitLabel="Save profile"
+            onSaved={() => setEditing(false)}
+          />
+        </div>
       )}
 
       {!editing && (
@@ -271,11 +269,7 @@ function Repair({ data }: { data: ProfileResponse }) {
           </p>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="p-4">
-          <ProfileEditor profile={template.data.profile} yaml={data.yaml ?? ""} submitLabel="Save profile" />
-        </CardContent>
-      </Card>
+      <ProfileEditor profile={template.data.profile} yaml={data.yaml ?? ""} submitLabel="Save profile" />
     </div>
   );
 }
