@@ -644,6 +644,8 @@
     "save": "Save",
     "saving": "Saving…",
     "unset": "Not set",
+    "on": "On",
+    "off": "Off",
     "parseError": "The site profile does not parse: {error}",
     "repairHint": "Open Edit and fix it in the YAML tab, which holds the stored document. The form starts from the default, and saving from it replaces the whole profile.",
     "groups": {
@@ -653,6 +655,7 @@
       "routing": "Routing",
       "auth": "Entrypoint auth",
       "scaler": "Cache and scaler",
+      "defaults": "Feature defaults",
       "sites": "Other sites",
       "extra": "Extra"
     },
@@ -662,6 +665,7 @@
       "model": "Built from the catalog's source.hf. Variables: hf (the full repo id), org and name (its halves), model (the catalog entry name); see the field's example for the syntax.",
       "routing": "The openresty entrypoint every model publishes a route on.",
       "auth": "Used only by the serving and health checks. This document is a ConfigMap, so it names a Secret rather than holding the key.",
+      "defaults": "What a deploy starts each feature at; unset is on. A catalog variant that sets its own wins over these, and a deploy can still choose either way.",
       "sites": "The swissd instances in other clusters, for the switcher in the header. A list you keep."
     },
     "fields": {
@@ -701,6 +705,8 @@
       "key": "Key",
       "value": "Value",
       "add": "Add",
+      "routeEnabled": "Route by default",
+      "routeEnabledHint": "A deploy starts with a route on openresty and the monitor. A catalog variant cannot change this; a deploy still can",
       "gateway": "Gateway",
       "gatewayHint": "Where callers reach openresty from outside. Display only: a model's URL shows as gateway/route, checks still call the service in-cluster",
       "nginxConfigMap": "Openresty ConfigMap",
@@ -733,6 +739,16 @@
       "siteName": "Site",
       "siteUrl": "URL",
       "siteAdd": "Add site"
+    },
+    "features": {
+      "cart": "CART",
+      "cartHint": "Cache-aware router in front of the release",
+      "serviceMonitor": "ServiceMonitor",
+      "serviceMonitorHint": "Prometheus metrics scraped alongside the release",
+      "sloRequirement": "SLO requirement",
+      "sloRequirementHint": "An LLMSLORequirement for the release",
+      "scaler": "Autoscale",
+      "scalerHint": "An LLMScaler for the release"
     },
     "setup": {
       "title": "Set up this site",

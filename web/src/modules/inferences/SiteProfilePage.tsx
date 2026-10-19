@@ -24,6 +24,7 @@ import { SlidersHorizontal, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api, type SiteProfile } from "@swiss/lib/api";
 import { toYaml } from "@swiss/lib/yaml";
+import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { useT } from "@/modules/inferences/i18n";
 import { ProfileEditorBody, SaveButton, useProfileEditor } from "@/modules/inferences/components/ProfileEditor";
 
@@ -82,6 +83,7 @@ function ProfileView({ p }: { p: SiteProfile }) {
   const t = useT();
   const f = (k: string) => t(`profile.fields.${k}`);
   const v = (x: unknown) => (x === undefined || x === null || x === "" ? <span className="text-muted-foreground">{t("profile.unset")}</span> : String(x));
+  const onOff = (on: boolean) => t(on ? "profile.on" : "profile.off");
   const mono = (x?: string) => (x ? <code className="font-mono text-xs break-all">{x}</code> : v(x));
   const aliases = (a?: Record<string, string[]>) =>
     a && Object.keys(a).length ? (
@@ -149,6 +151,7 @@ function ProfileView({ p }: { p: SiteProfile }) {
         { label: f("overrides"), value: kv(p.model?.overrides) },
       ])}
       {card("routing", [
+        { label: f("routeEnabled"), value: onOff(!!p.route?.enabled) },
         { label: f("gateway"), value: mono(p.route?.gateway) },
         { label: f("nginxConfigMap"), value: mono(p.route?.nginxConfigMap) },
         { label: f("nginxService"), value: mono(p.route?.nginxService) },
@@ -171,6 +174,10 @@ function ProfileView({ p }: { p: SiteProfile }) {
         { label: f("sloTokenKey"), value: mono(p.scaler?.sloTokenKey) },
         { label: f("serverHeaders"), value: kv(p.scaler?.serverHeaders) },
       ])}
+      {card(
+        "defaults",
+        FEATURES.map((k) => ({ label: t(`profile.features.${k}`), value: onOff(featureOn(p.defaults, k)) })),
+      )}
       {!!p.sites?.length &&
         card(
           "sites",

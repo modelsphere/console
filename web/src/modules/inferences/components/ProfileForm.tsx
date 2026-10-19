@@ -4,11 +4,11 @@ import { Plus, X } from "lucide-react";
 import type { RouteAuth, SiteProfile } from "@swiss/lib/api";
 import { useT } from "@/modules/inferences/i18n";
 import { fromRows, markDefault, toRows, withNodes, type Row } from "@/modules/inferences/profile-lib";
-import { aliasErrors, aliasMap, aliasRows, catalogErrors, type AliasError, type AliasRow, type CatalogError } from "@swiss/lib/profile";
+import { aliasErrors, aliasMap, aliasRows, catalogErrors, FEATURES, featureOn, withFeature, type AliasError, type AliasRow, type CatalogError } from "@swiss/lib/profile";
 
 type CatalogRepo = NonNullable<SiteProfile["catalogs"]>[number];
 
-const GROUPS = ["placement", "catalog", "model", "routing", "auth", "scaler", "sites"] as const;
+const GROUPS = ["placement", "catalog", "model", "routing", "auth", "scaler", "defaults", "sites"] as const;
 
 export function ProfileForm({ value: p, onChange, submitted, collapsible }: { value: SiteProfile; onChange: (next: SiteProfile) => void; submitted: boolean; collapsible?: boolean }) {
   const t = useT();
@@ -24,7 +24,7 @@ export function ProfileForm({ value: p, onChange, submitted, collapsible }: { va
   const group = (g: (typeof GROUPS)[number], children: ReactNode) => (
     <FormSection
       title={t(`profile.groups.${g}`)}
-      summary={["placement", "catalog", "model", "routing", "auth", "sites"].includes(g) ? t(`profile.hints.${g}`) : undefined}
+      summary={g !== "scaler" ? t(`profile.hints.${g}`) : undefined}
       expanded={collapsible ? open[g] : undefined}
       onExpandedChange={collapsible ? (o) => setOpen((s) => ({ ...s, [g]: o })) : undefined}
     >
@@ -91,14 +91,17 @@ export function ProfileForm({ value: p, onChange, submitted, collapsible }: { va
       {group(
         "routing",
         <>
+          <FloatingField layout="inline" label={f("routeEnabled")} hint={f("routeEnabledHint")}>
+            <Switch aria-label={f("routeEnabled")} checked={!!p.route?.enabled} onCheckedChange={(v) => route({ enabled: v || undefined })} />
+          </FloatingField>
           {input(f("gateway"), p.route?.gateway, (v) => route({ gateway: str(v) }), { hint: f("gatewayHint"), placeholder: "https://llm.example.com", mono: true })}
           <div className="grid grid-cols-2 gap-3">
-            {input(f("nginxConfigMap"), p.route?.nginxConfigMap, (v) => route({ nginxConfigMap: str(v) }), { hint: f("nginxConfigMapHint"), mono: true })}
-            {input(f("nginxService"), p.route?.nginxService, (v) => route({ nginxService: str(v) }), { hint: f("nginxServiceHint"), mono: true })}
-            {input(f("nginxSelector"), p.route?.nginxSelector, (v) => route({ nginxSelector: str(v) }), { mono: true })}
+            {input(f("nginxConfigMap"), p.route?.nginxConfigMap, (v) => route({ nginxConfigMap: str(v) }), { hint: f("nginxConfigMapHint"), placeholder: "namespace/name", mono: true })}
+            {input(f("nginxService"), p.route?.nginxService, (v) => route({ nginxService: str(v) }), { hint: f("nginxServiceHint"), placeholder: "namespace/name", mono: true })}
+            {input(f("nginxSelector"), p.route?.nginxSelector, (v) => route({ nginxSelector: str(v) }), { placeholder: "key=value", mono: true })}
             {input(f("nginxPort"), p.route?.nginxPort, (v) => route({ nginxPort: v.replace(/\D/g, "") ? Number(v.replace(/\D/g, "")) : undefined }), { placeholder: "8080" })}
           </div>
-          {input(f("monitorConfigMap"), p.route?.monitorConfigMap, (v) => route({ monitorConfigMap: str(v) }), { mono: true })}
+          {input(f("monitorConfigMap"), p.route?.monitorConfigMap, (v) => route({ monitorConfigMap: str(v) }), { placeholder: "namespace/name", mono: true })}
         </>,
       )}
 
@@ -141,6 +144,15 @@ export function ProfileForm({ value: p, onChange, submitted, collapsible }: { va
           </div>
           <KV label={f("serverHeaders")} value={p.scaler?.serverHeaders} onChange={(h) => scaler({ serverHeaders: h })} />
         </>,
+      )}
+
+      {group(
+        "defaults",
+        FEATURES.map((k) => (
+          <FloatingField key={k} layout="inline" label={t(`profile.features.${k}`)} hint={t(`profile.features.${k}Hint`)}>
+            <Switch aria-label={t(`profile.features.${k}`)} checked={featureOn(p.defaults, k)} onCheckedChange={(on) => set({ defaults: withFeature(p.defaults, k, on) })} />
+          </FloatingField>
+        )),
       )}
 
       {group(

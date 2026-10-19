@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -31,6 +31,8 @@ import { useT } from "@/modules/inferences/i18n";
 import { DeploySheet, type DeployTarget } from "@/modules/inferences/components/DeploySheet";
 import { activeFilters, facetOptions, filtersFrom, matches, modelPath, withFilters, withoutFilters, type CatalogFilters } from "@/modules/inferences/catalog-lib";
 
+const SEARCH_DEBOUNCE_MS = 300;
+
 export function CatalogPage() {
   const t = useT();
   const p = useModulePath();
@@ -48,6 +50,8 @@ export function CatalogPage() {
   const shown = all.filter((x) => matches(x, f)).sort(sorters[f.sort]);
   const filtered = activeFilters(f).length > 0;
   const [deploying, setDeploying] = useState<DeployTarget | null>(null);
+  // Remounting on clear drops a search still waiting to be written.
+  const [clears, setClears] = useState(0);
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
   const onDeploy = cluster.data?.allowDeploy ? (model: string, catalog: string) => setDeploying({ kind: "deploy", model, catalog }) : undefined;
 
@@ -66,7 +70,7 @@ export function CatalogPage() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card">
           <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
-            <Input value={f.q} onChange={(e) => set({ q: e.target.value })} placeholder={t("catalog.search")} className="w-64" />
+            <SearchBox key={clears} q={f.q} set={set} placeholder={t("catalog.search")} />
             {choice.several && (
               <FilterSelect
                 title={t("catalog.catalog")}
@@ -91,7 +95,14 @@ export function CatalogPage() {
               {t("catalog.hidedep")}
             </Toggle>
             {filtered && (
-              <Button variant="ghost" size="sm" onClick={() => setParams((prev) => withoutFilters(prev), { replace: true })}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setClears((n) => n + 1);
+                  setParams((prev) => withoutFilters(prev), { replace: true });
+                }}
+              >
                 {t("catalog.clear")}
               </Button>
             )}
@@ -143,6 +154,38 @@ export function CatalogPage() {
       <DeploySheet target={deploying} onClose={() => setDeploying(null)} />
     </div>
   );
+}
+
+// The router applies URL changes in a transition, and an input controlled by
+// one loses keystrokes. The URL wins only when something else changed it.
+function SearchBox({ q, set, placeholder }: { q: string; set: (patch: Partial<CatalogFilters>) => void; placeholder: string }) {
+  const [text, setText] = useState(q);
+  const written = useRef(q);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // set closes over the params of its render; a timer must not write stale ones.
+  const latestSet = useRef(set);
+  useEffect(() => {
+    latestSet.current = set;
+  });
+  useEffect(() => {
+    if (q !== written.current) {
+      clearTimeout(timer.current);
+      written.current = q;
+      setText(q);
+    }
+  }, [q]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const onChange = (v: string) => {
+    setText(v);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      written.current = v;
+      latestSet.current({ q: v });
+    }, SEARCH_DEBOUNCE_MS);
+  };
+
+  return <Input value={text} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-64" />;
 }
 
 function ModelCard({ x, catalog, to, onDeploy }: { x: Facets; catalog: string; to: string; onDeploy?: (model: string, catalog: string) => void }) {

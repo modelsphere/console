@@ -633,6 +633,8 @@
     "save": "保存",
     "saving": "保存中…",
     "unset": "未设置",
+    "on": "开启",
+    "off": "关闭",
     "parseError": "站点配置解析失败：{error}",
     "repairHint": "点击编辑，在 YAML 标签页中修正已存储的文档。表单从默认配置开始，从表单保存会替换整个配置。",
     "groups": {
@@ -642,6 +644,7 @@
       "routing": "路由",
       "auth": "入口鉴权",
       "scaler": "缓存与伸缩",
+      "defaults": "功能默认值",
       "sites": "其他站点",
       "extra": "其他配置"
     },
@@ -651,6 +654,7 @@
       "model": "根据目录的 source.hf 生成路径。可用变量：hf（完整 repo id）、org 和 name（它的两段）、model（目录里的模型名），写法见输入框里的示例。",
       "routing": "每个模型发布路由的 openresty 入口。",
       "auth": "只用于服务检查。这份配置是 ConfigMap，所以只写 Secret 的名字，不保存密钥本身。",
+      "defaults": "部署时各功能的初始开关，未设置即开启。目录变体自己设置了的以变体为准，部署时仍可任意开关。",
       "sites": "其他集群里的 swissd，用于顶部的站点切换。这是一份手工维护的清单。"
     },
     "fields": {
@@ -690,6 +694,8 @@
       "key": "键",
       "value": "值",
       "add": "添加",
+      "routeEnabled": "默认发布路由",
+      "routeEnabledHint": "部署时默认向 openresty 和监控发布路由。目录变体改变不了这一项，部署时仍可调整",
       "gateway": "网关地址",
       "gatewayHint": "外部访问 openresty 的地址，只用于展示：模型地址显示为“网关地址/路由”，检查仍走集群内服务",
       "nginxConfigMap": "Openresty ConfigMap",
@@ -722,6 +728,16 @@
       "siteName": "站点名",
       "siteUrl": "地址",
       "siteAdd": "添加站点"
+    },
+    "features": {
+      "cart": "CART",
+      "cartHint": "release 前面的缓存感知路由",
+      "serviceMonitor": "ServiceMonitor",
+      "serviceMonitorHint": "随 release 一起采集 Prometheus 指标",
+      "sloRequirement": "SLO 要求",
+      "sloRequirementHint": "为 release 创建 LLMSLORequirement",
+      "scaler": "自动伸缩",
+      "scalerHint": "为 release 创建 LLMScaler"
     },
     "setup": {
       "title": "初始化站点",

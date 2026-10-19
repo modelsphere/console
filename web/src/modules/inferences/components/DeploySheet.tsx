@@ -27,7 +27,7 @@ import {
 import { ArrowRight, FlaskConical, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
-import { EMPTY, formFromPlan, imageOf, planRequest, type Form } from "@swiss/components/DeploySettings";
+import { EMPTY, formFromPlan, imageOf, planRequest, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
 import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
@@ -63,6 +63,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
 
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes, retry: false });
+  // A fresh deploy's switches start from the site's defaults; a profile it
+  // cannot read leaves them at EMPTY's. An upgrade starts from its own plan.
+  const profile = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false, enabled: !upgrade });
   const current = useQuery({
     queryKey: ["releasePlan", upgrade ? target.namespace : "", upgrade ? target.release : ""],
     queryFn: () => api.releasePlan((target as { namespace: string }).namespace, (target as { release: string }).release),
@@ -130,7 +133,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     retry: false,
   });
   useEffect(() => setForm(initial), [initial]);
-  const dirty = useDirty({ form, version, variant, moveTo, chartVersion }, { form: initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "" });
+  const [seed, setSeed] = useState<SwitchDefaults | null>(null);
+  const dirty = useDirty({ form, version, variant, moveTo, chartVersion }, { form: seed ? reseed(initial, {}, seed) : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "" });
 
   const [step, setStep] = useState<"form" | "review">("form");
   const [submitted, setSubmitted] = useState(false);
@@ -141,6 +145,25 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const [note, setNote] = useState("");
   const [force, setForce] = useState(false);
   const nav = useAnchorNav({ ids: [...SECTIONS], idPrefix: ID_PREFIX, enabled: step === "form", onExpand: (id) => setExpanded((e) => ({ ...e, [id]: true })) });
+
+  // The form shows only once the entry and profile have loaded, so the first
+  // seed lands before any plan; a later one is another variant or version, and
+  // a plan composed from the old switches goes with it.
+  const seedReady = !upgrade && !!entry.data && !profile.isPending;
+  const siteDefaults = useMemo(() => siteSwitchDefaults(profile.data), [profile.data]);
+  const variantValues = entry.data?.variant.values;
+  useEffect(() => {
+    if (!seedReady) return;
+    const next = switchDefaults(siteDefaults, variantValues);
+    if (seed && JSON.stringify(seed) === JSON.stringify(next)) return;
+    setForm((f) => reseed(f, seed ?? {}, next));
+    setSeed(next);
+    if (seed) {
+      setPlan(null);
+      setDiff(null);
+      setStep("form");
+    }
+  }, [seedReady, siteDefaults, variantValues, seed]);
 
   const release = upgrade ? target.release : form.serviceId || defaultServiceId(target.model);
   const namespace = upgrade ? target.namespace : form.namespace || cluster.data?.namespace || "";
@@ -188,7 +211,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   };
 
   const readOnly = cluster.data && !cluster.data.allowDeploy;
-  const loading = cluster.isPending || (upgrade && current.isPending) || entry.isPending;
+  const loading = cluster.isPending || (upgrade ? current.isPending : profile.isPending) || entry.isPending;
   const error = cluster.error ?? current.error ?? entry.error;
   const keepOption = (label: string) => ({ value: KEEP, label });
 
