@@ -2,8 +2,8 @@ apiVersion: v2
 name: console
 description: ModelSphere community portal — identity (users, roles, login) and a federation gateway to Swiss and other backends.
 type: application
-version: 0.1.2
-appVersion: "0.1.2"
+version: 0.2.0
+appVersion: "0.2.0"
 home: https://github.com/modelsphere/console
 sources:
   - https://github.com/modelsphere/console
