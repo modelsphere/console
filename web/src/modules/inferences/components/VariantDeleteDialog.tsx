@@ -41,7 +41,7 @@ export function VariantDeleteDialog({
       action={t("common:actions.delete")}
       tone="destructive"
       items={target ? [{ name: target.id, id: target.id }] : []}
-      error={writeErrorText(run.error)}
+      error={writeErrorText(run.error, t)}
       loading={run.isPending}
       onConfirm={async () => {
         if (!target) return;

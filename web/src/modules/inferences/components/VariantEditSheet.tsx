@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Alert,
@@ -17,6 +18,7 @@ import {
   Spinner,
 } from "@modelsphere/ui";
 import { CircleCheck, TriangleAlert } from "lucide-react";
+import { useModulePath } from "@/shell";
 import { useT } from "@/modules/inferences/i18n";
 import { CatalogWriteError, putVariant, readVariant, type WriteResult } from "@/modules/inferences/catalog-write-api";
 import { bumpVersion, freeId, idProblem, setTopLevel, topLevel, variantFrom, variantPath } from "@/modules/inferences/catalog-write-lib";
@@ -129,11 +131,26 @@ function Body({ target, onClose, onSaved }: { target: VariantEdit; onClose: () =
   );
 }
 
-// A refusal as catalog-server explains it: every problem it found, and on a
-// stale edit the way back to the current file.
+// A refusal as catalog-server explains it: every problem it found, on a stale
+// edit the way back to the current file, and on a token it no longer takes the
+// way to the site profile.
 export function WriteErrorAlert({ error, onReload }: { error: Error; onReload?: () => void }) {
   const t = useT();
+  const p = useModulePath();
   const w = error instanceof CatalogWriteError ? error : null;
+  if (w?.tokenRejected) {
+    return (
+      <Alert variant="destructive">
+        <TriangleAlert />
+        <AlertDescription>
+          {t("catalogWrite.tokenRejected")}{" "}
+          <Link to={p("site-profile")} className="underline">
+            {t("catalogWrite.setNewToken")}
+          </Link>
+        </AlertDescription>
+      </Alert>
+    );
+  }
   return (
     <Alert variant="destructive">
       <TriangleAlert />
@@ -156,8 +173,9 @@ export function WriteErrorAlert({ error, onReload }: { error: Error; onReload?: 
   );
 }
 
-export function writeErrorText(error: Error | null): string | undefined {
+export function writeErrorText(error: Error | null, t: ReturnType<typeof useT>): string | undefined {
   if (!error) return undefined;
+  if (error instanceof CatalogWriteError && error.tokenRejected) return `${t("catalogWrite.tokenRejected")} ${t("catalogWrite.setNewToken")}`;
   const problems = error instanceof CatalogWriteError ? error.problems : [];
   return problems.length ? `${error.message}: ${problems.join("; ")}` : error.message;
 }

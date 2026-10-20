@@ -9,10 +9,12 @@ import { aliasErrors, aliasMap, aliasRows, catalogErrors, FEATURES, featureOn, w
 // The copied swiss types predate writable.
 type CatalogRepo = NonNullable<SiteProfile["catalogs"]>[number] & { writable?: boolean };
 
-// A writable catalog's token as the editor holds it: typed, and whether swissd has one.
+// A writable catalog's token as the editor holds it: typed, whether swissd has one, and why
+// swissd did not keep the one last saved.
 export interface TokenField {
   value: string;
   stored: boolean;
+  refused?: string;
   onChange: (v: string) => void;
 }
 
@@ -246,7 +248,12 @@ function CatalogRow({
       {c.writable && token && (
         <div className="sm:col-span-2">
           {/* Optional: a writable catalog without a token is shown, not refused. */}
-          <FloatingField label={f("catalogToken")} hint={t("profile.token.hint")} notice={!token.stored && !token.value ? t("profile.token.missing") : undefined}>
+          <FloatingField
+            label={f("catalogToken")}
+            hint={t("profile.token.hint")}
+            notice={!token.stored && !token.value ? t("profile.token.missing") : undefined}
+            error={token.refused && t("profile.token.refused", { error: token.refused })}
+          >
             <FieldInput type="password" autoComplete="new-password" value={token.value} onChange={(e) => token.onChange(e.target.value)} placeholder={token.stored ? t("profile.token.keep") : undefined} />
           </FloatingField>
         </div>

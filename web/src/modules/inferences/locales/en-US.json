@@ -357,7 +357,9 @@
     "siteHint": "swiss reads it there, and fetches old revisions from its raw/.",
     "repo": "Repository (optional)",
     "repoHint": "Where its history links to commits and files: a git host's web address, or the catalog server, which shows them too.",
-    "initUnknown": "Setup state unknown"
+    "initUnknown": "Setup state unknown",
+    "tokenRejected": "The catalog server no longer accepts the write token saved for this catalog: it was changed or removed there.",
+    "setNewToken": "Set the current one on the site profile page"
   },
   "variantWrite": {
     "add": "Add variant",
@@ -701,7 +703,10 @@
       "none": "No token",
       "hint": "A catalog-server token. swissd keeps it in its own Secret and never shows it again; unticking Writable removes it.",
       "keep": "Stored. Leave empty to keep it",
-      "missing": "No token yet: editing this catalog stays off until one is set."
+      "missing": "No token yet: editing this catalog stays off until one is set.",
+      "refused": "Not saved: {error}",
+      "checkFailed": "Nothing is saved: the write token of {catalogs} was not accepted at the URL in the form, or the catalog server could not be reached there. Correct the URL or the token and save again.",
+      "notSaved": "The profile is saved, but the write token of {catalogs} is not: its catalog server did not accept it, or could not be asked. A token stored before stays. Correct it and save again."
     },
     "title": "Site Profile",
     "description": "How this cluster deploys: where models come from, where charts and images are pulled, and what routing and scaling connect to. Deploy forms do not retype any of it.",

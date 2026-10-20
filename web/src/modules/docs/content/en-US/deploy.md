@@ -80,7 +80,7 @@ From a row's actions in the list, or the top of the detail page:
 
 ## Edit a catalog's variants
 
-A catalog-server catalog can be edited from a model's page. In the [Site profile](/inferences/site-profile) editor, tick the catalog **Writable** and enter its catalog-server **Write token**; swissd keeps the token in its own Secret, and unticking **Writable** removes it. Each change is one commit to the catalog.
+A catalog-server catalog can be edited from a model's page. In the [Site profile](/inferences/site-profile) editor, tick the catalog **Writable** and enter its catalog-server **Write token**; swissd keeps the token in its own Secret, and unticking **Writable** removes it. Saving checks the token with the catalog server first, a new catalog's too: if the server does not accept it or cannot be reached, nothing is saved and the editor says why. Each change is one commit to the catalog.
 
 | Action | Where | What to know |
 |---|---|---|
@@ -95,6 +95,7 @@ A catalog-server catalog can be edited from a model's page. In the [Site profile
 - A writable catalog is labelled **Writable** in the model library's catalog selector.
 - If someone changed the file after you opened it, saving says so; reload it and edit again.
 - Commits are authored by the token's owner, not by you.
+- If the token is changed or removed on the catalog server later, the next change says so; enter the new one in the Site profile editor.
 - Editing needs the model deployment backend's (`swiss`) permissions: `update` to add or edit a variant or set a token, `delete` to delete either.
 
 ## Nodes and activity

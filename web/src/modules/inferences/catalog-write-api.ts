@@ -1,5 +1,7 @@
 import { apiPath, hostFetch } from "@swiss/lib/host";
-import { writableCatalogs } from "@/modules/inferences/catalog-write-lib";
+import { catalogTokenKey, writableCatalogs, type CatalogChange } from "@/modules/inferences/catalog-write-lib";
+
+export { catalogTokenKey };
 
 // A writable catalog's catalog-server API (model-catalog's docs/openapi.yaml),
 // through swissd at /api/catalogs/<name>/api/v2/, which adds the token it keeps
@@ -17,13 +19,15 @@ export interface WriteResult {
 }
 
 // A refused write: every problem on a 422, the file's current digest on a 412
-// or 428.
+// or 428. tokenRejected is catalog-server's own 401, not a session's: the token
+// swissd holds was changed or removed there since it was set.
 export class CatalogWriteError extends Error {
   constructor(
     readonly status: number,
     message: string,
     readonly problems: string[] = [],
     readonly current?: string | null,
+    readonly tokenRejected = false,
   ) {
     super(message);
   }
@@ -59,7 +63,8 @@ async function fail(res: Response): Promise<never> {
   }
   const problems = Array.isArray(body?.problems) ? body.problems.filter((p: unknown): p is string => typeof p === "string") : [];
   const message = typeof body?.error === "string" ? body.error : text.trim() || res.statusText || `HTTP ${res.status}`;
-  throw new CatalogWriteError(res.status, `${message} (HTTP ${res.status})`, problems, body?.current);
+  const tokenRejected = res.status === 401 && /realm="catalog"/.test(res.headers.get("WWW-Authenticate") ?? "");
+  throw new CatalogWriteError(res.status, `${message} (HTTP ${res.status})`, problems, body?.current, tokenRejected);
 }
 
 // A file, with the digest a write names.
@@ -117,7 +122,6 @@ export async function createModel(catalog: string, files: { metadata: string; va
 }
 
 // swissd's Secret: keys are listed, values only ever written.
-export const catalogTokenKey = (catalog: string) => `catalog.${catalog}.token`;
 
 export interface Secrets {
   secret: string;
@@ -135,29 +139,57 @@ export async function listSecrets(): Promise<Secrets> {
   return secrets(await hostFetch(apiPath("/api/secrets")));
 }
 
-export async function setSecret(key: string, value: string): Promise<Secrets> {
-  return secrets(
-    await hostFetch(apiPath(`/api/secrets/${encodeURIComponent(key)}`), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value }),
-    }),
-  );
+// Updates a catalog: only a writable one's token yet -- a new one, or the one
+// stored for its name before a rename -- the rest being the site profile's.
+// swissd keeps the token only once the catalog's catalog-server is reached and
+// takes it in a dry-run write: 422 when it refuses it, 502 when it cannot be
+// reached. A dry run keeps nothing: it checks the token given, or else the one
+// stored, at url, so a catalog the profile does not hold yet, or not at that
+// url, is checked before it is saved.
+export async function putCatalog(catalog: string, change: { token?: string; renamedFrom?: string; url?: string }, opts: { dryRun?: boolean } = {}): Promise<void> {
+  const res = await hostFetch(apiPath(`/api/catalogs/${encodeURIComponent(catalog)}${opts.dryRun ? "?dryRun=true" : ""}`), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(change),
+  });
+  if (!res.ok) await fail(res);
 }
 
 export async function removeSecret(key: string): Promise<Secrets> {
   return secrets(await hostFetch(apiPath(`/api/secrets/${encodeURIComponent(key)}`), { method: "DELETE" }));
 }
 
-// After a profile save: the tokens typed for writable catalogs written, and the
-// token of every catalog no longer writable removed, so the Secret holds what
-// the profile says.
-export async function syncCatalogTokens(profile: { catalogs?: { name: string }[] } | undefined, typed: Record<string, string>) {
+// f for each change; the ones it failed, by catalog name, are the answer.
+async function eachChange(changes: CatalogChange[], f: (c: CatalogChange) => Promise<void>) {
+  const refused: Record<string, Error> = {};
+  for (const c of changes) {
+    try {
+      await f(c);
+    } catch (err) {
+      refused[c.name] = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+  return refused;
+}
+
+// Before a profile save: each change tried at the url the form gives its
+// catalog, keeping nothing.
+export async function checkCatalogChanges(changes: CatalogChange[]): Promise<Record<string, Error>> {
+  return eachChange(changes, ({ name, ...change }) => putCatalog(name, change, { dryRun: true }));
+}
+
+// After a profile save: the tokens typed or carried over by a rename set, and
+// the token of every catalog no longer writable removed, so the Secret holds
+// what the profile says. The ones not kept, by catalog name, are the answer: one
+// its catalog refused leaves the token before it.
+export async function syncCatalogTokens(profile: { catalogs?: { name: string }[] } | undefined, changes: CatalogChange[]): Promise<Record<string, Error>> {
   const writable = writableCatalogs(profile);
-  for (const [name, value] of Object.entries(typed)) if (value && writable.includes(name)) await setSecret(catalogTokenKey(name), value);
+  const sets = changes.filter((c) => writable.includes(c.name) && (c.token || c.renamedFrom));
+  const refused = await eachChange(sets, ({ name, token, renamedFrom }) => putCatalog(name, token ? { token } : { renamedFrom }));
   const { keys } = await listSecrets();
   for (const key of keys) {
     const name = /^catalog\.(.+)\.token$/.exec(key)?.[1];
     if (name && !writable.includes(name)) await removeSecret(key);
   }
+  return refused;
 }

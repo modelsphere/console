@@ -99,3 +99,30 @@ export function writableCatalogs(profile: { catalogs?: { name: string }[] } | un
 export function markedWritable(profile: { catalogs?: { name: string }[] } | undefined, catalog: string): boolean {
   return writableCatalogs(profile).includes(catalog);
 }
+
+export const catalogTokenKey = (catalog: string) => `catalog.${catalog}.token`;
+
+// What saving the profile asks of a writable catalog's token: a typed one; else,
+// with one stored, the one stored under its old name (renamedFrom), or, when its
+// url changed, the one stored, checked there.
+export interface CatalogChange {
+  name: string;
+  url: string;
+  token?: string;
+  renamedFrom?: string;
+}
+
+type Catalogs = { catalogs?: { name: string; url: string }[] } | undefined;
+
+export function catalogChanges(form: Catalogs, saved: Catalogs, typed: Record<string, string>, renamedFrom: Record<string, string>, stored: string[]): CatalogChange[] {
+  const savedUrl = new Map((saved?.catalogs ?? []).map((c) => [c.name, c.url]));
+  const writable = writableCatalogs(form);
+  return (form?.catalogs ?? []).flatMap(({ name, url }): CatalogChange[] => {
+    if (!writable.includes(name)) return [];
+    if (typed[name]) return [{ name, url, token: typed[name] }];
+    const from = renamedFrom[name];
+    if (!stored.includes(catalogTokenKey(from ?? name))) return [];
+    if (from) return [{ name, url, renamedFrom: from }];
+    return savedUrl.get(name) !== url ? [{ name, url }] : [];
+  });
+}

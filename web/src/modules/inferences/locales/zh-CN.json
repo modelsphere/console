@@ -346,7 +346,9 @@
     "siteHint": "swiss 从这里读取目录，并从它的 raw/ 获取历史版本。",
     "repo": "仓库（可选）",
     "repoHint": "历史记录中提交与文件链接的去向：git 托管平台的网页地址，或同样能展示它们的目录服务器。",
-    "initUnknown": "初始化状态未知"
+    "initUnknown": "初始化状态未知",
+    "tokenRejected": "catalog-server 已不再接受为该目录保存的写入令牌：令牌已在 catalog-server 上被修改或移除。",
+    "setNewToken": "前往站点配置设置新令牌"
   },
   "variantWrite": {
     "add": "新增变体",
@@ -690,7 +692,10 @@
       "none": "未设置令牌",
       "hint": "catalog-server 的令牌。swissd 将其保存在自己的 Secret 中，之后不再显示；取消勾选可写会将其移除。",
       "keep": "已保存，留空则保持不变",
-      "missing": "还没有令牌：设置之前，该目录无法编辑。"
+      "missing": "还没有令牌：设置之前，该目录无法编辑。",
+      "refused": "未保存：{error}",
+      "checkFailed": "未保存任何内容：{catalogs} 的写入令牌在表单中的 URL 上未被接受，或无法连接该 catalog-server。请修改 URL 或令牌后重新保存。",
+      "notSaved": "站点配置已保存，但 {catalogs} 的写入令牌没有保存：catalog-server 不接受该令牌，或无法连接。之前保存的令牌保持不变。请修改后重新保存。"
     },
     "title": "站点配置",
     "description": "这个集群的部署规则：模型从哪来、chart 和镜像从哪拉、路由和伸缩接到哪里。部署表单里不必重复填写这些。",
