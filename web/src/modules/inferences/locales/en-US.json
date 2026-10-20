@@ -280,6 +280,8 @@
     "choose": "Several catalogs are configured. Pick one:",
     "legacy": "v1 legacy",
     "legacyHint": "Catalog schema v1 is the read-only legacy index, and what a catalog with no schemaVersion reads. Set schemaVersion: v2 on it in the site profile.",
+    "writable": "Writable",
+    "writableHint": "The site profile marks this catalog writable: its variants are added, edited and deleted on a model's page.",
     "default": "Default"
   },
   "model": {
@@ -321,6 +323,69 @@
     "deploy": "Deploy",
     "deprecated": "Deprecated: {reason}",
     "noVariants": "This version has no variants"
+  },
+  "newModel": {
+    "action": "New model",
+    "title": "New model in {catalog}",
+    "description": "Its metadata.yaml and a first variant, in one commit. The model name names its directory; the first variant is its default.",
+    "name": "Model name",
+    "nameHint": "Its directory: models/{name}/",
+    "variantId": "First variant id",
+    "variantIdHint": "Its file: {id}.yaml, the model's default variant",
+    "variant": "First variant",
+    "variantFrom": "Starts as a copy of {from}, at version 1.0.0.",
+    "checked": "Check passed: {name} would be created.",
+    "create": "Create",
+    "creating": "Creating…"
+  },
+  "catalogWrite": {
+    "settings": "Catalog settings",
+    "settingsTitle": "Catalog settings: {catalog}",
+    "settingsDescription": "catalog.yaml: site, where the catalog is served; raw, where swiss fetches its old revisions; repo, its repository. The index follows a change at once.",
+    "editModel": "Edit model",
+    "editModelTitle": "Edit {model}",
+    "editModelDescription": "models/{model}/metadata.yaml: what the catalog says of the model, its default variant and its tuning.",
+    "checked": "Check passed: nothing is committed until you commit it.",
+    "unchanged": "Nothing to commit: this is the file as it is.",
+    "setup": "Set up this catalog",
+    "setupTitle": "Set up {catalog}",
+    "setupDescription": "Its repository is empty. Setting it up commits a catalog.yaml, saying where the catalog is served, and a README.md. Then it takes models.",
+    "setupChecked": "Check passed: setting up would commit {files}.",
+    "setupAction": "Set up",
+    "settingUp": "Setting up…",
+    "site": "Where the catalog is served",
+    "siteHint": "swiss reads it there, and fetches old revisions from its raw/.",
+    "repo": "Repository (optional)",
+    "repoHint": "Where its history links to commits and files: a git host's web address, or the catalog server, which shows them too.",
+    "initUnknown": "Setup state unknown"
+  },
+  "variantWrite": {
+    "add": "Add variant",
+    "addTitle": "Add a variant to {model}",
+    "editTitle": "Edit {id}",
+    "path": "Writes {path} in catalog {catalog}, as one commit.",
+    "file": "Variant file",
+    "idLabel": "Variant id",
+    "idHint": "It names the variant's file.",
+    "message": "Commit message",
+    "messageHint": "Optional. Left empty, catalog-server writes model/id: version.",
+    "bump": "Raise version",
+    "check": "Check",
+    "checking": "Checking…",
+    "save": "Commit",
+    "saving": "Committing…",
+    "checked": "Check passed: committing would publish version {version}.",
+    "unchangedCheck": "Nothing to commit: the file already has these bytes.",
+    "conflict": "Someone changed this file after you opened it.",
+    "reload": "Reload it, discarding your edits",
+    "id": {
+      "invalid": "The id must start with a letter or digit and use only letters, digits, dots, underscores and hyphens; it cannot be metadata.",
+      "taken": "{id} is already a variant of this model."
+    },
+    "deleteTitle": "Delete variant",
+    "deleteDescription": "Deletes the variant file in one commit. Its history stays, and a deploy pinned to one of its revisions still finds it.",
+    "noToken": "The site profile marks this catalog writable, but it has no write token yet.",
+    "setToken": "Set it on the site profile page"
   },
   "deploy": {
     "title": "Deploy an inference service",
@@ -631,6 +696,13 @@
     "empty": "No nodes match"
   },
   "profile": {
+    "token": {
+      "set": "Token set",
+      "none": "No token",
+      "hint": "A catalog-server token. swissd keeps it in its own Secret and never shows it again; unticking Writable removes it.",
+      "keep": "Stored. Leave empty to keep it",
+      "missing": "No token yet: editing this catalog stays off until one is set."
+    },
     "title": "Site Profile",
     "description": "How this cluster deploys: where models come from, where charts and images are pulled, and what routing and scaling connect to. Deploy forms do not retype any of it.",
     "edit": "Edit",
@@ -688,6 +760,8 @@
       "catalogName": "Name",
       "catalogUrl": "URL",
       "catalogDefault": "Default",
+      "catalogWritable": "Writable",
+      "catalogToken": "Write token",
       "catalogAdd": "Add catalog",
       "catalogSchema": "Schema",
       "catalogSchemaV1": "v1 · legacy",

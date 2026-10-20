@@ -6,11 +6,31 @@ import { useT } from "@/modules/inferences/i18n";
 import { fromRows, markDefault, toRows, withNodes, type Row } from "@/modules/inferences/profile-lib";
 import { aliasErrors, aliasMap, aliasRows, catalogErrors, FEATURES, featureOn, withFeature, type AliasError, type AliasRow, type CatalogError } from "@swiss/lib/profile";
 
-type CatalogRepo = NonNullable<SiteProfile["catalogs"]>[number];
+// The copied swiss types predate writable.
+type CatalogRepo = NonNullable<SiteProfile["catalogs"]>[number] & { writable?: boolean };
+
+// A writable catalog's token as the editor holds it: typed, and whether swissd has one.
+export interface TokenField {
+  value: string;
+  stored: boolean;
+  onChange: (v: string) => void;
+}
 
 const GROUPS = ["placement", "catalog", "model", "routing", "auth", "scaler", "defaults", "sites"] as const;
 
-export function ProfileForm({ value: p, onChange, submitted, collapsible }: { value: SiteProfile; onChange: (next: SiteProfile) => void; submitted: boolean; collapsible?: boolean }) {
+export function ProfileForm({
+  value: p,
+  onChange,
+  submitted,
+  collapsible,
+  token,
+}: {
+  value: SiteProfile;
+  onChange: (next: SiteProfile) => void;
+  submitted: boolean;
+  collapsible?: boolean;
+  token?: (catalog: string) => TokenField;
+}) {
   const t = useT();
   const f = (k: string) => t(`profile.fields.${k}`);
   const [open, setOpen] = useState<Record<string, boolean>>(Object.fromEntries(GROUPS.map((g) => [g, true])));
@@ -62,6 +82,7 @@ export function ProfileForm({ value: p, onChange, submitted, collapsible }: { va
                 key={i}
                 value={c}
                 errors={submitted ? catalogErrs[i] : {}}
+                token={token?.(c.name)}
                 onChange={(patch) => set({ catalogs: catalogs.map((x, j) => (j === i ? { ...x, ...patch } : x)) })}
                 onDefault={(on) => set({ catalogs: markDefault(catalogs, i, on) })}
                 onRemove={() => set({ catalogs: catalogs.filter((_, j) => j !== i) })}
@@ -178,9 +199,11 @@ function CatalogRow({
   onChange,
   onDefault,
   onRemove,
+  token,
 }: {
   value: CatalogRepo;
   errors: { name?: CatalogError; url?: CatalogError };
+  token?: TokenField;
   onChange: (patch: Partial<CatalogRepo>) => void;
   onDefault: (on: boolean) => void;
   onRemove: () => void;
@@ -212,10 +235,22 @@ function CatalogRow({
           <Checkbox checked={!!c.default} onCheckedChange={(on) => onDefault(!!on)} />
           {f("catalogDefault")}
         </label>
+        <label className="flex items-center gap-1.5 text-sm whitespace-nowrap">
+          <Checkbox checked={!!c.writable} onCheckedChange={(on) => onChange({ writable: on ? true : undefined })} />
+          {f("catalogWritable")}
+        </label>
         <span className="ms-auto">
           <Remove onClick={onRemove} />
         </span>
       </div>
+      {c.writable && token && (
+        <div className="sm:col-span-2">
+          {/* Optional: a writable catalog without a token is shown, not refused. */}
+          <FloatingField label={f("catalogToken")} hint={t("profile.token.hint")} notice={!token.stored && !token.value ? t("profile.token.missing") : undefined}>
+            <FieldInput type="password" autoComplete="new-password" value={token.value} onChange={(e) => token.onChange(e.target.value)} placeholder={token.stored ? t("profile.token.keep") : undefined} />
+          </FloatingField>
+        </div>
+      )}
     </div>
   );
 }

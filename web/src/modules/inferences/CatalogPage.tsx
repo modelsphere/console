@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   AlertDescription,
@@ -29,6 +29,12 @@ import { facetsOf, formatUplift, sorters, type Facets } from "@swiss/lib/catalog
 import { useCatalogChoice } from "@swiss/components/CatalogChoice";
 import { useT } from "@/modules/inferences/i18n";
 import { DeploySheet, type DeployTarget } from "@/modules/inferences/components/DeploySheet";
+import { writableCatalogs } from "@/modules/inferences/catalog-write-lib";
+import { SETTINGS_FILE } from "@/modules/inferences/catalog-write-api";
+import { NewModelSheet } from "@/modules/inferences/components/NewModelSheet";
+import { FileSheet } from "@/modules/inferences/components/FileSheet";
+import { SetupSheet } from "@/modules/inferences/components/SetupSheet";
+import { useCatalogWrite } from "@/modules/inferences/components/useCatalogWrite";
 import { activeFilters, facetOptions, filtersFrom, matches, modelPath, withFilters, withoutFilters, type CatalogFilters } from "@/modules/inferences/catalog-lib";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -53,6 +59,13 @@ export function CatalogPage() {
   // Remounting on clear drops a search still waiting to be written.
   const [clears, setClears] = useState(0);
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
+  const profile = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false });
+  const writable = writableCatalogs(profile.data?.profile);
+  const w = useCatalogWrite(choice.selected);
+  const [sheet, setSheet] = useState<"model" | "settings" | "setup" | null>(null);
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const copyFrom = catalog.data?.models.find((m) => m.variants.length);
   const onDeploy = cluster.data?.allowDeploy ? (model: string, catalog: string) => setDeploying({ kind: "deploy", model, catalog }) : undefined;
 
   const facet = (key: "family" | "engine" | "hardware" | "tag") => (
@@ -74,7 +87,12 @@ export function CatalogPage() {
             {choice.several && (
               <FilterSelect
                 title={t("catalog.catalog")}
-                options={choice.catalogs.map((c) => ({ value: c.name, label: c.name, description: c.schema === "v1" ? t("catalog.legacy") : undefined }))}
+                options={choice.catalogs.map((c) => ({
+                  value: c.name,
+                  label: c.name,
+                  description: c.schema === "v1" ? t("catalog.legacy") : undefined,
+                  badge: writable.includes(c.name) ? <WritableBadge /> : undefined,
+                }))}
                 value={choice.selected}
                 onValueChange={(v) => v && choice.choose(v)}
               />
@@ -82,6 +100,12 @@ export function CatalogPage() {
             {catalog.data?.schema === "v1" && (
               <Badge variant="warning" title={t("catalog.legacyHint")}>
                 {t("catalog.legacy")}
+              </Badge>
+            )}
+            {writable.includes(choice.selected) && <WritableBadge />}
+            {w.initError && (
+              <Badge variant="warning" title={w.initError.message}>
+                {t("catalogWrite.initUnknown")}
               </Badge>
             )}
             {facet("family")}
@@ -107,6 +131,21 @@ export function CatalogPage() {
               </Button>
             )}
             <div className="ms-auto flex items-center gap-2">
+              {w.editable && (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => setSheet("settings")}>
+                    {t("catalogWrite.settings")}
+                  </Button>
+                  <Button size="sm" onClick={() => setSheet("model")}>
+                    {t("newModel.action")}
+                  </Button>
+                </>
+              )}
+              {w.setupable && (
+                <Button size="sm" onClick={() => setSheet("setup")}>
+                  {t("catalogWrite.setup")}
+                </Button>
+              )}
               <span className="text-sm text-muted-foreground tabular-nums">
                 {filtered ? t("catalog.countFiltered", { shown: shown.length, n: all.length }) : t("catalog.count", { n: all.length })}
               </span>
@@ -134,7 +173,7 @@ export function CatalogPage() {
                 <AlertDescription>{String((choice.error ?? catalog.error)?.message)}</AlertDescription>
               </Alert>
             ) : !choice.selected ? (
-              <NoCatalog catalogs={choice.catalogs} choose={choice.choose} />
+              <NoCatalog catalogs={choice.catalogs} writable={writable} choose={choice.choose} />
             ) : shown.length === 0 ? (
               <Empty>
                 <EmptyHeader>
@@ -152,6 +191,37 @@ export function CatalogPage() {
         </div>
       </div>
       <DeploySheet target={deploying} onClose={() => setDeploying(null)} />
+      {sheet === "model" && (
+        <NewModelSheet
+          catalog={choice.selected}
+          from={copyFrom && { model: copyFrom.name, variant: copyFrom.defaultVariant || copyFrom.variants[0].id }}
+          onClose={() => setSheet(null)}
+          onCreated={(model) => {
+            void qc.invalidateQueries({ queryKey: ["catalog", choice.selected] });
+            navigate(p(modelPath(model, choice.selected)));
+          }}
+        />
+      )}
+      <FileSheet
+        target={
+          sheet === "settings"
+            ? { catalog: choice.selected, file: SETTINGS_FILE, label: "catalog.yaml", title: t("catalogWrite.settingsTitle", { catalog: choice.selected }), description: t("catalogWrite.settingsDescription") }
+            : null
+        }
+        onClose={() => setSheet(null)}
+        onSaved={() => void qc.invalidateQueries({ queryKey: ["catalog", choice.selected] })}
+      />
+      {sheet === "setup" && (
+        <SetupSheet
+          catalog={choice.selected}
+          url={w.url}
+          onClose={() => setSheet(null)}
+          onDone={() => {
+            void qc.invalidateQueries({ queryKey: ["catalog-init", choice.selected] });
+            void qc.invalidateQueries({ queryKey: ["catalog", choice.selected] });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -255,7 +325,16 @@ function ModelCard({ x, catalog, to, onDeploy }: { x: Facets; catalog: string; t
   );
 }
 
-function NoCatalog({ catalogs, choose }: { catalogs: CatalogInfo[]; choose: (name: string) => void }) {
+function WritableBadge() {
+  const t = useT();
+  return (
+    <Badge variant="success" title={t("catalog.writableHint")}>
+      {t("catalog.writable")}
+    </Badge>
+  );
+}
+
+function NoCatalog({ catalogs, writable, choose }: { catalogs: CatalogInfo[]; writable: string[]; choose: (name: string) => void }) {
   const t = useT();
   const p = useModulePath();
   if (catalogs.length === 0) {
@@ -284,6 +363,7 @@ function NoCatalog({ catalogs, choose }: { catalogs: CatalogInfo[]; choose: (nam
               {t("catalog.legacy")}
             </Badge>
           )}
+          {writable.includes(c.name) && <WritableBadge />}
           <span className="ms-auto truncate text-xs text-muted-foreground">{c.source}</span>
         </button>
       ))}

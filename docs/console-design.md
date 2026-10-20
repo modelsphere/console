@@ -239,7 +239,7 @@ service layout. It replaced the swiss module's own pages, Model Deployment at
 | Inference services | `/inferences` | resource table, server-side paging, row menu |
 | Service detail | `/inferences/:release/details?namespace=…&tab=…` | header card over tabs: overview, instances, logs, events, cluster resources, health check, versions, activity, plan; SLO edited in a sheet from the header |
 | Model library | `/inferences/catalog?catalog=…&q=…` | card grid, facet filters in the URL (swiss's parameter names) |
-| Model detail | `/inferences/catalog/:name?catalog=…&version=…` | header card over variants and information tabs |
+| Model detail | `/inferences/catalog/:name?catalog=…&version=…` | header card over variants and information tabs; add, edit and delete variants on a writable catalog (see "Catalog writes") |
 | Nodes | `/inferences/nodes` | GPU KPIs, a card per GPU product, node table with pods, taints and conditions on expand |
 | Activity | `/inferences/runs?action=…&namespace=…&release=…` | every run, output on expand |
 | Site profile | `/inferences/site-profile` | grouped read view; edit in a sheet, form or YAML |
@@ -269,6 +269,8 @@ deploy / upgrade sheet:  form (anchored, collapsible sections) -> compose -> dry
 rollback sheet:          diff of the revision -> note -> rollback(expectRevision)
 SLO sheet:               swiss's SLO form (save, reset)
 uninstall:               ConfirmDialog, typed to confirm
+variant sheet:           file YAML (add: a copy of the default variant) -> check (dryRun) -> commit (If-Match | If-None-Match: *)
+delete variant:          ConfirmDialog, typed to confirm; If-Match read at confirm time
 ```
 
 | Part | Where it comes from |
@@ -448,6 +450,26 @@ per namespace they name, on `configmaps` and `secrets`. No `resourceNames`,
 because the profile is what names the route ConfigMap and the key Secret, and a
 chart cannot know at render time what a ConfigMap will say later. Nothing reads
 the Service: the address is assembled from the reference.
+
+### Catalog writes
+
+The model library edits a writable catalog through swissd, under `/api/deploy`
+like the rest of swiss: swissd stands in for the catalog's address and passes its
+catalog-server API through as it is, adding the token it keeps in its own Secret
+(swiss's `docs/swiss-design.md`). So the page calls catalog-server's own paths
+(model-catalog's `docs/openapi.yaml`) below `/api/deploy/catalogs/<name>/api/v2/`.
+Console adds nothing to the path.
+
+| Concern | Decision |
+|---|---|
+| Which catalogs | those the site profile marks `writable` and whose token is set (`GET /api/deploy/secrets` lists keys, never values); the model page links to the site profile when the token is missing |
+| Token | a field of the profile editor, shown once a catalog is ticked writable; optional, so a missing token never blocks a profile save (the field, the profile page and the model page say it is missing); after the profile saves, typed tokens are written to `<profile>-secrets` and the tokens of catalogs no longer writable removed |
+| Authorization | the `swiss` backend's verbs: `update` adds or replaces a variant and sets a token, `delete` deletes either |
+| Author | catalog-server names the commit's author by the token, so every console edit is the token owner's; the console user is not recorded yet |
+| Setup | an empty catalog (`GET init` says so) offers **Set up this catalog** instead of editing: `site` and `repo`, starting from the catalog's URL in the profile, then `POST init` |
+| Settings, model | **Catalog settings** (`catalog.yaml`) in the library toolbar and **Edit model** (`metadata.yaml`) on a model's page: the file at its digest, checked then committed |
+| New model | **New model** in the library toolbar, with fields for its name and first variant id that write into both files: `metadata.yaml` and a first variant copied from one the catalog has, in one commit (catalog-server's `POST models`); the page then opens the new model |
+| Freshness | swissd drops its cached index on a write, so the page refetches and shows the commit |
 
 ## Playground
 

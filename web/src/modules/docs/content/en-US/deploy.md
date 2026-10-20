@@ -78,6 +78,25 @@ From a row's actions in the list, or the top of the detail page:
 
 "Behind catalog" in the list means the catalog has a newer version to upgrade to; "Untracked" means the release was not deployed by Swiss and cannot be upgraded here.
 
+## Edit a catalog's variants
+
+A catalog-server catalog can be edited from a model's page. In the [Site profile](/inferences/site-profile) editor, tick the catalog **Writable** and enter its catalog-server **Write token**; swissd keeps the token in its own Secret, and unticking **Writable** removes it. Each change is one commit to the catalog.
+
+| Action | Where | What to know |
+|---|---|---|
+| Set up an empty catalog | **Set up this catalog** in the model library's toolbar | where the catalog is served and its repository; until then it takes no models |
+| Catalog settings | **Catalog settings** in the model library's toolbar | its `catalog.yaml`: `site`, `raw`, `repo` |
+| Add a model | **New model** in the model library's toolbar | its name and first variant id, its `metadata.yaml`, and the variant, copied from one the catalog has |
+| Edit a model | **Edit model** in a model's header | its `metadata.yaml`: description, default variant, tuning |
+| Add a variant | **Add variant** in the header | starts as a copy of the default variant at version 1.0.0; set its `id`, which is also its file name |
+| Edit | the variant card's `⋯` menu | raise `version` on every change (**Raise version** does it); **Check** validates without committing |
+| Delete | the variant card's `⋯` menu | refused for the default variant, one a tuning result names, or the model's last; its history stays |
+
+- A writable catalog is labelled **Writable** in the model library's catalog selector.
+- If someone changed the file after you opened it, saving says so; reload it and edit again.
+- Commits are authored by the token's owner, not by you.
+- Editing needs the model deployment backend's (`swiss`) permissions: `update` to add or edit a variant or set a token, `delete` to delete either.
+
 ## Nodes and activity
 
 - [Nodes](/inferences/nodes): the cluster's GPU inventory — free GPUs, the largest free slot on one node, models in stock, and unavailable nodes. Check here before deploying.

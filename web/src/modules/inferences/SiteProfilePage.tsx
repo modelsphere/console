@@ -27,6 +27,8 @@ import { toYaml } from "@swiss/lib/yaml";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { useT } from "@/modules/inferences/i18n";
 import { ProfileEditorBody, SaveButton, useProfileEditor } from "@/modules/inferences/components/ProfileEditor";
+import { catalogTokenKey, listSecrets } from "@/modules/inferences/catalog-write-api";
+import { markedWritable } from "@/modules/inferences/catalog-write-lib";
 
 export function SiteProfilePage() {
   const t = useT();
@@ -135,6 +137,7 @@ function ProfileView({ p }: { p: SiteProfile }) {
                     </Badge>
                   )}
                   <code className="truncate font-mono text-xs text-muted-foreground">{c.url}</code>
+                  {markedWritable(p, c.name) && <CatalogToken catalog={c.name} />}
                 </span>
               ))}
             </span>
@@ -189,6 +192,19 @@ function ProfileView({ p }: { p: SiteProfile }) {
         </SectionCard>
       )}
     </div>
+  );
+}
+
+// A writable catalog, and whether swissd holds its token; the token is set in the editor.
+function CatalogToken({ catalog }: { catalog: string }) {
+  const t = useT();
+  const secrets = useQuery({ queryKey: ["secrets"], queryFn: listSecrets, retry: false });
+  const set = !!secrets.data?.keys.includes(catalogTokenKey(catalog));
+  return (
+    <>
+      <Badge variant="outline">{t("profile.fields.catalogWritable")}</Badge>
+      {secrets.data && <Badge variant={set ? "success" : "warning"}>{t(set ? "profile.token.set" : "profile.token.none")}</Badge>}
+    </>
   );
 }
 

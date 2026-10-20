@@ -1,12 +1,16 @@
 import { useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   AlertDescription,
   Badge,
   Button,
   DetailHeader,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   Empty,
   EmptyHeader,
   EmptyTitle,
@@ -18,7 +22,7 @@ import {
   TabsContent,
   cn,
 } from "@modelsphere/ui";
-import { TriangleAlert } from "lucide-react";
+import { MoreHorizontal, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api, type ModelVariant, type Node } from "@swiss/lib/api";
 import { comparison, formatUplift, httpLink, reportLink, sharedVersion, variantKind, workloadSummary, type Kind } from "@swiss/lib/catalog";
@@ -27,6 +31,11 @@ import { useCatalogChoice } from "@swiss/components/CatalogChoice";
 import { useT } from "@/modules/inferences/i18n";
 import { catalogPath, fitness } from "@/modules/inferences/catalog-lib";
 import { DeploySheet, type DeployTarget } from "@/modules/inferences/components/DeploySheet";
+import { metadataFile } from "@/modules/inferences/catalog-write-api";
+import { FileSheet, type FileTarget } from "@/modules/inferences/components/FileSheet";
+import { useCatalogWrite } from "@/modules/inferences/components/useCatalogWrite";
+import { VariantEditSheet, type VariantEdit } from "@/modules/inferences/components/VariantEditSheet";
+import { VariantDeleteDialog, type VariantDeleteTarget } from "@/modules/inferences/components/VariantDeleteDialog";
 
 export function ModelPage() {
   const t = useT();
@@ -36,6 +45,7 @@ export function ModelPage() {
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") === "info" ? "info" : "variants";
   const choice = useCatalogChoice();
+  const qc = useQueryClient();
   // The default variant resolved, for what only its file says: the served name.
   const model = useQuery({
     queryKey: ["model", choice.selected, name, "", ""],
@@ -47,6 +57,16 @@ export function ModelPage() {
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
   const [deploying, setDeploying] = useState<DeployTarget | null>(null);
   const onDeploy = cluster.data?.allowDeploy ? (x: { model: string; catalog: string; variant?: string }) => setDeploying({ kind: "deploy", ...x }) : undefined;
+  const w = useCatalogWrite(choice.selected);
+  const writable = w.editable;
+  const [editing, setEditing] = useState<VariantEdit | null>(null);
+  const [editingFile, setEditingFile] = useState<FileTarget | null>(null);
+  const [deleting, setDeleting] = useState<VariantDeleteTarget | null>(null);
+  // swissd drops its cached index on a write, so a refetch shows the commit.
+  const written = () => {
+    void qc.invalidateQueries({ queryKey: ["model", choice.selected, name] });
+    void qc.invalidateQueries({ queryKey: ["catalog", choice.selected] });
+  };
 
   const setParam = (k: string, v?: string) =>
     setParams((prev) => {
@@ -90,11 +110,30 @@ export function ModelPage() {
         title={m.displayName || m.name}
         subtitle={m.description}
         notice={deprecated ? { tone: "warning", title: t("model.deprecated", { reason: typeof deprecated === "string" ? deprecated : "" }) } : undefined}
-        actions={
-          onDeploy
-            ? [{ key: "deploy", label: t("model.deploy"), onClick: () => onDeploy({ model: name, catalog: choice.selected }) }]
-            : undefined
-        }
+        actions={[
+          ...(writable
+            ? [
+                {
+                  key: "edit-model",
+                  label: t("catalogWrite.editModel"),
+                  onClick: () =>
+                    setEditingFile({
+                      catalog: choice.selected,
+                      file: metadataFile(name),
+                      label: `models/${name}/metadata.yaml`,
+                      title: t("catalogWrite.editModelTitle", { model: m.displayName || name }),
+                      description: t("catalogWrite.editModelDescription", { model: name }),
+                    }),
+                },
+                {
+                  key: "add-variant",
+                  label: t("variantWrite.add"),
+                  onClick: () => setEditing({ kind: "add", catalog: choice.selected, model: name, from: resolved.id, ids: m.variants.map((v) => v.id) }),
+                },
+              ]
+            : []),
+          ...(onDeploy ? [{ key: "deploy", label: t("model.deploy"), onClick: () => onDeploy({ model: name, catalog: choice.selected }) }] : []),
+        ]}
         meta={[
           { label: t("model.fields.family"), value: m.family || "-" },
           { label: t("model.fields.source"), value: <span title={m.source.hf}>{m.source.hf}</span> },
@@ -113,6 +152,17 @@ export function ModelPage() {
         ]}
         metaColumns={4}
       />
+      {w.missingToken && (
+        <Alert variant="warning">
+          <TriangleAlert />
+          <AlertDescription>
+            {t("variantWrite.noToken")}{" "}
+            <Link to={p("site-profile")} className="underline">
+              {t("variantWrite.setToken")}
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
       <PanelTabs
         items={[
           { value: "variants", label: t("model.tabs.variants"), count: variants.length },
@@ -139,6 +189,8 @@ export function ModelPage() {
                 report={cmp && cmp.optimized === v.id ? reportLink(site, name, cmp.report) : undefined}
                 nodes={nodes.data?.nodes}
                 onDeploy={onDeploy ? () => onDeploy({ model: name, catalog: choice.selected, variant: v.id }) : undefined}
+                onEdit={writable ? () => setEditing({ kind: "edit", catalog: choice.selected, model: name, id: v.id }) : undefined}
+                onDelete={writable ? () => setDeleting({ catalog: choice.selected, model: name, id: v.id }) : undefined}
               />
             ))}
           </div>
@@ -162,6 +214,9 @@ export function ModelPage() {
         </SectionCard>
       </TabsContent>
       <DeploySheet target={deploying} onClose={() => setDeploying(null)} />
+      <VariantEditSheet target={editing} onClose={() => setEditing(null)} onSaved={written} />
+      <VariantDeleteDialog target={deleting} onClose={() => setDeleting(null)} onDeleted={written} />
+      <FileSheet target={editingFile} onClose={() => setEditingFile(null)} onSaved={written} />
     </Tabs>,
   );
 }
@@ -174,6 +229,8 @@ function VariantCard({
   report,
   nodes,
   onDeploy,
+  onEdit,
+  onDelete,
 }: {
   v: ModelVariant;
   kind: Kind;
@@ -183,6 +240,8 @@ function VariantCard({
   report?: string;
   nodes?: Node[];
   onDeploy?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
   const t = useT();
   const r = v.requires;
@@ -205,7 +264,30 @@ function VariantCard({
           <Badge variant="outline">{v.engine}</Badge>
         </span>
       }
-      actions={onDeploy && <Button size="sm" onClick={onDeploy}>{t("model.deploy")}</Button>}
+      actions={
+        (onDeploy || onEdit) && (
+          <span className="flex items-center gap-1">
+            {onDeploy && (
+              <Button size="sm" onClick={onDeploy}>
+                {t("model.deploy")}
+              </Button>
+            )}
+            {onEdit && onDelete && (
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="size-7" aria-label={t("common:table.actions")} />}>
+                  <MoreHorizontal className="size-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={onEdit}>{t("common:actions.edit")}</DropdownMenuItem>
+                  <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                    {t("common:actions.delete")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </span>
+        )
+      }
     >
       <div className="space-y-3 text-sm">
         {v.description && <p className="text-muted-foreground">{v.description}</p>}

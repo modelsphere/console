@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription, Button, FieldTextarea, FloatingField, Tabs, TabsList, TabsTrigger } from "@modelsphere/ui";
 import { TriangleAlert } from "lucide-react";
 import { api, type ProfileResponse, type SiteProfile } from "@swiss/lib/api";
@@ -7,6 +7,7 @@ import { markSetUp } from "@swiss/components/Session";
 import { useT } from "@/modules/inferences/i18n";
 import { profileErrors } from "@/modules/inferences/profile-lib";
 import { ProfileForm } from "@/modules/inferences/components/ProfileForm";
+import { listSecrets, syncCatalogTokens } from "@/modules/inferences/catalog-write-api";
 
 export type Mode = "form" | "yaml";
 
@@ -16,11 +17,18 @@ export function useProfileEditor(profile: SiteProfile, yaml: string, onSaved: (r
   const [form, setForm] = useState<SiteProfile>(profile);
   const [text, setText] = useState(yaml);
   const [submitted, setSubmitted] = useState(false);
+  // Writable catalogs' tokens, by catalog name: kept beside the profile, never in it.
+  const [tokens, setTokens] = useState<Record<string, string>>({});
+  const stored = useQuery({ queryKey: ["secrets"], queryFn: listSecrets, retry: false }).data?.keys ?? [];
   const save = useMutation({
-    mutationFn: () => (mode === "form" ? api.saveProfile({ profile: form }) : api.saveProfile({ yaml: text })),
+    mutationFn: async () => {
+      const r = mode === "form" ? await api.saveProfile({ profile: form }) : await api.saveProfile({ yaml: text });
+      await syncCatalogTokens(r.profile, mode === "form" ? tokens : {});
+      return r;
+    },
     onSuccess: (r) => {
       markSetUp(qc);
-      for (const key of [["profile"], ["cluster"], ["catalog"]]) qc.invalidateQueries({ queryKey: key });
+      for (const key of [["profile"], ["cluster"], ["catalog"], ["secrets"]]) qc.invalidateQueries({ queryKey: key });
       onSaved(r);
     },
   });
@@ -28,7 +36,9 @@ export function useProfileEditor(profile: SiteProfile, yaml: string, onSaved: (r
     setSubmitted(true);
     if (mode === "form" ? profileErrors(form).length === 0 : !!text.trim()) save.mutate();
   };
-  return { mode, setMode, form, setForm, text, setText, submitted, save, submit, dirty: JSON.stringify(form) !== JSON.stringify(profile) || text !== yaml };
+  const token = (name: string) => ({ value: tokens[name] ?? "", stored: stored.includes(`catalog.${name}.token`), onChange: (v: string) => setTokens((s) => ({ ...s, [name]: v })) });
+  const dirty = JSON.stringify(form) !== JSON.stringify(profile) || text !== yaml || Object.values(tokens).some(Boolean);
+  return { mode, setMode, form, setForm, text, setText, submitted, save, submit, token, dirty };
 }
 
 export function ProfileEditorBody({ editor, collapsible }: { editor: ReturnType<typeof useProfileEditor>; collapsible?: boolean }) {
@@ -48,7 +58,7 @@ export function ProfileEditorBody({ editor, collapsible }: { editor: ReturnType<
         </Alert>
       )}
       {editor.mode === "form" ? (
-        <ProfileForm value={editor.form} onChange={editor.setForm} submitted={editor.submitted} collapsible={collapsible} />
+        <ProfileForm value={editor.form} onChange={editor.setForm} submitted={editor.submitted} collapsible={collapsible} token={editor.token} />
       ) : (
         <FloatingField label="profile.yaml" multiline>
           <FieldTextarea value={editor.text} onChange={(e) => editor.setText(e.target.value)} rows={28} spellCheck={false} className="font-mono text-xs" />

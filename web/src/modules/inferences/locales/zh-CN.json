@@ -269,6 +269,8 @@
     "choose": "已配置多个目录，请选择一个：",
     "legacy": "v1 旧版",
     "legacyHint": "目录 schema v1 是只读的旧版索引，未设置 schemaVersion 的目录按 v1 读取。请在站点配置里把它设为 schemaVersion: v2。",
+    "writable": "可编辑",
+    "writableHint": "站点配置将该目录标记为可写：可在模型详情页新增、编辑、删除它的变体。",
     "default": "默认"
   },
   "model": {
@@ -310,6 +312,69 @@
     "deploy": "部署",
     "deprecated": "已弃用：{reason}",
     "noVariants": "这个版本没有变体"
+  },
+  "newModel": {
+    "action": "新增模型",
+    "title": "在 {catalog} 中新增模型",
+    "description": "以一次提交写入 metadata.yaml 和第一个变体。模型名即其目录名，第一个变体即其默认变体。",
+    "name": "模型名",
+    "nameHint": "其目录：models/{name}/",
+    "variantId": "第一个变体 id",
+    "variantIdHint": "其文件：{id}.yaml，模型的默认变体",
+    "variant": "第一个变体",
+    "variantFrom": "以 {from} 为副本，版本 1.0.0。",
+    "checked": "校验通过：将创建 {name}。",
+    "create": "创建",
+    "creating": "创建中…"
+  },
+  "catalogWrite": {
+    "settings": "目录设置",
+    "settingsTitle": "目录设置：{catalog}",
+    "settingsDescription": "catalog.yaml：site 是目录的发布地址，raw 是 swiss 获取历史版本的地址，repo 是它的仓库。修改后索引立即生效。",
+    "editModel": "编辑模型",
+    "editModelTitle": "编辑 {model}",
+    "editModelDescription": "models/{model}/metadata.yaml：目录对该模型的描述、默认变体和调优结果。",
+    "checked": "校验通过：提交之前不会写入任何内容。",
+    "unchanged": "无需提交：文件内容没有变化。",
+    "setup": "初始化目录",
+    "setupTitle": "初始化 {catalog}",
+    "setupDescription": "它的仓库是空的。初始化会提交一个说明目录发布地址的 catalog.yaml 和一个 README.md，之后即可添加模型。",
+    "setupChecked": "校验通过：初始化将提交 {files}。",
+    "setupAction": "初始化",
+    "settingUp": "初始化中…",
+    "site": "目录的发布地址",
+    "siteHint": "swiss 从这里读取目录，并从它的 raw/ 获取历史版本。",
+    "repo": "仓库（可选）",
+    "repoHint": "历史记录中提交与文件链接的去向：git 托管平台的网页地址，或同样能展示它们的目录服务器。",
+    "initUnknown": "初始化状态未知"
+  },
+  "variantWrite": {
+    "add": "新增变体",
+    "addTitle": "为 {model} 新增变体",
+    "editTitle": "编辑 {id}",
+    "path": "写入目录 {catalog} 的 {path}，生成一次提交。",
+    "file": "变体文件",
+    "idLabel": "变体 id",
+    "idHint": "它也是变体的文件名。",
+    "message": "提交说明",
+    "messageHint": "可选。留空时由 catalog-server 生成，如 model/id: version。",
+    "bump": "升级版本号",
+    "check": "校验",
+    "checking": "校验中…",
+    "save": "提交",
+    "saving": "提交中…",
+    "checked": "校验通过：提交后将发布版本 {version}。",
+    "unchangedCheck": "无需提交：文件内容没有变化。",
+    "conflict": "打开后，这个文件已被他人修改。",
+    "reload": "重新加载，放弃本次修改",
+    "id": {
+      "invalid": "id 须以字母或数字开头，只能包含字母、数字、点、下划线和连字符，且不能为 metadata。",
+      "taken": "{id} 已是该模型的变体。"
+    },
+    "deleteTitle": "删除变体",
+    "deleteDescription": "以一次提交删除该变体文件。历史记录会保留，固定到其某个版本的部署仍能找到它。",
+    "noToken": "站点配置将该目录标记为可写，但还没有设置写入令牌。",
+    "setToken": "前往站点配置设置"
   },
   "deploy": {
     "title": "部署推理服务",
@@ -620,6 +685,13 @@
     "empty": "没有符合条件的节点"
   },
   "profile": {
+    "token": {
+      "set": "已设置令牌",
+      "none": "未设置令牌",
+      "hint": "catalog-server 的令牌。swissd 将其保存在自己的 Secret 中，之后不再显示；取消勾选可写会将其移除。",
+      "keep": "已保存，留空则保持不变",
+      "missing": "还没有令牌：设置之前，该目录无法编辑。"
+    },
     "title": "站点配置",
     "description": "这个集群的部署规则：模型从哪来、chart 和镜像从哪拉、路由和伸缩接到哪里。部署表单里不必重复填写这些。",
     "edit": "编辑",
@@ -677,6 +749,8 @@
       "catalogName": "名称",
       "catalogUrl": "地址",
       "catalogDefault": "默认",
+      "catalogWritable": "可写",
+      "catalogToken": "写入令牌",
       "catalogAdd": "添加目录",
       "catalogSchema": "Schema",
       "catalogSchemaV1": "v1 · 旧版",
