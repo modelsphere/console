@@ -97,6 +97,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push the image
+        id: push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -109,6 +110,47 @@ jobs:
             org.opencontainers.image.version=${{ steps.v.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Mirror to modelsphere.tencentcloudcr.com
+        # The China mirror of Docker Hub's 4pdosc. Copies what this job just pushed,
+        # by digest, with crane: manifests are copied verbatim, so both registries
+        # serve identical bytes (`buildx imagetools create` would wrap a single
+        # manifest in a new index and change its digest). A separate step after the
+        # Docker Hub push: a mirror outage fails this step but cannot stop or
+        # half-finish the Docker Hub release. Skipped with a notice when the org
+        # secrets TCR_USERNAME / TCR_TOKEN are not available.
+        if: env.PUSH == 'true'
+        env:
+          TAGS: ${{ steps.v.outputs.tags }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+          TCR_TOKEN: ${{ secrets.TCR_TOKEN }}
+          CRANE_VERSION: v0.20.6
+          CRANE_SHA256: c1d593d01551f2c9a3df5ca0a0be4385a839bd9b86d4a76e18d7b17d16559127
+        run: |
+          set -euo pipefail
+          mirror=modelsphere.tencentcloudcr.com
+          if [ -z "$TCR_USERNAME" ] || [ -z "$TCR_TOKEN" ]; then
+            echo "::notice::TCR_USERNAME/TCR_TOKEN not set; not mirrored to $mirror"
+            exit 0
+          fi
+          crane="$RUNNER_TEMP/crane"
+          if [ ! -x "$crane" ]; then  # once per job, however many images it mirrors
+            curl -sSfL -o "$RUNNER_TEMP/crane.tgz" \
+              "https://github.com/google/go-containerregistry/releases/download/$CRANE_VERSION/go-containerregistry_Linux_x86_64.tar.gz"
+            echo "$CRANE_SHA256  $RUNNER_TEMP/crane.tgz" | sha256sum -c -
+            tar -xzf "$RUNNER_TEMP/crane.tgz" -C "$RUNNER_TEMP" crane
+          fi
+          printf '%s' "$TCR_TOKEN" | "$crane" auth login "$mirror" -u "$TCR_USERNAME" --password-stdin
+          for ref in $(printf '%s\n' "$TAGS" | tr ',' '\n'); do
+            case "$ref" in
+              docker.io/4pdosc/*) ref=${ref#docker.io/} ;;
+              4pdosc/*) ;;
+              *) continue ;;
+            esac
+            echo "mirroring docker.io/$ref -> $mirror/$ref"
+            "$crane" copy "docker.io/${ref%:*}@$DIGEST" "$mirror/$ref"
+          done
 
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
