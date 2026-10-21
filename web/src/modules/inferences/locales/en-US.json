@@ -701,12 +701,13 @@
     "token": {
       "set": "Token set",
       "none": "No token",
-      "hint": "A catalog-server token. swissd keeps it in its own Secret and never shows it again; unticking Writable removes it.",
+      "hint": "A catalog-server token. swissd keeps it in its own Secret and never shows it again; any change to the catalog other than Default removes it.",
       "keep": "Stored. Leave empty to keep it",
       "missing": "No token yet: editing this catalog stays off until one is set.",
+      "dropped": "Changed: the stored token is removed on save. Enter it again to keep editing this catalog.",
       "refused": "Not saved: {error}",
       "checkFailed": "Nothing is saved: the write token of {catalogs} was not accepted at the URL in the form, or the catalog server could not be reached there. Correct the URL or the token and save again.",
-      "notSaved": "The profile is saved, but the write token of {catalogs} is not: its catalog server did not accept it, or could not be asked. A token stored before stays. Correct it and save again."
+      "notSaved": "The profile is saved, but the write token of {catalogs} is not: its catalog server did not accept it, or could not be asked. Correct it and save again."
     },
     "title": "Site Profile",
     "description": "How this cluster deploys: where models come from, where charts and images are pulled, and what routing and scaling connect to. Deploy forms do not retype any of it.",

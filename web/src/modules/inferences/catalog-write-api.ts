@@ -1,5 +1,5 @@
 import { apiPath, hostFetch } from "@swiss/lib/host";
-import { catalogTokenKey, writableCatalogs, type CatalogChange } from "@/modules/inferences/catalog-write-lib";
+import { catalogTokenKey, keepsToken, type CatalogChange, type Catalogs } from "@/modules/inferences/catalog-write-lib";
 
 export { catalogTokenKey };
 
@@ -139,24 +139,19 @@ export async function listSecrets(): Promise<Secrets> {
   return secrets(await hostFetch(apiPath("/api/secrets")));
 }
 
-// Updates a catalog: only a writable one's token yet -- a new one, or the one
-// stored for its name before a rename -- the rest being the site profile's.
-// swissd keeps the token only once the catalog's catalog-server is reached and
-// takes it in a dry-run write: 422 when it refuses it, 502 when it cannot be
-// reached. A dry run keeps nothing: it checks the token given, or else the one
-// stored, at url, so a catalog the profile does not hold yet, or not at that
-// url, is checked before it is saved.
-export async function putCatalog(catalog: string, change: { token?: string; renamedFrom?: string; url?: string }, opts: { dryRun?: boolean } = {}): Promise<void> {
+// Updates a catalog: only a writable one's token yet, the rest being the site
+// profile's. swissd keeps the token only once the catalog's catalog-server is
+// reached and takes it in a dry-run write: 422 when it refuses it, 502 when it
+// cannot be reached. A dry run keeps nothing and checks at url, so a catalog the
+// profile does not hold yet, or not as the form has it, is checked before it is
+// saved.
+export async function putCatalog(catalog: string, change: { token: string; url?: string }, opts: { dryRun?: boolean } = {}): Promise<void> {
   const res = await hostFetch(apiPath(`/api/catalogs/${encodeURIComponent(catalog)}${opts.dryRun ? "?dryRun=true" : ""}`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(change),
   });
   if (!res.ok) await fail(res);
-}
-
-export async function removeSecret(key: string): Promise<Secrets> {
-  return secrets(await hostFetch(apiPath(`/api/secrets/${encodeURIComponent(key)}`), { method: "DELETE" }));
 }
 
 // f for each change; the ones it failed, by catalog name, are the answer.
@@ -172,24 +167,27 @@ async function eachChange(changes: CatalogChange[], f: (c: CatalogChange) => Pro
   return refused;
 }
 
-// Before a profile save: each change tried at the url the form gives its
+// Before a profile save: each typed token tried at the url the form gives its
 // catalog, keeping nothing.
 export async function checkCatalogChanges(changes: CatalogChange[]): Promise<Record<string, Error>> {
-  return eachChange(changes, ({ name, ...change }) => putCatalog(name, change, { dryRun: true }));
+  return eachChange(changes, ({ name, url, token }) => putCatalog(name, { token, url }, { dryRun: true }));
 }
 
-// After a profile save: the tokens typed or carried over by a rename set, and
-// the token of every catalog no longer writable removed, so the Secret holds
-// what the profile says. The ones not kept, by catalog name, are the answer: one
-// its catalog refused leaves the token before it.
-export async function syncCatalogTokens(profile: { catalogs?: { name: string }[] } | undefined, changes: CatalogChange[]): Promise<Record<string, Error>> {
-  const writable = writableCatalogs(profile);
-  const sets = changes.filter((c) => writable.includes(c.name) && (c.token || c.renamedFrom));
-  const refused = await eachChange(sets, ({ name, token, renamedFrom }) => putCatalog(name, token ? { token } : { renamedFrom }));
+export async function removeSecret(key: string): Promise<Secrets> {
+  return secrets(await hostFetch(apiPath(`/api/secrets/${encodeURIComponent(key)}`), { method: "DELETE" }));
+}
+
+// After a profile save: the typed tokens set, and the token of every catalog the
+// save changed but for default, removed or unticked deleted, so a stored token
+// only goes to the url it was checked at. The typed ones not kept, by catalog
+// name, are the answer.
+export async function syncCatalogTokens(before: Catalogs, after: Catalogs, changes: CatalogChange[]): Promise<Record<string, Error>> {
+  const refused = await eachChange(changes, ({ name, token }) => putCatalog(name, { token }));
+  const set = changes.map((c) => c.name).filter((name) => !(name in refused));
   const { keys } = await listSecrets();
   for (const key of keys) {
     const name = /^catalog\.(.+)\.token$/.exec(key)?.[1];
-    if (name && !writable.includes(name)) await removeSecret(key);
+    if (name && !set.includes(name) && !keepsToken(after, before, name)) await removeSecret(key);
   }
   return refused;
 }

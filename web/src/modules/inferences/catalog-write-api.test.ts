@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { catalogTokenKey, createModel, deleteVariant, initCatalog, listSecrets, metadataFile, putFile, putVariant, readVariant, removeSecret, putCatalog, SETTINGS_FILE, syncCatalogTokens, checkCatalogChanges } from "./catalog-write-api";
+import { createModel, deleteVariant, initCatalog, listSecrets, metadataFile, putFile, putVariant, readVariant, putCatalog, SETTINGS_FILE, syncCatalogTokens, checkCatalogChanges } from "./catalog-write-api";
 
 const fetchMock = vi.fn();
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
@@ -97,54 +97,46 @@ describe("swissd's Secret", () => {
   it("lists no keys as an empty list, whatever swissd sends for none", async () => {
     fetchMock.mockImplementation(async () => json({ secret: "s", keys: null }));
     expect(await listSecrets()).toEqual({ secret: "s", keys: [] });
-    const profile = { catalogs: [{ name: "a", writable: true }] };
-    await syncCatalogTokens(profile, []);
   });
 
-  it("sets a catalog's token by updating the catalog, and removes it by key", async () => {
-    fetchMock.mockImplementation(async () => json({ secret: "swiss/p-secrets", keys: [] }));
+  it("sets a catalog's token by updating the catalog", async () => {
+    fetchMock.mockImplementation(async () => json({ name: "internal", tokenSet: true }));
     await putCatalog("internal", { token: "t0k" });
     expect(call(0).url).toBe("/api/deploy/catalogs/internal");
     expect(call(0).method).toBe("PUT");
     expect(call(0).body).toBe('{"token":"t0k"}');
-    await removeSecret(catalogTokenKey("internal"));
-    expect(call(1).method).toBe("DELETE");
   });
 
-  it("follows a saved profile: typed and renamed catalogs' tokens set, a moved one's only checked, others' removed", async () => {
-    fetchMock.mockImplementation(async () => json({ secret: "s", keys: ["catalog.internal.token", "catalog.before.token", "catalog.gone.token"] }));
-    const profile = { catalogs: [{ name: "internal", writable: true }, { name: "renamed", writable: true }, { name: "moved", writable: true }, { name: "public" }] };
-    const changes = [
-      { name: "internal", url: "u", token: "new" },
-      { name: "renamed", url: "u", renamedFrom: "before" },
-      { name: "moved", url: "u" },
-      { name: "public", url: "u", token: "ignored" },
-    ];
-    expect(await syncCatalogTokens(profile, changes)).toEqual({});
-    expect(fetchMock.mock.calls.map((_, i) => `${call(i).method} ${call(i).url} ${call(i).body ?? ""}`.trim())).toEqual([
-      'PUT /api/deploy/catalogs/internal {"token":"new"}',
-      'PUT /api/deploy/catalogs/renamed {"renamedFrom":"before"}',
-      "GET /api/deploy/secrets",
-      "DELETE /api/deploy/secrets/catalog.before.token",
-      "DELETE /api/deploy/secrets/catalog.gone.token",
-    ]);
-  });
-
-  it("tries each change at the form's url before the profile is saved, keeping nothing", async () => {
+  it("tries each typed token at the form's url before the profile is saved, keeping nothing", async () => {
     fetchMock.mockImplementation(async (url: string) =>
       url.includes("/catalogs/b?") ? json({ error: "cannot check the token with catalog b: connection refused" }, 502) : json({ name: "a", dryRun: true }),
     );
     const refused = await checkCatalogChanges([
       { name: "a", url: "https://a.example/", token: "tok-a" },
-      { name: "b", url: "https://b.example/" },
-      { name: "c", url: "https://c.example/", renamedFrom: "old-c" },
+      { name: "b", url: "https://b.example/", token: "tok-b" },
     ]);
     expect(Object.keys(refused)).toEqual(["b"]);
     expect(refused.b).toMatchObject({ status: 502 });
     expect(fetchMock.mock.calls.map((_, i) => `${call(i).method} ${call(i).url} ${call(i).body}`)).toEqual([
-      'PUT /api/deploy/catalogs/a?dryRun=true {"url":"https://a.example/","token":"tok-a"}',
-      'PUT /api/deploy/catalogs/b?dryRun=true {"url":"https://b.example/"}',
-      'PUT /api/deploy/catalogs/c?dryRun=true {"url":"https://c.example/","renamedFrom":"old-c"}',
+      'PUT /api/deploy/catalogs/a?dryRun=true {"token":"tok-a","url":"https://a.example/"}',
+      'PUT /api/deploy/catalogs/b?dryRun=true {"token":"tok-b","url":"https://b.example/"}',
+    ]);
+  });
+
+  it("follows a saved profile: typed tokens set, those of catalogs changed, removed or unticked deleted", async () => {
+    fetchMock.mockImplementation(async (_: string, init: RequestInit) =>
+      init.method === "PUT" ? json({ tokenSet: true }) : json({ secret: "s", keys: ["catalog.kept.token", "catalog.moved.token", "catalog.retyped.token", "catalog.before.token", "catalog.ro.token"] }),
+    );
+    const w = (name: string, url: string, writable = true) => ({ name, url, schemaVersion: "v2", writable });
+    const before = { catalogs: [w("kept", "https://k/"), w("moved", "https://old/"), w("retyped", "https://r/"), w("before", "https://b/"), w("ro", "https://ro/")] };
+    const after = { catalogs: [{ ...w("kept", "https://k/"), default: true }, w("moved", "https://new/"), w("retyped", "https://r2/"), w("after", "https://b/"), w("ro", "https://ro/", false)] };
+    expect(await syncCatalogTokens(before, after, [{ name: "retyped", url: "https://r2/", token: "new" }])).toEqual({});
+    expect(fetchMock.mock.calls.map((_, i) => `${call(i).method} ${call(i).url}`)).toEqual([
+      "PUT /api/deploy/catalogs/retyped",
+      "GET /api/deploy/secrets",
+      "DELETE /api/deploy/secrets/catalog.moved.token",
+      "DELETE /api/deploy/secrets/catalog.before.token",
+      "DELETE /api/deploy/secrets/catalog.ro.token",
     ]);
   });
 
@@ -152,20 +144,19 @@ describe("swissd's Secret", () => {
     fetchMock.mockImplementation(async (url: string, init: RequestInit) =>
       init.method === "PUT" && url.endsWith("/catalogs/a")
         ? json({ error: "catalog a does not take this token: that token is not in the server's tokensFile" }, 422)
-        : json({ secret: "s", keys: ["catalog.gone.token"] }),
+        : json({ secret: "s", keys: [] }),
     );
-    const profile = { catalogs: [{ name: "a", writable: true }, { name: "b", writable: true }] };
-    const refused = await syncCatalogTokens(profile, [
+    const profile = { catalogs: [{ name: "a", url: "u", writable: true }, { name: "b", url: "u", writable: true }] };
+    const refused = await syncCatalogTokens(profile, profile, [
       { name: "a", url: "u", token: "typo" },
       { name: "b", url: "u", token: "good" },
     ]);
     expect(Object.keys(refused)).toEqual(["a"]);
     expect(refused.a).toMatchObject({ status: 422, message: "catalog a does not take this token: that token is not in the server's tokensFile (HTTP 422)" });
-    expect(fetchMock.mock.calls.map((_, i) => `${call(i).method} ${call(i).url}`)).toEqual([
-      "PUT /api/deploy/catalogs/a",
-      "PUT /api/deploy/catalogs/b",
+    expect(fetchMock.mock.calls.map((_, i) => `${call(i).method} ${call(i).url} ${call(i).body ?? ""}`.trim())).toEqual([
+      'PUT /api/deploy/catalogs/a {"token":"typo"}',
+      'PUT /api/deploy/catalogs/b {"token":"good"}',
       "GET /api/deploy/secrets",
-      "DELETE /api/deploy/secrets/catalog.gone.token",
     ]);
   });
 });

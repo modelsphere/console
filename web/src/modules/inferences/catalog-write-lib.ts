@@ -102,27 +102,26 @@ export function markedWritable(profile: { catalogs?: { name: string }[] } | unde
 
 export const catalogTokenKey = (catalog: string) => `catalog.${catalog}.token`;
 
-// What saving the profile asks of a writable catalog's token: a typed one; else,
-// with one stored, the one stored under its old name (renamedFrom), or, when its
-// url changed, the one stored, checked there.
+// A token typed for a writable catalog: checked at url before the profile is
+// saved, and set after.
 export interface CatalogChange {
   name: string;
   url: string;
-  token?: string;
-  renamedFrom?: string;
+  token: string;
 }
 
-type Catalogs = { catalogs?: { name: string; url: string }[] } | undefined;
+type Catalog = { name: string; url: string; schemaVersion?: string; writable?: boolean };
+export type Catalogs = { catalogs?: Catalog[] } | undefined;
 
-export function catalogChanges(form: Catalogs, saved: Catalogs, typed: Record<string, string>, renamedFrom: Record<string, string>, stored: string[]): CatalogChange[] {
-  const savedUrl = new Map((saved?.catalogs ?? []).map((c) => [c.name, c.url]));
+export function catalogChanges(form: Catalogs, typed: Record<string, string>): CatalogChange[] {
   const writable = writableCatalogs(form);
-  return (form?.catalogs ?? []).flatMap(({ name, url }): CatalogChange[] => {
-    if (!writable.includes(name)) return [];
-    if (typed[name]) return [{ name, url, token: typed[name] }];
-    const from = renamedFrom[name];
-    if (!stored.includes(catalogTokenKey(from ?? name))) return [];
-    if (from) return [{ name, url, renamedFrom: from }];
-    return savedUrl.get(name) !== url ? [{ name, url }] : [];
-  });
+  return (form?.catalogs ?? []).flatMap(({ name, url }) => (writable.includes(name) && typed[name] ? [{ name, url, token: typed[name] }] : []));
+}
+
+// Whether a catalog keeps its stored token through saving the form: not after
+// any edit of a writable catalog but its default mark.
+export function keepsToken(form: Catalogs, saved: Catalogs, name: string): boolean {
+  const a = form?.catalogs?.find((c) => c.name === name);
+  const b = saved?.catalogs?.find((c) => c.name === name);
+  return !!a?.writable && !!b?.writable && a.url === b.url && (a.schemaVersion ?? "") === (b.schemaVersion ?? "");
 }

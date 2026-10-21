@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bumpVersion, catalogChanges, freeId, idProblem, markedWritable, newModelFiles, nextVersion, setTopLevel, topLevel, variantFrom } from "./catalog-write-lib";
+import { bumpVersion, catalogChanges, freeId, keepsToken, idProblem, markedWritable, newModelFiles, nextVersion, setTopLevel, topLevel, variantFrom } from "./catalog-write-lib";
 
 const FILE = `apiVersion: catalog.swiss/v2
 kind: Variant
@@ -97,37 +97,30 @@ it("reads the profile's writable mark for one catalog", () => {
   expect(markedWritable(undefined, "internal")).toBe(false);
 });
 
-describe("what saving the profile asks of each writable catalog's token", () => {
+describe("a writable catalog's token on saving the profile", () => {
   const saved = {
     catalogs: [
-      { name: "kept", url: "https://kept/", writable: true },
-      { name: "moved", url: "https://old/", writable: true },
-      { name: "before", url: "https://before/", writable: true },
-      { name: "bare", url: "https://bare/", writable: true },
+      { name: "kept", url: "https://kept/", schemaVersion: "v2", writable: true },
+      { name: "moved", url: "https://old/", schemaVersion: "v2", writable: true },
+      { name: "before", url: "https://before/", schemaVersion: "v2", writable: true },
+      { name: "unticked", url: "https://u/", schemaVersion: "v2", writable: true },
     ],
   };
-  const stored = ["catalog.kept.token", "catalog.moved.token", "catalog.before.token"];
+  const form = {
+    catalogs: [
+      { name: "kept", url: "https://kept/", schemaVersion: "v2", writable: true, default: true },
+      { name: "moved", url: "https://new/", schemaVersion: "v2", writable: true },
+      { name: "after", url: "https://before/", schemaVersion: "v2", writable: true },
+      { name: "unticked", url: "https://u/", schemaVersion: "v2" },
+      { name: "read-only", url: "https://ro/" },
+    ],
+  };
 
-  it("a typed token; a stored one, carried over a rename or checked at a new url; nothing for one left alone", () => {
-    const form = {
-      catalogs: [
-        { name: "kept", url: "https://kept/", writable: true },
-        { name: "moved", url: "https://new/", writable: true },
-        { name: "after", url: "https://before/", writable: true },
-        { name: "bare", url: "https://bare2/", writable: true },
-        { name: "new", url: "https://new-one/", writable: true },
-        { name: "read-only", url: "https://ro/" },
-      ],
-    };
-    expect(catalogChanges(form, saved, { new: "tok", "read-only": "ignored" }, { after: "before" }, stored)).toEqual([
-      { name: "moved", url: "https://new/" },
-      { name: "after", url: "https://before/", renamedFrom: "before" },
-      { name: "new", url: "https://new-one/", token: "tok" },
-    ]);
+  it("sets only the typed tokens of writable catalogs", () => {
+    expect(catalogChanges(form, { moved: "tok", "read-only": "ignored" })).toEqual([{ name: "moved", url: "https://new/", token: "tok" }]);
   });
 
-  it("a typed token over a stored one, renamed or not", () => {
-    const form = { catalogs: [{ name: "after", url: "https://before/", writable: true }] };
-    expect(catalogChanges(form, saved, { after: "tok" }, { after: "before" }, stored)).toEqual([{ name: "after", url: "https://before/", token: "tok" }]);
+  it("keeps a stored one only for a catalog edited in nothing but default", () => {
+    expect(["kept", "moved", "after", "before", "unticked"].filter((name) => keepsToken(form, saved, name))).toEqual(["kept"]);
   });
 });

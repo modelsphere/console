@@ -80,7 +80,7 @@ From a row's actions in the list, or the top of the detail page:
 
 ## Edit a catalog's variants
 
-A catalog-server catalog can be edited from a model's page. In the [Site profile](/inferences/site-profile) editor, tick the catalog **Writable** and enter its catalog-server **Write token**; swissd keeps the token in its own Secret, and unticking **Writable** removes it. Saving checks the token with the catalog server first, a new catalog's too: if the server does not accept it or cannot be reached, nothing is saved and the editor says why. Each change is one commit to the catalog.
+A catalog-server catalog can be edited from a model's page. In the [Site profile](/inferences/site-profile) editor, tick the catalog **Writable** and enter its catalog-server **Write token**; swissd keeps the token in its own Secret. Any later change to the catalog other than **Default** (its URL, its name, unticking **Writable**) removes the token: enter it again with the change. Saving checks the token with the catalog server first, a new catalog's too: if the server does not accept it or cannot be reached, nothing is saved and the editor says why. Each change is one commit to the catalog.
 
 | Action | Where | What to know |
 |---|---|---|
