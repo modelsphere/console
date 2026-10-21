@@ -16,6 +16,14 @@ data:
         issuer: {{ .Values.auth.issuer | quote }}
         tokenTTL: {{ .Values.auth.tokenTTL | quote }}
         # jwtSecret is injected from the Secret via env, not rendered here.
+    deploymentImports:
+      enabled: {{ .Values.deploymentImports.enabled }}
+      backend: {{ .Values.deploymentImports.backend | quote }}
+      planConfigMapPrefix: {{ .Values.deploymentImports.planConfigMapPrefix | quote }}
+      {{- if and .Values.deploymentImports.enabled (empty .Values.deploymentImports.namespaces) }}
+      {{- fail "deploymentImports.namespaces must explicitly allow at least one namespace" }}
+      {{- end }}
+      namespaces: {{ .Values.deploymentImports.namespaces | toJson }}
     backends:
       {{- range .Values.backends }}
       - name: {{ .name | quote }}

@@ -76,6 +76,35 @@
     "behind": "落后目录",
     "untracked": "未纳管"
   },
+  "import": {
+    "title": "导入已有部署",
+    "description": "将已运行的 Helm 模型 release 纳入管理，接管时不重新部署工作负载。",
+    "baseline": "所选目录模型作为后续管理基线，不代表该 release 原本由这个目录部署。会保留已有用户 values，请核对计划；首次升级仍需预览差异后再应用。",
+    "namespace": "命名空间",
+    "release": "已有 Helm release",
+    "releaseHint": "填写此命名空间中已部署的 release 名称。导入不会安装不存在的 release。",
+    "catalog": "管理目录",
+    "model": "关联模型",
+    "variant": "关联变体",
+    "chartMatch": "chart 名称必须与已有部署一致，版本范围需包含当前精确版本。",
+    "chart": "已有 chart",
+    "revision": "当前 Helm 修订",
+    "plan": "管理计划",
+    "preview": "预览纳管",
+    "previewing": "正在读取已有部署…",
+    "confirm": "确认纳管",
+    "importing": "正在纳管…",
+    "back": "返回编辑",
+    "retryCatalog": "重试读取目录",
+    "version": "目录版本",
+    "retryHistory": "重试读取版本记录",
+    "retryOptions": "重试读取纳管配置",
+    "warnings": {
+      "new_management_baseline": "所选目录、模型和变体定义新的管理基线；原始目录来源不可追溯。",
+      "values_require_upgrade_review": "已有 Helm 用户 values 会作为覆盖值保留。当前目录和站点默认值可能不同，首次升级前请核对差异。",
+      "import_records_only": "纳管只创建管理记录，不改变工作负载。接管期间请暂停外部 Helm 修改。"
+    }
+  },
   "actions": {
     "detail": "详情",
     "upgrade": "升级",

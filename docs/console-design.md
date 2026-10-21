@@ -337,6 +337,26 @@ DeploySheet -> GET /api/llm/route-options[?route=<existing>]
 | Text | Per-key locale translations where present; new options retain engine text |
 | Ownership | Inferences adapts the Swiss metadata without editing the copied upstream module |
 
+### Import existing Helm deployments
+
+Console owns the opt-in import entry and API ([design](architecture/deployment-imports.md), console #65/#79); Swiss's existing deployment and upgrade APIs remain unchanged.
+
+```text
+Helm Secret -> Console preview -> existing Swiss plan API -> operator confirms
+            -> recheck Secret + LLMService absence -> create-only plan ConfigMap
+            -> existing Swiss deployment inventory / upgrade
+```
+
+| Boundary | Decision |
+|---|---|
+| Configuration | Off by default; explicit namespaces, same-cluster `/api/deploy` backend and matching Swiss plan prefix |
+| Authorization | Backend get/create plus create on `deploymentimports` for namespace/release; UI `deployments.import` |
+| State | Helm supplied values retained; selected catalog is a new management baseline, not historical provenance |
+| Write | Create the supported `plan.swiss/v1` workspace only; no Helm operation or workload update |
+| Existing owner | Refuse an existing plan or LLMService; never overwrite records |
+| Concurrency | Recheck revision, Secret UID/resourceVersion and plan hash; external Helm changes must pause during import |
+| Upgrade | Existing diff and apply flow; review the first diff because catalog/site defaults may differ |
+
 ### Workload reads (`/api/k8s/...`)
 
 Events and logs are Kubernetes data, not swiss's, so console serves them itself

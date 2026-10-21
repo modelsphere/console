@@ -87,6 +87,35 @@
     "behind": "Behind catalog",
     "untracked": "Untracked"
   },
+  "import": {
+    "title": "Import existing deployment",
+    "description": "Bring an existing Helm model release under management without redeploying its workloads.",
+    "baseline": "The selected catalog model is the baseline for future management, not proof of the release's original source. Existing user values are carried forward. Review the plan; the first upgrade must still be diffed before applying.",
+    "namespace": "Namespace",
+    "release": "Existing Helm release",
+    "releaseHint": "The name of a deployed release in this namespace. Import does not install a missing release.",
+    "catalog": "Management catalog",
+    "model": "Associated model",
+    "variant": "Associated variant",
+    "chartMatch": "Its chart must match the existing release and allow its exact chart version.",
+    "chart": "Existing chart",
+    "revision": "Current Helm revision",
+    "plan": "Management plan",
+    "preview": "Preview import",
+    "previewing": "Reading release…",
+    "confirm": "Confirm import",
+    "importing": "Importing…",
+    "back": "Back to edit",
+    "retryCatalog": "Retry catalog",
+    "version": "Catalog version",
+    "retryHistory": "Retry version history",
+    "retryOptions": "Retry import availability",
+    "warnings": {
+      "new_management_baseline": "The selected catalog, model and variant define a new management baseline; the original catalog source is unknown.",
+      "values_require_upgrade_review": "Existing Helm supplied values are retained as overrides. Current catalog and site defaults may differ; inspect the diff before the first upgrade.",
+      "import_records_only": "Import only creates a management record and does not change workloads. Pause external Helm changes during import."
+    }
+  },
   "actions": {
     "detail": "Details",
     "upgrade": "Upgrade",

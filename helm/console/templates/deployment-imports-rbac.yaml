@@ -1,0 +1,39 @@
+{{- if and .Values.rbac.create .Values.deploymentImports.enabled }}
+{{- $root := . }}
+{{- range $namespace := .Values.deploymentImports.namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ printf "%s-deployment-imports" (include "console.fullname" $root) }}
+  namespace: {{ $namespace | quote }}
+  labels:
+    {{- include "console.labels" $root | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create"]
+  - apiGroups: ["serving.modelsphere.dev"]
+    resources: ["llmservices"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ printf "%s-deployment-imports" (include "console.fullname" $root) }}
+  namespace: {{ $namespace | quote }}
+  labels:
+    {{- include "console.labels" $root | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ printf "%s-deployment-imports" (include "console.fullname" $root) }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "console.serviceAccountName" $root }}
+    namespace: {{ $root.Release.Namespace }}
+{{- end }}
+{{- end }}

@@ -119,6 +119,7 @@ func (s *Server) Handler() http.Handler {
 		// hence inside this block.
 		s.mountBackends(mux)
 		s.mountWorkload(mux)
+		s.mountDeploymentImports(mux)
 
 		if s.router != nil {
 			s.mountRouter(mux)
@@ -216,6 +217,8 @@ type statusRecorder struct {
 	http.ResponseWriter
 	status int
 }
+
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code

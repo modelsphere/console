@@ -42,6 +42,16 @@ backends:
     gateway:
       profile: llm/site-profile
 
+# Imports create Swiss management records without changing workloads.
+# Enable only for the SAME cluster and namespaces the Swiss backend reads.
+# The backend must use /api/deploy; the prefix must match Swiss storage.
+# The selected catalog is a new baseline, not historical provenance.
+deploymentImports:
+  enabled: false
+  backend: swiss
+  namespaces: [] # e.g. [models], required when enabled
+  planConfigMapPrefix: swiss-plan-
+
 # The router: programs call models at <console>/v1 with API keys admins issue on
 # the router's API keys page. console keeps their hashes in this Secret (creating
 # it) and forwards /v1 to the backend named here with that backend's own

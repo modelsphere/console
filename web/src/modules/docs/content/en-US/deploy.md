@@ -76,7 +76,19 @@ From a row's actions in the list, or the top of the detail page:
 - **Edit SLO**: the latency and throughput targets and the replica bounds the scaler works with. Services deployed without SLO need it switched on in an upgrade first.
 - **Uninstall**: stops the service and deletes its pods; the activity log is kept. Reinstalling loads the weights again.
 
-"Behind catalog" in the list means the catalog has a newer version to upgrade to; "Untracked" means the release was not deployed by Swiss and cannot be upgraded here.
+"Behind catalog" means the catalog has a newer version to upgrade to; "Untracked" means the release has no management plan and cannot be upgraded directly. Newer Swiss versions omit such releases from the list; use the explicit import entry below.
+
+## Import an existing deployment
+
+After an administrator enables Console's `deploymentImports`, configures a same-cluster Swiss backend, allowed namespaces and matching plan prefix, users with the `deployments.import` UI permission and the corresponding backend/API grants can choose **Import existing deployment** on [Inference Services](/inferences). It is off by default; see the Console chart installation guide for configuration and Kubernetes grants.
+
+1. Select a namespace and enter the name of an already deployed Helm release.
+2. Choose its management catalog, model, variant and catalog version. The chart must match the existing deployment and allow its exact installed version.
+3. **Preview import** to inspect the revision, chart and management plan. Existing user values are carried forward; the selected catalog is a management association, not evidence of the original deployment's source.
+4. **Confirm import** creates the management record without running a Helm upgrade or recreating pods. The service detail page opens, and subsequent changes use the existing upgrade flow.
+
+If the release or catalog plan changed after preview, or a management record already exists, confirmation refuses the write; read and preview again. The first upgrade still needs its diff reviewed: current catalog and site defaults may differ from the original install. Operations before import are not fabricated as Swiss history.
+
 
 ## Edit a catalog's variants
 

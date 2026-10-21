@@ -11,7 +11,7 @@
 
 ## What it does not do
 
-- **It does not install or modify an existing Swiss or inference gateway** — it only reads their ConfigMaps and Secrets.
+- **It does not install or modify an existing Swiss or inference gateway.** The default configuration reads their ConfigMaps and Secrets; explicitly enabled deployment imports create Swiss management records without changing workloads.
 - **It does not need `install.sh`** — that is an optional helper in the source repository (discovers Swiss and the gateway, generates values, runs an end-to-end check after install). It is not in the chart package and this guide does not use it. See `./install.sh --help`.
 
 ## Quick start
@@ -130,6 +130,56 @@ helm upgrade --install console oci://ghcr.io/modelsphere/charts/console \
   --values console-values.yaml \
   --wait --timeout 10m
 ```
+
+## Import existing Helm deployments
+
+Imports are disabled by default. Enable them only when the Swiss backend and Console connect to the **same Kubernetes cluster**, and Swiss reads each allowed namespace. The selected backend must be the Model Serving backend at `/api/deploy`; its API URL normally ends in `/api`.
+
+```yaml
+deploymentImports:
+  enabled: true
+  backend: swiss
+  namespaces: [models]
+  planConfigMapPrefix: swiss-plan-
+```
+
+The ConfigMap prefix must match the target Swiss (`swiss-plan-` by default). The allowed namespaces must already exist. With `rbac.create=true`, the chart creates a Role and RoleBinding in each allowed namespace:
+
+| Resource | Verbs | Purpose |
+|---|---|---|
+| Secrets | get, list | read only the targeted Helm release history |
+| ConfigMaps | get, create | reject an existing record and create a new workspace |
+| `llmservices.serving.modelsphere.dev` | get | reject an existing operator owner, including external LLMServices |
+
+With `rbac.create=false`, provide these permissions through your own Roles. Imports never need Secret writes, ConfigMap update/patch, or workload writes. Failure to establish that no LLMService owns the release rejects the import.
+
+Console user authorization is separate from Kubernetes permissions. A platform-scoped IAMRole needs the following rules, plus existing Model Serving/catalog access. `deployments.import` controls the UI entry only; the API enforces all rules independently.
+
+```yaml
+spec:
+  uiPermissions: [deployments.import]
+  rules:
+    - apiGroups: [iam.theriseunion.io]
+      resources: [backends]
+      resourceNames: [swiss]
+      verbs: [get, create]
+    - apiGroups: [iam.theriseunion.io]
+      resources: [deploymentimports]
+      resourceNames: [models/my-release]
+      verbs: [create]
+```
+
+```text
+enable explicit namespaces -> enter existing release -> select catalog/model/variant/version
+                          -> preview exact chart and values -> confirm -> refresh Model Serving
+```
+
+- Only Helm Secret storage is supported. The latest revision must be `deployed`; failed or pending revisions block import even when an older deployed revision exists.
+- The selected model must use the same chart name and exact chart version. Helm supplied values become overrides in a newly composed Swiss baseline.
+- This catalog association is the operator's selection for future management. It does not recover the release's historical catalog provenance. Current catalog/site defaults can differ: inspect the diff before the first upgrade.
+- Import creates only a Swiss management ConfigMap; Helm revision and workloads stay unchanged. It refuses any existing ConfigMap at that name, regardless of labels, and any existing LLMService.
+- Stop other Helm writers during import. Revision, Secret UID/resourceVersion and plan hash are revalidated; a 409 requires a new preview. Kubernetes cannot make the Secret read and ConfigMap create one transaction.
+- Requests are limited to 16 KiB, upstream plans to 2 MiB, Helm compressed data to 1 MiB and decoded JSON to 8 MiB. Histories over 32 revisions, paginated histories, aggregate encoded histories over 16 MiB, and workspaces over 900 KiB are rejected rather than partially imported. Trim old Helm history through your normal Helm administration before retrying.
 
 ## Check and sign in
 

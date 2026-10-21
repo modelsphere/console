@@ -13,13 +13,15 @@ import {
   type ResourceRowAction,
 } from "@modelsphere/ui";
 import { Bot, Plus } from "lucide-react";
-import { formatDateTime, useModulePath } from "@/shell";
+import { formatDateTime, useModulePath, usePermissions } from "@/shell";
 import { api, type Deployment } from "@swiss/lib/api";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, modelLine, rowState } from "@/modules/inferences/lib";
 import { StatusDot } from "@/modules/inferences/components/StatusDot";
 import { DeploySheet, type DeployTarget } from "@/modules/inferences/components/DeploySheet";
 import { UninstallDialog, type UninstallTarget } from "@/modules/inferences/components/UninstallDialog";
+import { ImportSheet } from "@/modules/inferences/components/ImportSheet";
+import { importOptions } from "@/modules/inferences/import-api";
 
 // swissd caps a page at 100.
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -31,6 +33,9 @@ export function InferenceList() {
   const p = useModulePath();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { has } = usePermissions();
+  const [importing, setImporting] = useState(false);
+  const imports = useQuery({ queryKey: ["deployment-import-options"], queryFn: importOptions, enabled: has("deployments.import"), retry: false });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [uninstalling, setUninstalling] = useState<UninstallTarget | null>(null);
@@ -114,9 +119,13 @@ export function InferenceList() {
   ];
 
   const deploy = (
-    <Button onClick={() => navigate(p("catalog"))}>
-      <Plus className="size-4" /> {t("list.deploy")}
-    </Button>
+    <div className="flex items-center gap-2">
+      <Button onClick={() => navigate(p("catalog"))}>
+        <Plus className="size-4" /> {t("list.deploy")}
+      </Button>
+      {has("deployments.import") && imports.data?.enabled && !readOnly && <Button variant="outline" onClick={() => setImporting(true)}>{t("import.title")}</Button>}
+      {imports.error && <Button variant="outline" onClick={() => void imports.refetch()}>{t("import.retryOptions")}</Button>}
+    </div>
   );
 
   return (
@@ -150,6 +159,11 @@ export function InferenceList() {
           emptyAction={deploy}
         />
       </div>
+      {importing && has("deployments.import") && imports.data?.enabled && <ImportSheet namespaces={imports.data.namespaces} catalogs={cluster.data?.catalogs ?? []} onClose={() => setImporting(false)} onImported={(namespace, release) => {
+        setImporting(false);
+        for (const key of [["deployments"], ["status", namespace, release], ["releasePlan", namespace, release]]) void qc.invalidateQueries({ queryKey: key });
+        navigate(p(detailPath(release, namespace)));
+      }} />}
       <UninstallDialog target={uninstalling} onClose={() => setUninstalling(null)} />
       <DeploySheet target={upgrading} onClose={() => setUpgrading(null)} />
     </div>

@@ -71,6 +71,20 @@ admin:
 # swissd (model deployment) is not listed here: see swiss and externalSwiss.
 backends: []
 
+# Adopt existing Helm releases by creating only Swiss management records.
+# The configured backend must be Swiss in this same Kubernetes cluster, and must
+# read these namespaces. Stop external Helm changes during import; inspect the
+# diff before the first upgrade. Only Helm Secret storage is supported.
+# With rbac.create=false, provision secrets get/list, configmaps get/create and
+# llmservices.serving.modelsphere.dev get in each allowed namespace through your
+# own Roles. No Secret writes are needed; backend must use prefix /api/deploy.
+deploymentImports:
+  enabled: false
+  backend: swiss
+  namespaces: []
+  # Must match the target Swiss plan ConfigMap prefix.
+  planConfigMapPrefix: swiss-plan-
+
 # swissd, the model deployment backend. Pick one:
 #
 #   swiss.enabled: true   install it with this release, from the swiss chart

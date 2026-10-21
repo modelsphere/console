@@ -19,11 +19,31 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type DeploymentImports struct {
+	Enabled             bool     `yaml:"enabled,omitempty"`
+	Backend             string   `yaml:"backend,omitempty"`
+	Namespaces          []string `yaml:"namespaces,omitempty"`
+	PlanConfigMapPrefix string   `yaml:"planConfigMapPrefix,omitempty"`
+}
+
+const DefaultPlanConfigMapPrefix = "swiss-plan-"
+
+func (d DeploymentImports) WithDefaults() DeploymentImports {
+	if d.Backend == "" {
+		d.Backend = "swiss"
+	}
+	if d.PlanConfigMapPrefix == "" {
+		d.PlanConfigMapPrefix = DefaultPlanConfigMapPrefix
+	}
+	return d
+}
+
 type Config struct {
-	Cluster  Cluster   `yaml:"cluster,omitempty"`
-	Server   Server    `yaml:"server,omitempty"`
-	Backends []Backend `yaml:"backends,omitempty"`
-	Router   Router    `yaml:"router,omitempty"`
+	Cluster           Cluster           `yaml:"cluster,omitempty"`
+	Server            Server            `yaml:"server,omitempty"`
+	Backends          []Backend         `yaml:"backends,omitempty"`
+	Router            Router            `yaml:"router,omitempty"`
+	DeploymentImports DeploymentImports `yaml:"deploymentImports,omitempty"`
 
 	Origin string `yaml:"-"`
 }
@@ -197,6 +217,7 @@ func Find(explicit string) string {
 }
 
 func (c *Config) applyDefaults() {
+	c.DeploymentImports = c.DeploymentImports.WithDefaults()
 	if c.Server.Addr == "" {
 		c.Server.Addr = ":8080"
 	}
@@ -252,11 +273,35 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("%s: router.maxBodyBytes must not be negative", c.origin())
 		}
 	}
+	if d := c.DeploymentImports.WithDefaults(); d.Enabled {
+		if len(d.Namespaces) == 0 {
+			return fmt.Errorf("%s: deploymentImports.namespaces must explicitly allow at least one namespace", c.origin())
+		}
+		seen := map[string]bool{}
+		for _, ns := range d.Namespaces {
+			if len(ns) > 63 || !namespaceRE.MatchString(ns) || seen[ns] {
+				return fmt.Errorf("%s: deploymentImports.namespaces contains an invalid or duplicate namespace", c.origin())
+			}
+			seen[ns] = true
+		}
+		if len(d.PlanConfigMapPrefix) > 200 || !nameRE.MatchString(d.PlanConfigMapPrefix+"release") {
+			return fmt.Errorf("%s: deploymentImports.planConfigMapPrefix is invalid", c.origin())
+		}
+		found := false
+		for _, b := range c.Backends {
+			if b.Name == d.Backend {
+				found = b.Gateway == nil && b.URL != "" && b.Prefix == "/api/deploy"
+			}
+		}
+		if !found {
+			return fmt.Errorf("%s: deploymentImports.backend must name a configured static same-cluster Swiss backend with prefix /api/deploy", c.origin())
+		}
+	}
 	return nil
 }
 
 // reservedPrefixes are console's own API; a backend there would shadow them.
-var reservedPrefixes = []string{"/api/iam", "/api/me", "/api/router"}
+var reservedPrefixes = []string{"/api/iam", "/api/me", "/api/router", "/api/deployment-imports"}
 
 func validateBackend(b Backend) error {
 	// Only /api/* passes the auth middleware's guard; anything else is served
@@ -329,7 +374,8 @@ func validateGateway(g Gateway) error {
 }
 
 var (
-	envNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-	refRE     = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
-	nameRE    = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
+	namespaceRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+	envNameRE   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	refRE       = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
+	nameRE      = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
 )
