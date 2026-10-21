@@ -49,3 +49,11 @@ backends:
 router:
   secret: console/console-api-keys
   backend: llm
+
+# Optional Canary backend (add under the existing backends list):
+# - name: canary
+#   prefix: /api/canary
+#   url: http://canary-canaryd.console-system.svc:8080/api/canary
+#   apiKeyEnv: CANARY_PROXY_KEY
+# Supply CANARY_PROXY_KEY from the same managed Secret used by canaryd.
+# Configure/restart Console; the bundled UI requires no separate build.

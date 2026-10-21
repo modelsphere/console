@@ -224,3 +224,36 @@ git push origin main --follow-tags
 ```
 
 A newly created GHCR package is private by default. After the first publish, set it to Public in the package settings, or anonymous pulls fail.
+
+
+## Optional Canary experiments
+
+This Console build includes Canary pages; deploy [canaryd](https://github.com/modelsphere/console-canary-plugin) separately.
+
+1. Create the same managed proxy credential in the Console and canaryd namespaces.
+2. Merge the following into existing values, preserving every other backend and Secret mapping. Helm replaces lists.
+3. Upgrade Console and restart its Deployment after backend configuration changes. No frontend rebuild is needed.
+4. Bind existing `canary-reader` / `canary-writer` roles from the canaryd integration guide. Canary readers need `get` on backend `canary`; writers need `get/create/update` plus `canary.write`. Creating experiments also needs Swiss backend read access for chart-version selection.
+
+```yaml
+backends:
+  # Preserve existing entries here.
+  - name: canary
+    prefix: /api/canary
+    url: http://canary-canaryd.console-system.svc:8080/api/canary
+    apiKeyEnv: CANARY_PROXY_KEY
+backendSecrets:
+  CANARY_PROXY_KEY:
+    secretName: canary-proxy
+    key: proxyKey
+```
+
+| State | Console behaviour |
+|---|---|
+| Canary backend absent | Sidebar hidden; direct `/canary` URLs explain that it is not configured. |
+| Caller lacks Canary backend read access | Sidebar hidden; direct URLs show permission denied. |
+| Reader | List, details and pricing visible; creation and write controls unavailable. |
+| Writer | Creation and write controls available. |
+| canaryd temporarily unavailable | Navigation remains; pages show API errors. Login and Console readiness are independent. |
+
+The browser calls authenticated `GET /api/capabilities` to obtain configuration and effective UI access. This is not a Kubernetes discovery or upstream-health endpoint. Refresh the page after changing permissions. Disabling the Console entry does not stop experiments or delete backend data. Compatible canaryd upgrades can reuse the same Console image; frontend changes and incompatible backend APIs require a Console upgrade.
