@@ -89,6 +89,13 @@ backends: []
 # differently is here. The chart refuses to render without rbac.namespaces, the
 # namespaces holding model releases:
 #   --set swiss.enabled=true --set 'swiss.rbac.namespaces={models}'
+#
+# A writable catalog, so the model library can add and edit models (swiss
+# 0.7.0+): the swiss chart vendors catalog-server; enable it and give it a write
+# token, then name it in the site profile. See "Adding models from the Model
+# Library" in the chart README.
+#   --set swiss.catalogServer.enabled=true \
+#   --set swiss.catalogServer.tokens.existingSecret=console-catalog-tokens
 swiss:
   enabled: false
   auth:

@@ -496,6 +496,8 @@ Console adds nothing to the path.
 | New model | **New model** in the library toolbar, with fields for its name and first variant id that write into both files: `metadata.yaml` and a first variant copied from one the catalog has, in one commit (catalog-server's `POST models`); the page then opens the new model |
 | Freshness | swissd drops its cached index on a write, so the page refetches and shows the commit |
 
+Console owns no catalog storage and publishes no index of its own. A writable catalog is a catalog-server the site profile names; an install whose own catalog is a static index gets one from the swiss chart, which vendors catalog-server since 0.7.0 (`swiss.catalogServer`; the chart README covers enabling it, its token, and the profile entry). A console-hosted catalog was rejected: it would duplicate catalog-server's repository and write API, and its publication would be deprecated schema v1, which the LLMSvc backend cannot deploy.
+
 ## Playground
 
 The Playground is chat against the inference gateway, for the question a

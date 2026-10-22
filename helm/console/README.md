@@ -56,7 +56,7 @@ Builds from `main` need the full version. **Do not use `--devel` to get the "lat
 | Helm runs with cluster-admin rights | all | the chart creates IAM CRDs and a ClusterRole/ClusterRoleBinding (the platform-admin role has `*`, and Kubernetes only lets a user who already holds those rights create it); with Swiss it also creates Roles in other namespaces | `kubectl auth can-i '*' '*' --all-namespaces` prints `yes` |
 | linux/amd64 nodes | all | the image is amd64 only | `kubectl get nodes -L kubernetes.io/arch` |
 | nodes can reach `ghcr.io` | all | the Console image is on GHCR | — |
-| Swiss chart 0.6.0 or later with `auth.proxyKey` on, or Swiss running with `auth.disabled=true` | existing Swiss | Console calls Swiss on behalf of the signed-in user with the proxyKey | see [Find Swiss and the gateway](#1-find-swiss-and-the-gateway) |
+| Swiss chart 0.7.0 or later with `auth.proxyKey` on, or Swiss running with `auth.disabled=true` | existing Swiss | Console calls Swiss on behalf of the signed-in user with the proxyKey; 0.7.0 is also the first chart with catalog schema v2 and the site profile's `schemaVersion`/`writable` | see [Find Swiss and the gateway](#1-find-swiss-and-the-gateway) |
 | a Swiss site profile exists and `cluster.profile.key` is `profile.yaml` (the default) | existing Swiss | Console reads the gateway entrypoint from the profile, and only from the `profile.yaml` key; Swiss creates the profile the first time settings are saved in its UI | same as above |
 
 ## Connecting to an existing Swiss
@@ -92,7 +92,7 @@ kubectl -n modelsphere create secret generic swiss-proxy-key --from-file=proxyKe
 rm proxyKey
 ```
 
-If the second command prints nothing, this Swiss has no proxyKey: upgrade the Swiss chart to 0.6.0 or later, or run it with `auth.disabled=true`.
+If the second command prints nothing, this Swiss has no proxyKey: upgrade the Swiss chart to 0.7.0 or later, or run it with `auth.disabled=true`.
 
 ### 3. Write the values
 
@@ -130,6 +130,47 @@ helm upgrade --install console oci://ghcr.io/modelsphere/charts/console \
   --values console-values.yaml \
   --wait --timeout 10m
 ```
+
+## Adding models from the Model Library
+
+Read-only catalogs are enough to deploy. **New model**, **Edit model**, **Add variant** and **Catalog settings** need a **writable** catalog: a catalog-server serving schema v2. A static `index.json` catalog stays read-only.
+
+| Your install | Where the writable catalog comes from |
+|---|---|
+| Swiss bundled (`swiss.enabled=true`) | the swiss chart's `catalogServer` (0.7.0+), enabled below |
+| Existing Swiss (`externalSwiss`) | upgrade Swiss to chart 0.7.0, enable its `catalogServer`, or point swissd at any catalog-server it can reach |
+
+```bash
+# The write token: catalog-server reads it from a Secret, and you enter the same
+# value in the site profile below. Keep it out of values files.
+TOKEN=$(openssl rand -hex 24)
+printf -- '- name: console\n  email: console@example.com\n  token: %s\n' "$TOKEN" > tokens.yaml
+kubectl -n modelsphere create secret generic console-catalog-tokens --from-file=tokens.yaml
+rm tokens.yaml
+printf 'Write token: %s\n' "$TOKEN"
+
+helm upgrade --install console oci://ghcr.io/modelsphere/charts/console \
+  --namespace modelsphere \
+  --set swiss.enabled=true --set 'swiss.rbac.namespaces={models}' \
+  --set swiss.catalogServer.enabled=true \
+  --set swiss.catalogServer.tokens.existingSecret=console-catalog-tokens
+```
+
+That runs catalog-server in the release's namespace and serves the catalog at `http://<release>-catalog-server.<namespace>.svc`. Its repository is a PVC, kept across `helm upgrade` and `helm uninstall`; storage, tokens and an optional ingress are the swiss chart's values (`helm show values oci://ghcr.io/modelsphere/charts/swiss --version 0.7.0`).
+
+Then, in Console:
+
+1. **Model Serving → Site Profile**: add a catalog with `schemaVersion: v2`, **Writable** ticked, and the write token printed above. For the release above:
+
+   ```yaml
+   catalogs:
+     - name: local
+       url: http://console-catalog-server.modelsphere.svc
+       schemaVersion: v2
+       writable: true
+   ```
+
+2. **Model Library**: **Set up this catalog** while the catalog is empty, then **New model**. Each change is one commit to the catalog's git repository; see [Deploying models](https://github.com/modelsphere/console/blob/main/web/src/modules/docs/content/en-US/deploy.md#edit-a-catalogs-variants) for editing models and variants.
 
 ## Check and sign in
 
