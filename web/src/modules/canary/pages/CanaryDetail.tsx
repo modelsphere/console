@@ -1,4 +1,4 @@
-import { asError } from "../lib/errors";
+import { asError, visibleExperimentError } from "../lib/errors";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
@@ -95,6 +95,9 @@ export function CanaryDetail({
     historical,
     t("experiments.Stopped"),
   );
+  const experimentError = experiment
+    ? visibleExperimentError(experiment)
+    : undefined;
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -155,8 +158,8 @@ export function CanaryDetail({
           )}
         </div>
       )}
-      {(actionError || experiment?.error) && (
-        <ErrorNotice error={actionError ?? experiment?.error} />
+      {(actionError || experimentError) && (
+        <ErrorNotice error={actionError ?? experimentError} />
       )}
       <Tabs
         value={tab}

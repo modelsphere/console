@@ -11,6 +11,7 @@ describe("emitManifests", () => {
       catalogVariants.find((v) => v.id === "sglang-tp8-h100-optimized") ??
       catalogVariants[0];
     const draft = emptyDraft();
+    draft.name = "qwen-prod-canary";
     draft.targetRef = {
       kind: "HelmRelease",
       name: "qwen-prod",
@@ -91,6 +92,7 @@ describe("emitManifests", () => {
       layers: layersFromVariant(variant, 1),
     };
     const draft = emptyDraft();
+    draft.name = "qwen-prod-canary";
     draft.targetRef = {
       kind: "HelmRelease",
       name: "qwen-prod",

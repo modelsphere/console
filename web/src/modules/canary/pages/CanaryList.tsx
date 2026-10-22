@@ -1,5 +1,5 @@
 import { ErrorNotice, ErrorDetails } from "../components/ErrorNotice";
-import { describeError } from "../lib/errors";
+import { describeError, visibleExperimentError } from "../lib/errors";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -22,7 +22,7 @@ export function CanaryList() {
   const canWrite = useCanaryWrite();
   const p = usePluginPath();
   const navigate = useNavigate();
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("active");
   const list = useQuery({
     queryKey: ["experiments", api.mode],
     queryFn: () => api.experiments.list(),
@@ -66,8 +66,11 @@ export function CanaryList() {
           {e.archived && (
             <span className="ml-2 text-xs">{t("experiments.archived")}</span>
           )}
-          {e.error && (
-            <ErrorNotice error={e.error} className="text-xs text-destructive" />
+          {visibleExperimentError(e) && (
+            <ErrorNotice
+              error={visibleExperimentError(e)}
+              className="text-xs text-destructive"
+            />
           )}
         </div>
       ),

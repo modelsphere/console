@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import { errorEn, validationEn } from "../error-locales";
+import type { Experiment, ExperimentSummary } from "../types";
 
 type ErrorKey = Exclude<keyof typeof errorEn, "details">;
 type Params = Record<string, string | number>;
@@ -13,6 +14,23 @@ export class CanaryApiError extends Error {
     super(message);
     this.name = "CanaryApiError";
   }
+}
+
+export function visibleExperimentError(
+  experiment: Pick<Experiment | ExperimentSummary, "state" | "error">,
+): string | undefined {
+  const message = experiment.error?.trim();
+  if (!message) return undefined;
+  if (/^not Serving or generation not observed$/i.test(message))
+    return undefined;
+  if (
+    experiment.state === "Creating" &&
+    /Operation cannot be fulfilled on llmcanaries\.modelsphere\.dev/i.test(
+      message,
+    )
+  )
+    return undefined;
+  return message;
 }
 export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;

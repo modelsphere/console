@@ -125,7 +125,7 @@ export function emitManifests(draft: CanaryDraft): EmitResult {
 
 export function emptyDraft(): CanaryDraft {
   return {
-    name: "qwen-tune",
+    name: "",
     namespace: "llm-serving",
     targetRef: { kind: "HelmRelease", name: "", namespace: "llm-serving" },
     arms: [],

@@ -3,7 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import i18next from "i18next";
 import ICU from "i18next-icu";
 import { describe, expect, it } from "vitest";
-import { asError, CanaryApiError, describeError } from "./errors";
+import {
+  asError,
+  CanaryApiError,
+  describeError,
+  visibleExperimentError,
+} from "./errors";
 import { canaryLocales, registerCanaryLocales } from "../locales";
 import { createLiveApi } from "./live-api";
 import { fromYamlObject } from "./yaml";
@@ -25,6 +30,27 @@ function translator(language: string) {
   return i18n;
 }
 describe("localized UI errors", () => {
+  it("hides expected provisioning transitions but keeps actionable failures", () => {
+    expect(
+      visibleExperimentError({
+        state: "Creating",
+        error:
+          'Operation cannot be fulfilled on llmcanaries.modelsphere.dev "demo": the object has been modified',
+      }),
+    ).toBeUndefined();
+    expect(
+      visibleExperimentError({
+        state: "Running",
+        error: "not Serving or generation not observed",
+      }),
+    ).toBeUndefined();
+    expect(
+      visibleExperimentError({
+        state: "Stopping",
+        error: "deletion refused",
+      }),
+    ).toBe("deletion refused");
+  });
   it("explains the occupied target and both safe choices on creation conflict", async () => {
     const message = "active experiment conflict: production target HelmRelease/qwen36/qwen3-6-35b-a3b is already used by canary/wyq; stop that experiment and wait for cleanup, or choose another production target";
     const api = createLiveApi(async () => new Response(JSON.stringify({ error: message }), { status: 409 }));
@@ -150,7 +176,7 @@ describe("localized UI errors", () => {
       ).summary,
     ).toContain("model.v2 尚未配置");
     expect(describeError('duplicate arm name "baseline"', t).summary).toBe(
-      "实验臂名称 baseline 重复。",
+      "实验组名称 baseline 重复。",
     );
     expect(
       describeError(

@@ -387,9 +387,37 @@ export function CanaryCreate() {
             summary={t("create.pickTargetHint")}
           >
             <div className="grid gap-3 md:grid-cols-2">
+              <FloatingField
+                label={t("create.pickTarget")}
+                hint={t("create.pickTargetHint")}
+                className="md:col-span-2"
+              >
+                <FieldSelect
+                  value={
+                    selectedTarget
+                      ? `${selectedTarget.namespace}/${selectedTarget.name}`
+                      : undefined
+                  }
+                  onValueChange={(value) => {
+                    const found = findProductionTarget(targets, String(value));
+                    if (found)
+                      setDraft((current) =>
+                        applyProductionTarget(current, found),
+                      );
+                  }}
+                  options={targets.map((d) => ({
+                    value: `${d.namespace}/${d.name}`,
+                    label: d.name,
+                    description: `${d.namespace} · ${d.model ?? ""} · ${d.variant ?? ""}@${d.version ?? ""} · ${d.gateway ? `${d.gateway.namespace}/${d.gateway.name}` : "—"} · /${d.route ?? ""} · ${d.openrestyService ?? ""}`,
+                  }))}
+                  placeholder={t("create.pickTarget")}
+                />
+              </FloatingField>
               <FloatingField label={t("create.name")}>
                 <FieldInput
                   value={draft.name}
+                  disabled={!selectedTarget}
+                  placeholder={t("create.selectTargetFirst")}
                   onChange={(e) => patch({ name: e.target.value })}
                 />
               </FloatingField>
@@ -432,31 +460,6 @@ export function CanaryCreate() {
                 value={selectedTarget?.namespace}
                 emptyText={t("create.selectTargetFirst")}
               />
-              <FloatingField
-                label={t("create.pickTarget")}
-                hint={t("create.pickTargetHint")}
-              >
-                <FieldSelect
-                  value={
-                    selectedTarget
-                      ? `${selectedTarget.namespace}/${selectedTarget.name}`
-                      : undefined
-                  }
-                  onValueChange={(value) => {
-                    const found = findProductionTarget(targets, String(value));
-                    if (found)
-                      setDraft((current) =>
-                        applyProductionTarget(current, found),
-                      );
-                  }}
-                  options={targets.map((d) => ({
-                    value: `${d.namespace}/${d.name}`,
-                    label: d.name,
-                    description: `${d.namespace} · ${d.model ?? ""} · ${d.variant ?? ""}@${d.version ?? ""} · ${d.gateway ? `${d.gateway.namespace}/${d.gateway.name}` : "—"} · /${d.route ?? ""} · ${d.openrestyService ?? ""}`,
-                  }))}
-                  placeholder={t("create.pickTarget")}
-                />
-              </FloatingField>
             </div>
           </FormSection>
         )}

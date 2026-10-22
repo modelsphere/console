@@ -12,6 +12,7 @@ describe("applyProductionTarget", () => {
     expect(qwen).toBeTruthy();
     expect(kimi).toBeTruthy();
     const filled = applyProductionTarget(emptyDraft(), qwen!);
+    expect(filled.name).toBe("qwen-prod-canary");
     expect(filled.targetRef).toEqual({
       kind: "HelmRelease",
       name: "qwen-prod",
@@ -36,11 +37,18 @@ describe("applyProductionTarget", () => {
     expect(kept.gateway.hostname).toBe("ai-cloud.example.com");
 
     const switched = applyProductionTarget(filled, kimi!);
+    expect(switched.name).toBe("kimi-prod-canary");
     expect(switched.gateway.name).toBe("openresty");
     expect(switched.gateway.namespace).toBe("llm-route");
     expect(switched.gateway.hostname).toBeUndefined();
     expect(switched.gateway.sectionName).toBeUndefined();
     expect(switched.route.path).toBe("/kimi-k3");
+  });
+
+  it("keeps a name the user changed after selecting a production release", () => {
+    const filled = applyProductionTarget(emptyDraft(), qwen!);
+    const renamed = { ...filled, name: "my-experiment" };
+    expect(applyProductionTarget(renamed, kimi!).name).toBe("my-experiment");
   });
 
   it("clears stale infrastructure fields when a new target lacks configuration", () => {

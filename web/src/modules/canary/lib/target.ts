@@ -7,8 +7,16 @@ export function applyProductionTarget(
 ): CanaryDraft {
   const routeKey = target.route?.replace(/^\//, "");
   const path = routeKey ? `/${routeKey}` : "";
+  const previousDefaultName = draft.targetRef.name
+    ? `${draft.targetRef.name}-canary`
+    : "";
+  const name =
+    !draft.name || draft.name === previousDefaultName
+      ? `${target.name}-canary`
+      : draft.name;
   return {
     ...draft,
+    name,
     targetRef: {
       kind: target.kind,
       name: target.name,
