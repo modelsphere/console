@@ -28,6 +28,16 @@ export function errorMessage(error: unknown): string {
   return "";
 }
 const exact: Record<string, ErrorKey> = {
+  "traffic weights must be integers from 0 to 1000000 with a nonzero sum": "trafficWeights",
+  "production and canary weights are required": "trafficWeights",
+  "traffic update conflict: refresh the experiment before changing traffic": "trafficChanged",
+  "traffic update conflict: non-traffic experiment configuration changed": "trafficChanged",
+  "non-traffic experiment configuration changed": "trafficChanged",
+  "experiment changed concurrently; refresh and retry": "trafficChanged",
+  "experiment changed while traffic was applying": "trafficChanged",
+  "traffic update conflict: another traffic change is still pending": "trafficPending",
+  "traffic update conflict: traffic can only change on a running serving experiment with routing enabled": "trafficRunning",
+  "experiment stopped": "trafficStopped",
   "invalid canary name (maximum 28 characters)": "invalidName",
   "invalid canary namespace (maximum 63 characters)": "invalidNamespace",
   "invalid canary name (maximum 28 characters) or namespace":

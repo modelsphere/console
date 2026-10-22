@@ -4,6 +4,14 @@ import { registerCanaryLocales } from "../locales";
 import i18next from "i18next";
 
 describe("live transport", () => {
+  it("patches only weights and the expected generation through authenticated transport", async () => {
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response("{}"));
+    await createLiveApi(fetcher).experiments.updateTraffic("a/b", { production: 90, canary: 10, expectedGeneration: 4 });
+    expect(fetcher.mock.calls[0][0]).toBe("/api/canary/experiments/a%2Fb/traffic");
+    expect(fetcher.mock.calls[0][1]?.method).toBe("PATCH");
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toEqual({ production: 90, canary: 10, expectedGeneration: 4 });
+    expect(fetcher.mock.calls[0][1]?.credentials).toBe("same-origin");
+  });
   it("uses injected authentication and exposes real failures", async () => {
     const fetcher = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>

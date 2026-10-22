@@ -1,6 +1,11 @@
 import { errorEn, errorZh, validationEn, validationZh } from "./error-locales";
 import type { i18n as I18n } from "i18next";
 export const en = {
+  trafficUpdate: {
+    title: "Adjust live traffic", hint: "Change production versus the whole Canary group. Arms keep running and metrics stay in this experiment. Weights are relative; they need not sum to 100.",
+    submit: "Apply weights", submitting: "Submitting…", invalid: "Enter integer weights from 0 to 1,000,000 with a nonzero sum.",
+    waiting: "Waiting for the Operator to apply the traffic change. Refreshing automatically.", history: "Traffic changes", pending: "Pending", applying: "Applying", applied: "Applied", failed: "Failed", cancelled: "Cancelled",
+  },
   brand: "LLM Canary",
   subtitle: "LLM experiments · catalog schema v2",
   fixture: "fixture mode",
@@ -151,6 +156,11 @@ export const en = {
 };
 
 export const zh = {
+  trafficUpdate: {
+    title: "调整在线流量", hint: "调整生产与整个金丝雀组的流量比例。实验臂保持运行，指标继续归属同一实验。权重为相对值，无需合计为 100。",
+    submit: "应用权重", submitting: "正在提交…", invalid: "请输入 0 至 1,000,000 的整数权重，且总和不能为零。",
+    waiting: "正在等待 Operator 应用流量变更，页面会自动刷新。", history: "流量调整记录", pending: "待应用", applying: "应用中", applied: "已应用", failed: "失败", cancelled: "已取消",
+  },
   brand: "LLM Canary",
   subtitle: "LLM 实验 · 目录 schema v2",
   fixture: "夹具模式",

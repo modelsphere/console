@@ -22,6 +22,7 @@ import { toYaml } from "../lib/yaml";
 import type { LLMCanary, Experiment } from "../types";
 import { phaseStatus } from "../components/PhaseBadge";
 import { TrafficBar } from "../components/TrafficBar";
+import { TrafficEditor } from "../components/TrafficEditor";
 
 import { MetricsPanel } from "../components/MetricsPanel";
 
@@ -367,6 +368,7 @@ export function CanaryDetail({
         </TabsContent>
 
         <TabsContent value="traffic">
+          {experiment && <TrafficEditor key={`${experiment.id}:${canary.metadata.generation}`} experiment={experiment} onRefresh={onRefresh} />}
           <TrafficPanel canary={canary} />
         </TabsContent>
 

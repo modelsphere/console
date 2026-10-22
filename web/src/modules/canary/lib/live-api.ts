@@ -40,6 +40,7 @@ export interface CanaryClient {
     prepare(draft: CanaryDraft): Promise<Prepared>;
     create(prepareId: string): Promise<Experiment>;
     stop(id: string): Promise<Experiment>;
+    updateTraffic(id: string, change: { production: number; canary: number; expectedGeneration: number }): Promise<Experiment>;
     archive(id: string, archived: boolean): Promise<Experiment>;
     snapshot(id: string): Promise<Experiment>;
     metrics(
@@ -125,6 +126,7 @@ export function createLiveApi(
     return data as T;
   }
   const experiments = {
+    updateTraffic: (id: string, change: { production: number; canary: number; expectedGeneration: number }) => request<Experiment>(`/experiments/${encodeURIComponent(id)}/traffic`, "PATCH", change),
     list: () => request<ExperimentSummary[]>("/experiments"),
     get: (id: string) =>
       request<Experiment>(`/experiments/${encodeURIComponent(id)}`),

@@ -157,6 +157,9 @@ export const fixtureApi: CanaryClient = {
   catalog: fixtureCatalogApi,
   swiss: fixtureSwissApi,
   experiments: {
+    async updateTraffic() {
+      throw new Error("Live traffic updates require the live backend");
+    },
     async list() {
       return structuredClone(
         fixtureExperiments.map((e) => ({

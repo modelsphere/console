@@ -276,7 +276,21 @@ export interface Prepared {
   plans: JsonObject[];
   warnings: string[];
 }
+export interface TrafficChange {
+  id: string;
+  from: { production: number; canary: number };
+  to: { production: number; canary: number };
+  requestedAt: string;
+  requestedBy: string;
+  expectedGeneration: number;
+  generation?: number;
+  appliedAt?: string;
+  status: "pending" | "applying" | "applied" | "failed" | "cancelled";
+  error?: string;
+}
+
 export interface Experiment {
+  trafficChanges?: TrafficChange[];
   id: string;
   prepareId: string;
   uid?: string;

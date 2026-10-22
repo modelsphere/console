@@ -1,4 +1,9 @@
 export const errorEn = {
+  trafficChanged: "Traffic or experiment configuration changed. Refresh the experiment and retry.",
+  trafficWeights: "Use integer traffic weights from 0 to 1,000,000 with a nonzero sum.",
+  trafficPending: "Another traffic change is still being applied. Wait for it to finish.",
+  trafficRunning: "Traffic can only change on a running, observed Serving experiment with routing enabled.",
+  trafficStopped: "The traffic change was cancelled because the experiment stopped.",
   requestFailed: "The request failed. Open the details for diagnostics.",
   network: "Cannot reach the server. Check your connection and retry.",
   cancelled: "The request was cancelled. Retry if needed.",
@@ -100,6 +105,11 @@ export const errorEn = {
   fieldContext: "{field}: {message}",
 };
 export const errorZh: Record<keyof typeof errorEn, string> = {
+  trafficChanged: "流量或实验配置已变化，请刷新实验后重试。",
+  trafficWeights: "请输入 0 至 1,000,000 的整数流量权重，且总和不能为零。",
+  trafficPending: "另一项流量变更仍在应用，请等待完成。",
+  trafficRunning: "仅能调整已启用路由、正在运行且 Operator 已确认 Serving 的实验。",
+  trafficStopped: "实验已停止，此次流量变更已取消。",
   requestFailed: "请求失败，请展开详情查看诊断信息。",
   network: "无法连接服务器，请检查网络连接后重试。",
   cancelled: "请求已取消，可按需重试。",
