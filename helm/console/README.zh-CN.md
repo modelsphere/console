@@ -56,7 +56,7 @@ kubectl -n modelsphere port-forward svc/console-console 8080:8080
 | Helm 使用 cluster-admin 级权限 | 全部 | Chart 创建 IAM CRD、ClusterRole/ClusterRoleBinding（platform-admin 角色含 `*` 权限，Kubernetes 只允许已持有这些权限的用户创建），接入 Swiss 时还要在其他 namespace 创建 Role | `kubectl auth can-i '*' '*' --all-namespaces` 输出 `yes` |
 | linux/amd64 节点 | 全部 | 镜像只有 amd64 | `kubectl get nodes -L kubernetes.io/arch` |
 | 节点能访问 `ghcr.io` | 全部 | Console 镜像在 GHCR | — |
-| Swiss Chart 0.6.0 及以上且开启 `auth.proxyKey`，或 Swiss 以 `auth.disabled=true` 运行 | 接入 Swiss | Console 用 proxyKey 代表登录用户访问 Swiss | 见[找到 Swiss 和网关](#1-找到-swiss-和网关) |
+| Swiss Chart 0.7.0 及以上且开启 `auth.proxyKey`，或 Swiss 以 `auth.disabled=true` 运行 | 接入 Swiss | Console 用 proxyKey 代表登录用户访问 Swiss；目录 schema v2 和 site profile 的 `schemaVersion`/`writable` 也从 0.7.0 开始支持 | 见[找到 Swiss 和网关](#1-找到-swiss-和网关) |
 | Swiss site profile 已存在，且 `cluster.profile.key` 为 `profile.yaml`（默认值） | 接入 Swiss | Console 从 profile 读取网关入口，且只读 `profile.yaml` 这个 key；profile 在 Swiss 网页首次保存设置时才创建 | 同上 |
 
 ## 接入已有 Swiss
@@ -92,7 +92,7 @@ kubectl -n modelsphere create secret generic swiss-proxy-key --from-file=proxyKe
 rm proxyKey
 ```
 
-第二条没有输出时，说明这个 Swiss 没有 proxyKey：升级 Swiss Chart 到 0.6.0 及以上，或让它以 `auth.disabled=true` 运行。
+第二条没有输出时，说明这个 Swiss 没有 proxyKey：升级 Swiss Chart 到 0.7.0 及以上，或让它以 `auth.disabled=true` 运行。
 
 ### 3. 写 values
 
@@ -130,6 +130,46 @@ helm upgrade --install console oci://ghcr.io/modelsphere/charts/console \
   --values console-values.yaml \
   --wait --timeout 10m
 ```
+
+## 新增模型（可写目录）
+
+只读目录足以部署。**新增模型**、**编辑模型**、**新增变体**和**目录设置**则需要**可写**目录，即提供 schema v2 的 catalog-server；静态 `index.json` 目录保持只读。
+
+| 你的安装 | 可写目录从哪来 |
+|---|---|
+| 自带 Swiss（`swiss.enabled=true`） | 打开 swiss chart 的 `catalogServer`（0.7.0+），见下 |
+| 接入已有 Swiss（`externalSwiss`） | 把 Swiss 升到 Chart 0.7.0 并打开它的 `catalogServer`，或让 swissd 指向任意可达的 catalog-server |
+
+```bash
+# 写 token：catalog-server 从 Secret 读取，同一个值稍后填进 site profile。不要写进 values 文件。
+TOKEN=$(openssl rand -hex 24)
+printf -- '- name: console\n  email: console@example.com\n  token: %s\n' "$TOKEN" > tokens.yaml
+kubectl -n modelsphere create secret generic console-catalog-tokens --from-file=tokens.yaml
+rm tokens.yaml
+printf 'Write token: %s\n' "$TOKEN"
+
+helm upgrade --install console oci://ghcr.io/modelsphere/charts/console \
+  --namespace modelsphere \
+  --set swiss.enabled=true --set 'swiss.rbac.namespaces={models}' \
+  --set swiss.catalogServer.enabled=true \
+  --set swiss.catalogServer.tokens.existingSecret=console-catalog-tokens
+```
+
+这会在 release 所在 namespace 运行 catalog-server，目录地址为 `http://<release>-catalog-server.<namespace>.svc`。目录仓库放在 PVC 上，`helm upgrade` 和 `helm uninstall` 都会保留；存储、token、可选 ingress 都是 swiss chart 的 values（`helm show values oci://ghcr.io/modelsphere/charts/swiss --version 0.7.0`）。
+
+然后在 Console 里：
+
+1. **模型服务 → Site Profile**：新增目录，`schemaVersion: v2`、勾选 **Writable**、填入上面的写 token。对应上面的 release：
+
+   ```yaml
+   catalogs:
+     - name: local
+       url: http://console-catalog-server.modelsphere.svc
+       schemaVersion: v2
+       writable: true
+   ```
+
+2. **模型库**：目录为空时点 **Set up this catalog**，之后点 **New model**。每次改动都是目录 git 仓库的一次提交；模型和变体的编辑见[部署模型](https://github.com/modelsphere/console/blob/main/web/src/modules/docs/content/zh-CN/deploy.md#编辑目录中的变体)。
 
 ## 检查和登录
 
