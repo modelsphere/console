@@ -25,6 +25,24 @@ function translator(language: string) {
   return i18n;
 }
 describe("localized UI errors", () => {
+  it("explains the occupied target and both safe choices on creation conflict", async () => {
+    const message = "active experiment conflict: production target HelmRelease/qwen36/qwen3-6-35b-a3b is already used by canary/wyq; stop that experiment and wait for cleanup, or choose another production target";
+    const api = createLiveApi(async () => new Response(JSON.stringify({ error: message }), { status: 409 }));
+    const error = await api.experiments.create("plan").catch((e) => e);
+    const zh = describeError(error, translator("zh").getFixedT("zh", "canary"));
+    expect(zh.summary).toContain("HelmRelease/qwen36/qwen3-6-35b-a3b");
+    expect(zh.summary).toContain("canary/wyq");
+    expect(zh.summary).toContain("保留原有实验并选择其他 target");
+    expect(zh.summary).toContain("等待清理完成后");
+    expect(zh.details).toBe(message);
+    const en = describeError(error, translator("en").getFixedT("en", "canary"));
+    expect(en.summary).toContain("keep that experiment and choose another target");
+    expect(en.summary).toContain("wait for cleanup to complete");
+  });
+  it("explains an occupied experiment name", () => {
+    const error = new CanaryApiError("active experiment conflict: experiment name canary/wyq is already in use; choose another name or wait for cleanup", 409);
+    expect(describeError(error, translator("zh").getFixedT("zh", "canary")).summary).toContain("实验名称 canary/wyq 已被占用");
+  });
   it("translates backend name and namespace validation, including the old combined error", () => {
     const zh = translator("zh-CN").getFixedT("zh-CN", "canary"),
       en = translator("en-US").getFixedT("en-US", "canary");

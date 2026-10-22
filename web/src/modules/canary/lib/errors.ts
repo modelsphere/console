@@ -112,6 +112,17 @@ const validation: Record<string, keyof typeof validationEn> = {
 type Rule = [RegExp, ErrorKey, ...string[]];
 const rules: Rule[] = [
   [
+    /^active experiment conflict: production target (\S+) is already used by (\S+); stop that experiment and wait for cleanup, or choose another production target$/,
+    "targetBusy",
+    "target",
+    "experiment",
+  ],
+  [
+    /^active experiment conflict: experiment name (\S+) is already in use; choose another name or wait for cleanup$/,
+    "experimentNameBusy",
+    "experiment",
+  ],
+  [
     /^namespace ([^;\n]+) is not enabled for experiments$/,
     "namespaceDisabled",
     "namespace",

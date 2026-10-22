@@ -12,6 +12,8 @@ export const errorEn = {
   forbidden: "You do not have permission to perform this action.",
   notFound: "The requested experiment or resource was not found.",
   conflict: "The resource changed or already exists. Refresh before retrying.",
+  targetBusy: "Production target {target} is already used by Canary experiment {experiment}. Only one active experiment is allowed per target.\nYou can keep that experiment and choose another target, or stop it, wait for cleanup to complete, then create a new experiment for this target.",
+  experimentNameBusy: "Experiment name {experiment} is already in use. Choose another name, or stop the existing experiment and wait for cleanup to complete.",
   invalidRequest: "The request is invalid. Check the input and error details.",
   tooLarge:
     "The request is too large. Reduce the configuration size and retry.",
@@ -117,6 +119,8 @@ export const errorZh: Record<keyof typeof errorEn, string> = {
   forbidden: "你没有执行此操作的权限。",
   notFound: "未找到请求的实验或资源。",
   conflict: "资源已变更或已存在，请刷新后重试。",
+  targetBusy: "生产目标 {target} 已被 Canary 实验 {experiment} 占用。同一 target 同时只能有一个未完成清理的实验。\n你可以保留原有实验并选择其他 target；或先停止原有实验，等待清理完成后，再基于此 target 创建新的实验。",
+  experimentNameBusy: "实验名称 {experiment} 已被占用。请选择其他名称；或先停止原有实验，等待清理完成后再使用该名称。",
   invalidRequest: "请求参数无效，请检查输入和错误详情。",
   tooLarge: "请求内容过大，请缩减配置后重试。",
   rateLimited: "请求过于频繁，请稍后重试。",
