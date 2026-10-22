@@ -68,7 +68,8 @@ admin:
 # <value>` instead of the caller's token, so the key stays in the cluster and out
 # of the browser. The value comes from a Secret: see backendSecrets.
 #
-# swissd (model deployment) is not listed here: see swiss and externalSwiss.
+# swissd (model deployment) and the canary API are not listed here: see swiss,
+# externalSwiss and canary.
 backends: []
 
 # swissd, the model deployment backend. Pick one:
@@ -112,6 +113,20 @@ externalSwiss:
     secretName: ""
     key: proxyKey
   profile: ""
+
+# The canary API behind the Canary module, proxied at /api/canary. Left empty,
+# the module stays hidden.
+#
+#   url       its API: http://<service>.<namespace>.svc:<port>/api/canary
+#   proxyKey  a Secret in THIS release's namespace holding the key console sends
+#             as `Authorization: Bearer <key>`, with the signed-in user in
+#             X-Remote-User. It must exist before console starts. Empty
+#             secretName forwards the caller's session token instead.
+canary:
+  url: ""
+  proxyKey:
+    secretName: canary-proxy
+    key: proxyKey
 
 # An existing inference gateway, resolved from the cluster instead of named
 # here: console reads the entrypoint Service, the route to talk to and the key

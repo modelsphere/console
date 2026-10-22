@@ -164,6 +164,42 @@ func TestHelmExternalSwissIsWiredIn(t *testing.T) {
 	}
 }
 
+// The Canary module only shows for a backend named canary at /api/canary
+// (server.handleCapabilities), so the chart owns both and the key's env var.
+func TestHelmCanaryIsWiredIn(t *testing.T) {
+	on := []string{"--set", "canary.url=http://canary.canary-system.svc:8080/api/canary"}
+	c := renderChartConfig(t, on...)
+	c.Server.Auth.JWTSecret = "test"
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	var canary *Backend
+	for i, b := range c.Backends {
+		if b.Name == "canary" {
+			canary = &c.Backends[i]
+		}
+	}
+	if canary == nil || canary.Prefix != "/api/canary" || canary.URL != "http://canary.canary-system.svc:8080/api/canary" || canary.APIKeyEnv != "CANARY_PROXY_KEY" {
+		t.Fatalf("canary backend = %+v, want canary.url at /api/canary with its proxy key", canary)
+	}
+
+	deploy, err := helmTemplate(t, append(on, "--show-only", "templates/deployment.yaml")...)
+	if err != nil {
+		t.Fatalf("helm template: %v\n%s", err, deploy)
+	}
+	if !strings.Contains(deploy, "name: CANARY_PROXY_KEY") || !strings.Contains(deploy, `name: "canary-proxy"`) {
+		t.Fatalf("CANARY_PROXY_KEY is not read from canary.proxyKey:\n%s", deploy)
+	}
+
+	deploy, err = helmTemplate(t, "--show-only", "templates/deployment.yaml")
+	if err != nil {
+		t.Fatalf("helm template: %v\n%s", err, deploy)
+	}
+	if strings.Contains(deploy, "CANARY_PROXY_KEY") {
+		t.Fatalf("CANARY_PROXY_KEY without canary.url would need a Secret nothing uses:\n%s", deploy)
+	}
+}
+
 func TestHelmSwissTwiceIsRefused(t *testing.T) {
 	out, err := helmTemplate(t, "--set", "swiss.enabled=true", "--set", "swiss.rbac.namespaces={models}",
 		"--set", "externalSwiss.url=http://swiss.swiss.svc:80/api")

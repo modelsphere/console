@@ -39,6 +39,20 @@ data:
         apiKeyEnv: SWISS_PROXY_KEY
         {{- end }}
       {{- end }}
+      {{- with .Values.canary }}
+      {{- if .url }}
+      {{- range $.Values.backends }}
+      {{- if eq .name "canary" }}{{ fail "backends names \"canary\" and canary.url adds one; drop the backends entry" }}{{ end }}
+      {{- end }}
+      # The Canary module's API: see the canary section of values.
+      - name: canary
+        prefix: /api/canary
+        url: {{ .url | quote }}
+        {{- if .proxyKey.secretName }}
+        apiKeyEnv: CANARY_PROXY_KEY
+        {{- end }}
+      {{- end }}
+      {{- end }}
       {{- $gw := .Values.playground.gateway }}
       {{- if include "console.gateway" . }}
       # Resolved from the cluster at startup: see the gateway section of values.

@@ -55,6 +55,16 @@ spec:
                   key: {{ $swissd.secretKey | quote }}
             {{- end }}
             {{- end }}
+            {{- with .Values.canary }}
+            {{- if and .url .proxyKey.secretName }}
+            # The canary API's proxy key: see the canary section of values.
+            - name: CANARY_PROXY_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .proxyKey.secretName | quote }}
+                  key: {{ .proxyKey.key | default "proxyKey" | quote }}
+            {{- end }}
+            {{- end }}
             {{- /* Backend credentials, keyed by the env var a backend's apiKeyEnv
                    names. An existing Secret, not one this chart writes. */}}
             {{- range $env, $ref := .Values.backendSecrets }}
