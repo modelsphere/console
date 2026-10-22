@@ -309,6 +309,7 @@ export interface Experiment {
   snapshotError?: string;
   error?: string;
   windows: {
+    traffic?: { production: number; canary: number };
     start: string;
     end: string;
     generation: number;
