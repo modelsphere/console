@@ -240,7 +240,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
 
       {section(
         "advanced",
-        <FloatingField label={f("edits")} hint={f("editsHint")} multiline>
+        <FloatingField label={f("edits")} hint={upgrade ? t("deploy.upgradeValues.hint") : f("editsHint")} multiline>
           <FieldTextarea {...text("edits")} rows={10} spellCheck={false} className="font-mono text-xs" />
         </FloatingField>,
       )}

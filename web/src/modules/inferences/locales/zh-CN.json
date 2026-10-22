@@ -566,6 +566,19 @@
       "keep": "保持 {v}",
       "moveTo": "迁移到 {catalog}"
     },
+    "upgradeValues": {
+      "hint": "当前运行修订的完整 values。只把你修改的项追加为高级覆盖，未改动的 chart 默认值仍可随新版本更新；已有高级覆盖会保留。修改项优先于表单字段，删除的键会以 null 提交。",
+      "retry": "重试读取当前配置",
+      "errors": {
+        "yaml": "请输入一份有效的 YAML 文档，键名不能重复。",
+        "mapping": "values 必须是使用字符串键名的 YAML 映射。",
+        "unsupported": "values 不支持循环引用、非有限数值或其他不支持的 YAML 类型。",
+        "tooLarge": "配置内容过大或嵌套过深，无法安全编辑。",
+        "missing": "没有可编辑的当前 Helm 修订。",
+        "changed": "运行中的修订已经变化，请关闭并重新打开升级面板以载入当前配置。",
+        "unavailable": "无法读取当前修订的配置，或返回的配置不属于此服务，请重试后再生成计划。"
+      }
+    },
     "errors": {
       "required": "必填",
       "format": "只能用小写字母、数字和 -，以字母开头、字母或数字结尾（会用来命名 Kubernetes Service，不能有点）",
