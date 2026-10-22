@@ -32,6 +32,18 @@ Open the [Model Library](/inferences/catalog):
 
 Most fields can stay empty and take the site profile's and chart's defaults.
 
+## Generation recovery
+
+Enable **Routing → Generation recovery** in the deploy or upgrade form. Enter the **Actual model** whose weights are deployed, such as `kimi-k3` or `glm-5.3`. This selects the continuation strategy; it is not the client-facing served name.
+
+- Requires **CART**, **Publish a route**, and `sglang` chart **0.8.11+** or `vllm` chart **0.8.9+**. Composing the plan checks these conditions.
+- **Stream idle timeout** is the time without a chunk after streaming starts; empty uses the chart default.
+- **Resume interrupted responses** is on by default; off detects and logs interruptions without sending a continuation request.
+- **Buffer tool calls** holds arguments until a complete call can be sent together, so interrupted calls can be regenerated.
+- Requests flow through `openresty → continuation gateway → CART → inference instance`. The gateway is deployed with the model release; review and confirm the diff before applying.
+- Unsupported requests, including structured JSON output, pass through. Verify the actual model and engine combination against the [gateway compatibility documentation](https://github.com/modelsphere/continuation_gateway).
+- Upgrades carry the configured recovery settings forward. Turn the switch off, compose and confirm to remove the gateway. Advanced YAML takes precedence over the form; inspect the final plan and diff.
+
 ## 3. Review and confirm
 
 **Compose plan** opens the review:

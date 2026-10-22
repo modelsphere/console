@@ -390,6 +390,28 @@
       "routing": "路由",
       "advanced": "高级"
     },
+    "recovery": {
+      "title": "生成中断恢复",
+      "hint": "部署恢复网关，在流式回答卡住或断开时尝试续写一次。",
+      "requirements": "需要启用 CART、发布路由，并使用 sglang chart 0.8.11+ 或 vllm chart 0.8.9+。高级 YAML 的优先级高于这些字段。",
+      "model": "实际模型",
+      "modelHint": "填写部署权重对应的模型，例如 kimi-k3 或 glm-5.3，用于选择续写策略；不是客户端调用时使用的服务模型名。",
+      "timeout": "流式输出空闲超时（秒）",
+      "timeoutHint": "开始输出后，多久没有收到新片段视为卡顿。留空使用 chart 默认值。",
+      "resume": "执行中断续写",
+      "resumeHint": "关闭时仅检测并记录中断，不发送续写请求。",
+      "buffer": "缓冲工具调用",
+      "bufferHint": "工具调用完整生成后再发送，便于在中断时重新生成。仅在执行续写时生效，调用参数会一次性到达。",
+      "compatibility": "需要验证实际模型与推理引擎的兼容性。结构化 JSON 等不支持的请求会直接透传，不执行恢复。",
+      "errors": {
+        "chart": "生成中断恢复需要 sglang chart 0.8.11+ 或 vllm chart 0.8.9+，请选择支持的 chart 版本。",
+        "cart": "生成中断恢复依赖 CART，请启用 CART 或关闭恢复。",
+        "route": "生成中断恢复需要发布路由，请发布路由或关闭恢复。",
+        "model": "请填写生成中断恢复所用的实际模型，不能仅填写客户端调用时使用的服务模型名。",
+        "timeout": "恢复空闲超时必须是大于零的有限数值。",
+        "engine": "续写引擎必须与所选 sglang 或 vllm chart 一致，请检查高级 YAML。"
+      }
+    },
     "routeOptions": {
       "advanced": "高级路由参数",
       "inherit": "使用引擎默认值",

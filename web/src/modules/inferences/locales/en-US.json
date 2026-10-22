@@ -401,6 +401,28 @@
       "routing": "Routing",
       "advanced": "Advanced"
     },
+    "recovery": {
+      "title": "Generation recovery",
+      "hint": "Deploy a continuation gateway to resume a stalled or interrupted streaming response once.",
+      "requirements": "Requires CART, a published route, and sglang chart 0.8.11+ or vllm chart 0.8.9+. Advanced YAML overrides these fields.",
+      "model": "Actual model",
+      "modelHint": "The model whose weights are deployed, for example kimi-k3 or glm-5.3. This selects the continuation strategy; it is not the client-facing served name.",
+      "timeout": "Stream idle timeout (seconds)",
+      "timeoutHint": "Time without a chunk after streaming starts. Empty keeps the chart default.",
+      "resume": "Resume interrupted responses",
+      "resumeHint": "Off detects and logs interruptions without sending a continuation request.",
+      "buffer": "Buffer tool calls",
+      "bufferHint": "Hold tool-call chunks until complete so interrupted calls can be regenerated. Applies only when resuming is on; arguments arrive together.",
+      "compatibility": "Model and engine compatibility must be verified. Structured JSON responses and other unsupported requests pass through without recovery.",
+      "errors": {
+        "chart": "Generation recovery needs sglang chart 0.8.11+ or vllm chart 0.8.9+. Select a supported chart version.",
+        "cart": "Generation recovery requires CART. Enable CART or turn recovery off.",
+        "route": "Generation recovery requires a published route. Publish a route or turn recovery off.",
+        "model": "Enter the actual model for generation recovery; the client-facing served name is not sufficient.",
+        "timeout": "The recovery idle timeout must be a finite number greater than zero.",
+        "engine": "The continuation engine must match the selected sglang or vllm chart. Check Advanced YAML."
+      }
+    },
     "routeOptions": {
       "advanced": "Advanced route options",
       "inherit": "Use engine default",

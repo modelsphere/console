@@ -46,9 +46,10 @@ export interface DeployFormProps {
   idPrefix: string;
   routeOptions?: RouteOptions | null;
   catalogRoute?: string;
+  recovery?: ReactNode;
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, expanded, onExpand, idPrefix, routeOptions, catalogRoute }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, expanded, onExpand, idPrefix, routeOptions, catalogRoute, recovery }: DeployFormProps) {
   const t = useT();
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
@@ -182,6 +183,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           >
             {sw("cart", f("cart"))}
           </FloatingField>
+          {recovery}
           <RouteExtras form={form} onChange={onChange} options={routeOptions} showRuntime={showRuntime} />
           <FloatingField layout="inline" label={f("slo")} hint={f("sloHint")}>
             {sw("slo", f("slo"))}

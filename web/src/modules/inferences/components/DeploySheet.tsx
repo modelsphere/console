@@ -41,6 +41,8 @@ import { SECTIONS, chartChoice, defaultServiceId, gpuOptions, pipelineState, ser
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
 import { readRouteOptions } from "@/modules/inferences/api";
+import { RecoveryFields } from "./RecoveryFields";
+import { mergeValues, planValues, recoveryError, recoverySettings, withRecovery } from "../recovery";
 
 export type DeployTarget =
   | { kind: "deploy"; model: string; catalog: string; version?: string; variant?: string }
@@ -124,6 +126,11 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const method = installMethod(picked, llm, entry.data?.schema);
 
   const initial = useMemo<Form>(() => (upgrade ? (current.data ? formFromPlan(current.data) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(target.model) }), [upgrade, current.data, target]);
+  const initialRecovery = useMemo(() => recoverySettings(
+    upgrade && current.data ? planValues(current.data) : mergeValues(entry.data?.variant.values, profile.data?.profile?.extra),
+  ), [upgrade, current.data, entry.data, profile.data]);
+  const [recoveryPatch, setRecoveryPatch] = useState<Partial<ReturnType<typeof recoverySettings>>>({});
+  const recovery = { ...initialRecovery, ...recoveryPatch };
   const [form, setForm] = useState<Form>(initial);
   const catalogRoute = upgrade && current.data ? initial.route || initial.serviceId || target.release : undefined;
   const routeOptions = useQuery({
@@ -135,7 +142,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   });
   useEffect(() => setForm(initial), [initial]);
   const [seed, setSeed] = useState<SwitchDefaults | null>(null);
-  const dirty = useDirty({ form, version, variant, moveTo, chartVersion }, { form: seed ? reseed(initial, {}, seed) : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "" });
+  const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: seed ? reseed(initial, {}, seed) : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
 
   const [step, setStep] = useState<"form" | "review">("form");
   const [submitted, setSubmitted] = useState(false);
@@ -172,15 +179,23 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
 
   const change = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
   const compose = useMutation({
-    mutationFn: () =>
-      deployApi.plan(
+    mutationFn: async () => {
+      if (recovery.enabled && recovery.idleTimeout.trim() && (!Number.isFinite(Number(recovery.idleTimeout)) || Number(recovery.idleTimeout) <= 0)) {
+        throw new Error(t("deploy.recovery.errors.timeout"));
+      }
+      const proposed = await deployApi.plan(withRecovery(
         planRequest(
           { ...form, serviceId: form.serviceId || (upgrade ? form.serviceId : defaultServiceId(target.model)) },
           upgrade
             ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release }
             : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined },
         ),
-      ),
+        recovery,
+      ));
+      const invalid = recoveryError(proposed);
+      if (invalid) throw new Error(t(`deploy.recovery.errors.${invalid}`));
+      return proposed;
+    },
     onSuccess: (pl) => {
       setPlan(pl);
       setDiff(null);
@@ -392,6 +407,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               onExpand={(s, o) => setExpanded((e) => ({ ...e, [s]: o }))}
               routeOptions={routeOptions.isSuccess ? routeOptions.data : undefined}
               catalogRoute={catalogRoute}
+              recovery={<RecoveryFields settings={recovery} onChange={(patch) => setRecoveryPatch((previous) => ({ ...previous, ...patch }))} />}
               idPrefix={ID_PREFIX}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />
