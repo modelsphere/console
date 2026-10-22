@@ -100,13 +100,9 @@ The design, with the reasoning behind each decision, is in [`docs/console-design
 | `internal/gateway` | resolves the inference entrypoint from the cluster |
 | `internal/config` | configuration schema and validation |
 | `web/src/shell` | UI shell: login, layout, navigation, route guards |
-| `web/src/modules` | UI modules: `inferences` (模型服务), `canary` (optional LLM experiments), `playground`, `router` (API 密钥), `iam` (users and roles), `docs` (user guide); `swiss` is the swiss UI copy `inferences` builds on |
+| `web/src/modules` | UI modules: `inferences` (模型服务), `playground`, `router` (API 密钥), `iam` (users and roles), `docs` (user guide); `swiss` is the swiss UI copy `inferences` builds on |
 | `helm/console` | the Helm chart and its [install guide](helm/console/README.md) |
 | `examples/console.yaml` | an annotated configuration file |
-
-## Optional Canary experiments
-
-Canary pages ship in this Console image. Configure the `canary` backend and its proxy Secret, then restart Console; no UI tarball, frontend build or overlay image is required. An unconfigured backend or missing read authorization hides Canary navigation. An upstream outage keeps the entry visible and shows the API error. See [the install guide](helm/console/README.md#optional-canary-experiments) and [canaryd integration guide](https://github.com/modelsphere/console-canary-plugin/blob/feat/canary-live-control-plane/deploy/integrations/README.md).
 
 ## Development
 

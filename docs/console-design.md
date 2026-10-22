@@ -697,23 +697,3 @@ requests carry the same headers Global's apiserver sets.
 | P7 | Container management modules, moved over from Rise Global. |
 
 Each phase is independently committable and verifiable.
-
-
-## Optional Canary capability
-
-Canary is bundled frontend code with an independently deployed canaryd backend.
-
-| Boundary | Contract |
-|---|---|
-| Discovery | Authenticated `GET /api/capabilities` returns `{canary: {configured, canRead, canWrite}}`; it never probes upstream or returns URLs/Secrets. |
-| Configuration | A mounted backend named `canary` at `/api/canary` enables the feature; startup configuration changes require a restart. |
-| Authorization | Existing `get` on `backends/canary` grants read UI access. Write controls require backend `get/create/update` plus UI `canary.write` or wildcard. The proxy still enforces every API request. |
-| Shell | Capability loading is separate from login. Menus and overview cards filter optional modules; direct URLs retain an explanatory guard. Write-only entries have the same capability check. |
-| Failure | Unconfigured hides the menu; permission denied hides the menu; an upstream outage retains navigation and the page displays the API failure. Capability-request errors have retry and do not hide unrelated modules. |
-| Packaging | Canary reuses host auth, i18n, QueryClient and UI. Page code is lazy-loaded. Test fixtures have no production entry point. |
-| Compatibility | canaryd remains separate with its SQLite PVC and Operator integration. Compatible backend upgrades need no Console rebuild; UI or incompatible API changes require a matching Console release. |
-
-```text
-backend config + Secret -> restart Console -> capabilities -> navigation / route guard
-canaryd                 -> Console proxy  -> lazy Canary pages
-```
