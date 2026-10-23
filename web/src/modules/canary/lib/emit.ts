@@ -132,10 +132,10 @@ export function emptyDraft(): CanaryDraft {
     traffic: { production: 90, canary: 10 },
     gateway: { name: "", namespace: "" },
     route: {
-      enabled: false,
+      enabled: true,
       productionOpenrestyService: "",
       path: "",
-      forceHeader: { name: "", value: "" },
+      forceHeader: { name: "x-canary", value: "force" },
     },
     proxy: { mode: "PerArm", replicas: 2, sessionAffinity: false },
   };
