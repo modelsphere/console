@@ -93,7 +93,8 @@
     "untracked": "没有纳管计划的 release 不能在这里升级",
     "current": "这已经是当前版本",
     "sloOff": "部署时没有开启 SLO，可在升级时打开",
-    "sloPending": "部署完成后才能查看 SLO"
+    "sloPending": "部署完成后才能查看 SLO",
+    "uninstalling": "这个服务正在卸载，等 Pod 消失后再操作"
   },
   "state": {
     "applied": "已应用",
@@ -152,6 +153,7 @@
     "noRuns": "还没有操作记录",
     "noStore": "这个 swissd 没有数据库，操作记录为空",
     "applyingHint": "部署已开始但还没有记录结果：可能仍在执行，也可能 swissd 在部署中途重启过。",
+    "uninstallingHint": "卸载已开始。Pod 消失之前，这个服务仍会留在列表里。",
     "coldLoad": "冷启动加载需要 20–40 分钟。已调度但未就绪的 Pod 多半是在读取权重，而不是出错。",
     "stalled": "实例超过 1 小时仍未就绪，已超出正常加载时间，请查看实例。",
     "viewInstances": "查看实例"
@@ -161,6 +163,7 @@
       "label": "已应用",
       "failed": "上次部署失败",
       "applying": "部署中",
+      "uninstalling": "卸载中",
       "revision": "版本 {n}",
       "notInstalled": "未安装"
     },

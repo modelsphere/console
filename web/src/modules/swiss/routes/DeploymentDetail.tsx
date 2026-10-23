@@ -38,6 +38,7 @@ import { ReleaseStatus } from "@swiss/components/ReleaseStatus";
 import { SLODialog } from "@swiss/components/SLOCard";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { METHODS } from "@swiss/components/InstallMethod";
+import { isUninstalling } from "@swiss/lib/phase";
 import { cn, timeAgo } from "@swiss/lib/utils";
 
 export function DeploymentDetail() {
@@ -80,7 +81,8 @@ export function DeploymentDetail() {
   if (status.error) return <ErrorState what={release} error={status.error} />;
 
   const s = status.data;
-  const showSLO = s.planStatus?.phase === "applied" && sloEnabled(plan.data);
+  const removing = isUninstalling(s);
+  const showSLO = !removing && s.planStatus?.phase === "applied" && sloEnabled(plan.data);
   const openSLO = () => setSloOpen(true);
 
   return (
@@ -124,16 +126,21 @@ export function DeploymentDetail() {
               <History className="size-4" /> History &amp; rollback
             </Button>
           </Link>
-          {plan.data && (
-            <Link
-              to={`/upgrade/${encodeURIComponent(namespace)}/${encodeURIComponent(release)}`}
-            >
-              {/* The one action that changes the release, so the one filled button. */}
-              <Button size="sm">
-                <CircleArrowUp className="size-4" /> Upgrade
-              </Button>
-            </Link>
-          )}
+          {plan.data &&
+            (removing ? (
+              <span title="This release is uninstalling; wait until its pods are gone" className="inline-flex cursor-not-allowed">
+                <Button size="sm" disabled>
+                  <CircleArrowUp className="size-4" /> Upgrade
+                </Button>
+              </span>
+            ) : (
+              <Link to={`/upgrade/${encodeURIComponent(namespace)}/${encodeURIComponent(release)}`}>
+                {/* The one action that changes the release, so the one filled button. */}
+                <Button size="sm">
+                  <CircleArrowUp className="size-4" /> Upgrade
+                </Button>
+              </Link>
+            ))}
         </div>
       </div>
 
@@ -186,7 +193,7 @@ export function DeploymentDetail() {
       )}
 
       {cluster.data?.allowDeploy && (
-        <Uninstall namespace={namespace} release={release} exists={s.exists} />
+        <Uninstall namespace={namespace} release={release} exists={s.exists} uninstalling={removing} />
       )}
     </div>
   );
@@ -200,7 +207,7 @@ export function DeploymentDetail() {
 function InstallStatus({ status, objects }: { status: Status; objects?: ObjectResult[] }) {
   const p: PlanStatus | undefined = status.planStatus;
 
-  if (!status.exists && !p) {
+  if (!status.exists && !p && !isUninstalling(status)) {
     return (
       <Card>
         <CardContent className="p-4 text-sm text-muted-foreground">
@@ -219,7 +226,7 @@ function InstallStatus({ status, objects }: { status: Status; objects?: ObjectRe
   const updated = p?.updatedAt ?? p?.startedAt;
   const summary = [
     p?.action,
-    status.exists ? `revision ${status.revision}` : "not installed",
+    isUninstalling(status) ? "uninstalling" : status.exists ? `revision ${status.revision}` : "not installed",
     updated && `updated ${timeAgo(updated)}`,
   ].filter(Boolean);
 
@@ -231,8 +238,12 @@ function InstallStatus({ status, objects }: { status: Status; objects?: ObjectRe
           <p className="mt-1 text-sm text-muted-foreground">{summary.join(" · ")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          {p && <PhaseBadge phase={p.phase} />}
-          {status.helmStatus && <Badge variant="outline">helm {status.helmStatus}</Badge>}
+          {isUninstalling(status) ? (
+            <Badge variant="warning">uninstalling</Badge>
+          ) : (
+            p && <PhaseBadge phase={p.phase} />
+          )}
+          {status.helmStatus && status.helmStatus !== "uninstalling" && <Badge variant="outline">helm {status.helmStatus}</Badge>}
           {status.backend && (
             <Badge variant="muted" title={`install method: ${METHODS[status.backend].hint}`}>
               {METHODS[status.backend].label}
@@ -248,6 +259,9 @@ function InstallStatus({ status, objects }: { status: Status; objects?: ObjectRe
         </ol>
 
         {p?.error && <Callout tone="bad">{p.error}</Callout>}
+        {isUninstalling(status) && (
+          <Callout tone="warn">Uninstall has started. This release stays listed until its pods are gone.</Callout>
+        )}
         {p?.phase === "applying" && (
           <Callout tone="warn">
             An apply was started and never recorded a result. It may still be running, or
@@ -298,6 +312,7 @@ interface Step {
 
 function appliedStep(s: Status, p?: PlanStatus): Step {
   const label = "Applied";
+  if (isUninstalling(s)) return { label, state: "wait", detail: "uninstalling" };
   if (p?.phase === "failed" || s.helmStatus === "failed") return { label, state: "bad", detail: "the last apply failed" };
   if (p?.phase === "applying" || s.helmStatus?.startsWith("pending"))
     return { label, state: "wait", detail: s.helmStatus ?? "applying" };
@@ -401,10 +416,12 @@ function Uninstall({
   namespace,
   release,
   exists,
+  uninstalling,
 }: {
   namespace: string;
   release: string;
   exists: boolean;
+  uninstalling: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
@@ -432,15 +449,19 @@ function Uninstall({
       <CardHeader>
         <CardTitle className="text-base">Uninstall</CardTitle>
         <p className="text-sm text-muted-foreground">
-          {exists
-            ? "Removes this release from the cluster. Reloading the weights afterwards takes 20–40 minutes."
-            : "There is no live release to remove."}
+          {uninstalling
+            ? "This release is uninstalling; wait until its pods are gone."
+            : exists
+              ? "Removes this release from the cluster. Reloading the weights afterwards takes 20–40 minutes."
+              : "There is no live release to remove."}
         </p>
       </CardHeader>
       <CardContent>
-        <Button variant="destructive" className="w-full" disabled={!exists} onClick={() => setOpen(true)}>
-          <Trash2 className="size-4" /> Uninstall…
-        </Button>
+        <span title={uninstalling ? "This release is uninstalling; wait until its pods are gone" : undefined} className="block">
+          <Button variant="destructive" className="w-full" disabled={!exists || uninstalling} onClick={() => setOpen(true)}>
+            <Trash2 className="size-4" /> Uninstall…
+          </Button>
+        </span>
       </CardContent>
 
       <Dialog
@@ -534,6 +555,7 @@ function sloEnabled(plan?: Plan): boolean {
 }
 
 function PhaseBadge({ phase }: { phase: string }) {
+  if (isUninstalling({ phase })) return <Badge variant="warning">uninstalling</Badge>;
   if (phase === "applied") return <Badge variant="success">applied</Badge>;
   if (phase === "failed") return <Badge variant="destructive">failed</Badge>;
   if (phase === "applying") return <Badge variant="warning">applying</Badge>;

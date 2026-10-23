@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "@swiss/lib/host";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Undo2 } from "lucide-react";
 import { api, type Revision, type Run } from "@swiss/lib/api";
+import { isUninstalling } from "@swiss/lib/phase";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { Card } from "@swiss/components/ui/card";
@@ -47,6 +48,12 @@ export function Runs() {
     queryFn: () => api.revisions(namespace, release),
     enabled: oneRelease,
   });
+  const status = useQuery({
+    queryKey: ["status", namespace, release],
+    queryFn: () => api.status(namespace, release),
+    enabled: oneRelease,
+  });
+  const removing = !!status.data && isUninstalling(status.data);
 
   const setFilter = (k: string, v: string) => {
     const next = new URLSearchParams(params);
@@ -166,6 +173,7 @@ export function Runs() {
           revisions={revisions}
           pending={revs.isPending}
           error={revs.error}
+          uninstalling={removing}
         />
       )}
     </div>
@@ -181,12 +189,14 @@ function RevisionsTab({
   revisions,
   pending,
   error,
+  uninstalling,
 }: {
   namespace: string;
   release: string;
   revisions: Revision[];
   pending: boolean;
   error: unknown;
+  uninstalling: boolean;
 }) {
   if (error) return <ErrorState what="the revisions" error={error} />;
   if (pending) return <Loading what="the revisions" />;
@@ -222,6 +232,7 @@ function RevisionsTab({
                 revision={r}
                 namespace={namespace}
                 release={release}
+                uninstalling={uninstalling}
               />
             ))}
           </TableBody>
@@ -328,10 +339,12 @@ function RevisionRow({
   revision,
   namespace,
   release,
+  uninstalling,
 }: {
   revision: Revision;
   namespace: string;
   release: string;
+  uninstalling: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -359,7 +372,7 @@ function RevisionRow({
           {revision.current ? (
             <Badge variant="success">live</Badge>
           ) : (
-            <RollBack namespace={namespace} release={release} to={revision.revision} />
+            <RollBack namespace={namespace} release={release} to={revision.revision} disabled={uninstalling} />
           )}
         </TableCell>
       </TableRow>
@@ -387,19 +400,31 @@ function RollBack({
   namespace,
   release,
   to,
+  disabled,
 }: {
   namespace: string;
   release: string;
   to: number;
+  disabled?: boolean;
 }) {
+  const button = (
+    <Button size="sm" variant="outline" disabled={disabled}>
+      <Undo2 className="size-3.5" /> Roll back
+    </Button>
+  );
+  if (disabled) {
+    return (
+      <span title="This release is uninstalling; wait until its pods are gone" className="inline-flex cursor-not-allowed" onClick={(e) => e.stopPropagation()}>
+        {button}
+      </span>
+    );
+  }
   return (
     <Link
       to={`/upgrade/${encodeURIComponent(namespace)}/${encodeURIComponent(release)}?rollback=${to}`}
       onClick={(e) => e.stopPropagation()}
     >
-      <Button size="sm" variant="outline">
-        <Undo2 className="size-3.5" /> Roll back
-      </Button>
+      {button}
     </Link>
   );
 }

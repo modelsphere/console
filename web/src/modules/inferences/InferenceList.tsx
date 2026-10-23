@@ -15,6 +15,7 @@ import {
 import { Bot, Plus } from "lucide-react";
 import { formatDateTime, useModulePath } from "@/shell";
 import { api, type Deployment } from "@swiss/lib/api";
+import { isUninstalling } from "@swiss/lib/phase";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, modelLine, rowState } from "@/modules/inferences/lib";
 import { StatusDot } from "@/modules/inferences/components/StatusDot";
@@ -72,7 +73,7 @@ export function InferenceList() {
       render: (d) => (d.route ? <span className="font-mono text-xs">/{d.route}/</span> : <span className="text-muted-foreground">-</span>),
     },
     { key: "chart", title: t("list.columns.chart"), width: 180, render: (d) => <span className="text-sm">{d.chart || "-"}</span> },
-    { key: "revision", title: t("list.columns.revision"), width: 70, align: "right", render: (d) => <span className="tabular-nums">{d.revision}</span> },
+    { key: "revision", title: t("list.columns.revision"), width: 70, align: "right", render: (d) => <span className="tabular-nums">{d.revision ?? "-"}</span> },
     {
       key: "updated",
       title: t("list.columns.updated"),
@@ -97,19 +98,19 @@ export function InferenceList() {
     },
   ];
 
-  const writeBlocked = (d: Deployment): boolean | string =>
-    readOnly ? t("disabled.readOnly") : !d.model ? t("disabled.untracked") : false;
+  const writeBlocked = (d: Deployment, untracked = false): boolean | string =>
+    readOnly ? t("disabled.readOnly") : isUninstalling(d) ? t("disabled.uninstalling") : untracked && !d.model ? t("disabled.untracked") : false;
 
   const rowActions: ResourceRowAction<Row>[] = [
     { key: "detail", label: t("actions.detail"), onClick: open },
-    { key: "upgrade", label: t("actions.upgrade"), onClick: (d) => setUpgrading({ kind: "upgrade", namespace: d.namespace, release: d.release }), disabled: writeBlocked },
+    { key: "upgrade", label: t("actions.upgrade"), onClick: (d) => setUpgrading({ kind: "upgrade", namespace: d.namespace, release: d.release }), disabled: (d) => writeBlocked(d, true) },
     { key: "versions", label: t("actions.versions"), onClick: (d) => navigate(p(detailPath(d.release, d.namespace, "versions"))) },
     {
       key: "uninstall",
       label: t("actions.uninstall"),
       danger: true,
       onClick: (d) => setUninstalling({ namespace: d.namespace, release: d.release }),
-      disabled: () => (readOnly ? t("disabled.readOnly") : false),
+      disabled: (d) => writeBlocked(d),
     },
   ];
 

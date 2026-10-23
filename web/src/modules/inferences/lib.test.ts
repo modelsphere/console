@@ -82,6 +82,36 @@ describe("releaseState", () => {
   });
 });
 
+describe("uninstalling wins over the states a disappearing release would otherwise show", () => {
+  const rows: { name: string; d: Parameters<typeof rowState>[0]; key: string }[] = [
+    { name: "a row phase of uninstalling", d: { phase: "uninstalling" }, key: "uninstalling" },
+    { name: "a row phase of uninstalling ahead of helm failed", d: { phase: "uninstalling", status: "failed" }, key: "uninstalling" },
+    { name: "a row phase of uninstalling ahead of helm pending", d: { phase: "uninstalling", status: "pending-upgrade" }, key: "uninstalling" },
+    { name: "helm's own uninstalling status", d: { status: "uninstalling" }, key: "uninstalling" },
+    { name: "helm's uninstalling status ahead of a failed plan", d: { status: "uninstalling", phase: "failed" }, key: "uninstalling" },
+    { name: "helm's uninstalling status ahead of an applying plan", d: { status: "uninstalling", phase: "applying" }, key: "uninstalling" },
+  ];
+  for (const tc of rows) {
+    it(`reads ${tc.name} as uninstalling`, () => {
+      expect(rowState(tc.d)).toEqual({ key: tc.key, tone: "warning" });
+    });
+  }
+
+  const releases: { name: string; s: Partial<ReleaseStatus>; key: string }[] = [
+    { name: "planStatus.phase uninstalling with the helm release already gone", s: { exists: false, ready: 0, total: 0, planStatus: { phase: "uninstalling" } }, key: "uninstalling" },
+    { name: "planStatus.phase uninstalling ahead of a failed helm status", s: { exists: false, ready: 0, total: 0, helmStatus: "failed", planStatus: { phase: "uninstalling" } }, key: "uninstalling" },
+    { name: "planStatus.phase uninstalling ahead of an applying helm status", s: { helmStatus: "pending-upgrade", planStatus: { phase: "uninstalling" } }, key: "uninstalling" },
+    { name: "llmservice.phase uninstalling while pods are still ready", s: { ready: 1, total: 1, llmservice: { phase: "uninstalling" } }, key: "uninstalling" },
+    { name: "llmservice.phase uninstalling ahead of a failed plan and no pods", s: { exists: false, ready: 0, total: 0, planStatus: { phase: "failed" }, llmservice: { phase: "uninstalling" } }, key: "uninstalling" },
+    { name: "helm status uninstalling ahead of no pods", s: { exists: true, ready: 0, total: 0, helmStatus: "uninstalling" }, key: "uninstalling" },
+  ];
+  for (const tc of releases) {
+    it(`reads ${tc.name} as uninstalling`, () => {
+      expect(releaseState(status(tc.s))).toEqual({ key: tc.key, tone: "warning" });
+    });
+  }
+});
+
 describe("tabs", () => {
   it("drops the plan when the release has none", () => {
     expect(visibleTabs({ plan: false })).toEqual(["overview", "instances", "logs", "events", "resources", "check", "versions", "runs"]);
@@ -142,6 +172,10 @@ describe("installSteps", () => {
   it("marks everything off for a release that is not installed", () => {
     const steps = installSteps(status({ exists: false, total: 0, ready: 0 }), {}, {});
     expect(steps.map((s) => s.state)).toEqual(["off", "off", "off", "off"]);
+  });
+  it("reports uninstalling on the applied step while pods are still leaving", () => {
+    const steps = installSteps(status({ exists: false, total: 0, ready: 0, helmStatus: "failed", planStatus: { phase: "uninstalling" } }), {}, {});
+    expect(steps[0]).toEqual({ key: "applied", state: "wait", detail: "uninstalling" });
   });
   it("reports a routed release with its backends and route", () => {
     const steps = installSteps(status(), route({ ready: true }) as never, {});

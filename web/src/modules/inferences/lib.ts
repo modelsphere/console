@@ -11,6 +11,7 @@ import type {
   Revision,
   Run,
 } from "@swiss/lib/api";
+import { isUninstalling } from "@swiss/lib/phase";
 
 export type Tone = "success" | "info" | "warning" | "error" | "muted";
 
@@ -22,15 +23,18 @@ export interface State {
 
 // A list row has no pod counts: those cost a status read per row.
 export function rowState(d: Pick<Deployment, "status" | "phase">): State {
+  // Ahead of failed and applying: a helm row can already have no release status
+  // while its pods are still terminating.
+  if (isUninstalling(d)) return { key: "uninstalling", tone: "warning" };
   if (d.phase === "failed" || d.status === "failed") return { key: "failed", tone: "error" };
   if (d.phase === "applying" || d.status?.startsWith("pending")) return { key: "applying", tone: "info" };
-  if (d.status === "uninstalling") return { key: "uninstalling", tone: "warning" };
   if (d.status === "deployed") return { key: "applied", tone: "success" };
   if (!d.status) return { key: "unknown", tone: "muted" };
   return { key: "other", tone: "muted", raw: d.status };
 }
 
 export function releaseState(s: ReleaseStatus): State {
+  if (isUninstalling(s)) return { key: "uninstalling", tone: "warning" };
   const p = s.planStatus;
   if (!s.exists && !p) return { key: "notInstalled", tone: "muted" };
   if (p?.phase === "failed" || s.helmStatus === "failed") return { key: "failed", tone: "error" };
@@ -133,6 +137,7 @@ export function installSteps(
 
 function appliedStep(s: ReleaseStatus, p?: PlanStatus): Step {
   const key = "applied";
+  if (isUninstalling(s)) return { key, state: "wait", detail: "uninstalling" };
   if (p?.phase === "failed" || s.helmStatus === "failed") return { key, state: "bad", detail: "failed" };
   if (p?.phase === "applying" || s.helmStatus?.startsWith("pending")) return { key, state: "wait", detail: "applying" };
   if (s.exists) return { key, state: "ok", detail: "revision", params: { n: s.revision } };
