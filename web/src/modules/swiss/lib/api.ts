@@ -70,7 +70,8 @@ export interface Deployment {
   namespace: string;
   chart?: string;
   status?: string;
-  revision: number;
+  // Missing while a helm release is uninstalling: the release record is already gone.
+  revision?: number;
   updated?: string;
   model?: string;
   variant?: string;
@@ -79,6 +80,8 @@ export interface Deployment {
   // longer lists it.
   catalog?: string;
   version?: string;
+  // "uninstalling" after helm has dropped the release but pods remain, or while
+  // an LLMService has a deletionTimestamp. The row leaves the list once they are gone.
   phase?: string;
   drift?: string;
   // The path the entrypoint publishes this release on. Absent when the plan
@@ -650,6 +653,9 @@ export interface ReleaseStatus {
   planStatus?: PlanStatus;
   // Set when swiss manages the release; it never changes after install.
   backend?: ApplyWith;
+  // Present on the llmsvc backend. phase is "uninstalling" while the LLMService
+  // has a deletionTimestamp. Absent on helm and on an older swissd.
+  llmservice?: { phase?: string };
 }
 
 export interface ObjectRef {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CatalogResponse, Run } from "@swiss/lib/api";
-import { HISTORY_LIMIT, recordedTimeline, supportedTotals, timelineTotals } from "./dashboard-lib";
+import type { CatalogResponse, Deployment, ReleaseStatus, Run } from "@swiss/lib/api";
+import { currentState, healthBucket, HISTORY_LIMIT, recordedTimeline, supportedTotals, timelineTotals } from "./dashboard-lib";
 
 const from = "2026-10-10T12:15:00.000Z";
 const to = "2026-10-11T12:15:00.000Z";
@@ -50,6 +50,26 @@ describe("supported catalog totals", () => {
     };
     expect(supportedTotals([catalog, other])).toEqual({ models: 2, recipes: 4 });
     expect(supportedTotals([catalog, moved])).toEqual({ models: 1, recipes: 4 });
+  });
+});
+
+describe("service health while uninstalling", () => {
+  const row = (over: Partial<Deployment> = {}): Deployment => ({ release: "q", namespace: "models", revision: 1, ...over });
+  const live = (over: Partial<ReleaseStatus> = {}): ReleaseStatus => ({
+    release: "q",
+    namespace: "models",
+    exists: true,
+    revision: 1,
+    pods: [],
+    ready: 0,
+    total: 0,
+    ...over,
+  });
+
+  it("counts an uninstalling release as degraded, from the list row or the live status", () => {
+    expect(healthBucket(currentState(row({ phase: "uninstalling", status: "failed" })))).toBe("degraded");
+    expect(healthBucket(currentState(row({ status: "deployed", phase: "applied" }), { data: live({ exists: false, helmStatus: "failed", planStatus: { phase: "uninstalling" } }) }))).toBe("degraded");
+    expect(healthBucket(currentState(row({ status: "deployed" }), { data: live({ ready: 1, total: 1, llmservice: { phase: "uninstalling" } }) }))).toBe("degraded");
   });
 });
 

@@ -104,7 +104,8 @@
     "untracked": "A release with no plan beside it cannot be upgraded here",
     "current": "This is already the current revision",
     "sloOff": "SLO was not turned on at deploy; turn it on in an upgrade",
-    "sloPending": "SLO shows once the deploy has applied"
+    "sloPending": "SLO shows once the deploy has applied",
+    "uninstalling": "This release is uninstalling; wait until its pods are gone"
   },
   "state": {
     "applied": "Applied",
@@ -163,6 +164,7 @@
     "noRuns": "No activity yet",
     "noStore": "This swissd has no database, so the activity log is empty",
     "applyingHint": "An apply was started and never recorded a result. It may still be running, or swissd may have been restarted mid-apply.",
+    "uninstallingHint": "Uninstall has started. This service stays listed until its pods are gone.",
     "coldLoad": "A cold load takes 20–40 minutes. A pod that is scheduled and not ready has most likely been reading weights, not failing.",
     "stalled": "A pod has not been ready for over an hour, well past a normal load. Check the instances.",
     "viewInstances": "View instances"
@@ -172,6 +174,7 @@
       "label": "Applied",
       "failed": "The last apply failed",
       "applying": "Applying",
+      "uninstalling": "Uninstalling",
       "revision": "Revision {n}",
       "notInstalled": "Not installed"
     },

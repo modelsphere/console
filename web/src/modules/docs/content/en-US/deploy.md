@@ -77,6 +77,7 @@ From a row's actions in the list, or the top of the detail page:
 - **Roll back**: pick a revision under Versions to restore its plan as it was. To change settings, upgrade instead.
 - **Edit SLO**: the latency and throughput targets and the replica bounds the scaler works with. Services deployed without SLO need it switched on in an upgrade first.
 - **Uninstall**: stops the service and deletes its pods; the activity log is kept. Reinstalling loads the weights again.
+- While pods are still terminating the service stays listed as **Uninstalling**; upgrade, roll back, SLO edits and uninstall stay disabled until it disappears.
 
 "Behind catalog" in the list means the catalog has a newer version to upgrade to; "Untracked" means the release was not deployed by Swiss and cannot be upgraded here.
 

@@ -14,11 +14,13 @@ const VARIANT: Record<Tone, StatusVariant> = {
 const label = (state: State, t: TFn, suffix?: string) =>
   [t(`state.${state.key}`, { raw: state.raw ?? "" }), suffix].filter(Boolean).join(" ");
 
+const inFlight = (key: string) => key === "applying" || key === "uninstalling";
+
 export function statusOf(state: State, t: TFn, suffix?: string) {
-  return { tone: VARIANT[state.tone], label: label(state, t, suffix), animated: state.key === "applying" };
+  return { tone: VARIANT[state.tone], label: label(state, t, suffix), animated: inFlight(state.key) };
 }
 
 export function StatusDot({ state, suffix }: { state: State; suffix?: string }) {
   const t = useT();
-  return <StatusIndicator variant={VARIANT[state.tone]} animated={state.key === "applying"} label={label(state, t, suffix)} />;
+  return <StatusIndicator variant={VARIANT[state.tone]} animated={inFlight(state.key)} label={label(state, t, suffix)} />;
 }

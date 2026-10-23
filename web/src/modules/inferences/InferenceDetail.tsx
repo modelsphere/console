@@ -5,6 +5,7 @@ import { Alert, AlertDescription, DetailHeader, PanelTabs, SectionCard, Skeleton
 import { ArrowLeft, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api } from "@swiss/lib/api";
+import { isUninstalling } from "@swiss/lib/phase";
 import { useReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { ReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { Endpoint } from "@swiss/components/Endpoint";
@@ -100,11 +101,13 @@ export function InferenceDetail() {
   }
 
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
+  const removing = isUninstalling(s);
+  const blockedWrite = readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
   const blocked = sloBlocked(s, plan.data);
-  const sloOpen = editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed");
+  const sloOpen = !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
   const closeSLO = () => {
     setEditingSLO(false);
     if (!sloSetup) return;
@@ -127,20 +130,20 @@ export function InferenceDetail() {
             {
               key: "slo",
               label: t("actions.slo"),
-              disabled: blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false,
+              disabled: blockedWrite || (blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
               onClick: () => setEditingSLO(true),
             },
             {
               key: "upgrade",
               label: t("actions.upgrade"),
-              disabled: readOnly ? t("disabled.readOnly") : !plan.data ? t("disabled.untracked") : false,
+              disabled: blockedWrite || (!plan.data ? t("disabled.untracked") : false),
               onClick: () => setUpgrading(true),
             },
             {
               key: "uninstall",
               label: t("actions.uninstall"),
               danger: true,
-              disabled: readOnly ? t("disabled.readOnly") : !s.exists,
+              disabled: blockedWrite || !s.exists,
               onClick: () => setUninstalling(true),
             },
           ]}
@@ -173,7 +176,7 @@ export function InferenceDetail() {
           <Endpoint namespace={namespace} release={release} status={s} access={false} />
         </TabsContent>
         <TabsContent value="versions">
-          <Versions namespace={namespace} release={release} canRollBack={!readOnly && !!plan.data} />
+          <Versions namespace={namespace} release={release} rollbackBlocked={removing ? t("disabled.uninstalling") : readOnly || !plan.data ? t("disabled.readOnly") : false} />
         </TabsContent>
         <TabsContent value="runs">
           <Runs namespace={namespace} release={release} />
@@ -187,7 +190,7 @@ export function InferenceDetail() {
         )}
       </Tabs>
 
-      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
+      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
       <DeploySheet target={upgrading ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
         target={uninstalling ? { namespace, release } : null}

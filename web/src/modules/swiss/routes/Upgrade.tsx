@@ -35,6 +35,7 @@ import { Dialog } from "@swiss/components/ui/dialog";
 import { gpuCount, unlistedProducts, vendorProducts } from "@swiss/lib/gpu";
 import { Button } from "@swiss/components/ui/button";
 import { comparison, formatUplift, reportLink, sharedVersion, variantKind, workloadSummary } from "@swiss/lib/catalog";
+import { isUninstalling } from "@swiss/lib/phase";
 
 export function Upgrade() {
   const { namespace = "", release = "" } = useParams();
@@ -67,6 +68,11 @@ export function Upgrade() {
     staleTime: Infinity,
   });
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
+  const live = useQuery({
+    queryKey: ["status", namespace, release],
+    queryFn: () => api.status(namespace, release),
+    refetchInterval: 15_000,
+  });
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes });
   const catalogs = cluster.data?.catalogs ?? [];
   const recorded = current.data?.source;
@@ -176,6 +182,19 @@ export function Upgrade() {
     if (archived.error) {
       return <ErrorState what={`the plan for revision ${rollbackTo}`} error={archived.error} />;
     }
+  }
+  if (live.data && isUninstalling(live.data)) {
+    return (
+      <div className="space-y-4">
+        <Back namespace={namespace} />
+        <Card>
+          <CardContent className="flex items-start gap-3 p-4 text-sm">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+            <div>This release is uninstalling; wait until its pods are gone.</div>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   const cur = current.data;
