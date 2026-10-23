@@ -72,6 +72,16 @@ export interface Me {
   authDisabled?: boolean;
 }
 
+export interface BackendCapability {
+  configured: boolean;
+  canRead: boolean;
+  canWrite: boolean;
+}
+
+export interface Capabilities {
+  canary: BackendCapability;
+}
+
 export interface ChangePasswordInput {
   oldPassword: string;
   newPassword: string;
@@ -94,6 +104,7 @@ export async function login(username: string, password: string): Promise<void> {
 }
 
 export const api = {
+  capabilities: () => request<Capabilities>("GET", "/api/capabilities"),
   me: () => request<Me>("GET", "/api/me"),
   changePassword: (passwords: ChangePasswordInput) =>
     request<{ status: string }>("POST", "/api/me/password", passwords),
