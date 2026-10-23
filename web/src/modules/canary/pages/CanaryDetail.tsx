@@ -23,6 +23,7 @@ import type { LLMCanary, Experiment } from "../types";
 import { phaseStatus } from "../components/PhaseBadge";
 import { TrafficBar } from "../components/TrafficBar";
 import { TrafficEditor } from "../components/TrafficEditor";
+import { CanaryCondition } from "../components/CanaryCondition";
 
 import { MetricsPanel } from "../components/MetricsPanel";
 
@@ -281,41 +282,11 @@ export function CanaryDetail({
             <SectionCard title={t("detail.conditions")}>
               <div className="grid gap-2">
                 {(canary.status?.conditions ?? []).map((c) => (
-                  <div
+                  <CanaryCondition
                     key={c.type}
-                    className="rounded-lg bg-muted/60 px-3 py-2"
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge
-                        variant={
-                          c.status === "True"
-                            ? "success"
-                            : c.status === "False"
-                              ? "destructive"
-                              : "secondary"
-                        }
-                      >
-                        {c.status}
-                      </Badge>
-                      <span className="font-medium">{c.type}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {c.reason}
-                      </span>
-                    </div>
-                    {c.message ? (
-                      c.status === "True" ? (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {c.message}
-                        </p>
-                      ) : (
-                        <ErrorNotice
-                          error={c.message}
-                          fallback="condition"
-                          className="mt-1 text-xs text-muted-foreground"
-                        />
-                      )
-                    ) : null}
-                  </div>
+                    condition={c}
+                    phase={canary.status?.phase}
+                  />
                 ))}
                 {canary.spec.guardrails ? (
                   <p className="text-xs text-muted-foreground">

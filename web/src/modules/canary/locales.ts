@@ -125,6 +125,8 @@ export const en = {
     valid: "Client-side CRD checks passed.",
   },
   detail: {
+    waitingArms: "Waiting for all experiment groups to become ready. Refreshing automatically.",
+    waitingProxy: "Experiment groups are ready. Waiting for the proxy to become ready. Refreshing automatically.",
     historical: "Historical",
     historicalStatus: "Last observed Kubernetes status",
     historicalHint:
@@ -273,6 +275,8 @@ export const zh = {
     valid: "客户端 CRD 规则已通过。",
   },
   detail: {
+    waitingArms: "正在等待各实验组就绪，页面会自动刷新。",
+    waitingProxy: "实验组已就绪，正在等待代理就绪，页面会自动刷新。",
     historical: "历史",
     historicalStatus: "最后观测到的 Kubernetes 状态",
     historicalHint:
