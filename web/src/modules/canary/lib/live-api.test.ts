@@ -4,6 +4,30 @@ import { registerCanaryLocales } from "../locales";
 import i18next from "i18next";
 
 describe("live transport", () => {
+  it("loads available catalogs and reads models from the named catalog through authenticated Swiss transport", async () => {
+    const catalogs = [{ name: "upstreamv2", schema: "v2", default: true }, { name: "inner", schema: "v2" }];
+    const fetcher = vi.fn(async (path: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify(String(path).endsWith("/cluster") ? { catalogs } : { schema: "v2", name: "inner & test", models: [] })));
+    const api = createLiveApi(fetcher, "/custom/canary");
+    expect(await api.catalog.list()).toEqual(catalogs);
+    expect(await api.catalog.index("inner & test")).toMatchObject({ name: "inner & test", models: [] });
+    expect(fetcher.mock.calls.map(([path]) => String(path))).toEqual([
+      "/api/deploy/cluster", "/api/deploy/catalog?catalog=inner+%26+test",
+    ]);
+    expect(fetcher.mock.calls.every(([, init]) => init?.credentials === "same-origin")).toBe(true);
+  });
+  it("preserves independently selected arm catalogs through prepare", async () => {
+    const fetcher = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => new Response("{}"));
+    const { emptyDraft } = await import("./emit");
+    const draft = emptyDraft();
+    draft.arms = ["upstreamv2", "inner"].map((catalog, i) => ({
+      name: `arm-${i}`, replicaCount: 1, layers: {}, chart: { name: "sglang", version: "0.8.0" },
+      source: { catalog, model: "same-model", variant: "same-variant", version: "1.0.0" },
+    }));
+    await createLiveApi(fetcher).experiments.prepare(draft);
+    const payload = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
+    expect(payload.arms.map((a: { source: { catalog: string } }) => a.source.catalog)).toEqual(["upstreamv2", "inner"]);
+  });
   it("patches only weights and the expected generation through authenticated transport", async () => {
     const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response("{}"));
     await createLiveApi(fetcher).experiments.updateTraffic("a/b", { production: 90, canary: 10, expectedGeneration: 4 });
