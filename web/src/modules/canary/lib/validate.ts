@@ -21,7 +21,6 @@ export const WIZARD_STEPS = [
   "target",
   "arms",
   "traffic",
-  "gateway",
   "route",
   "review",
 ] as const;
@@ -215,13 +214,10 @@ export function wizardStepComplete(
         weightIssues(draft.traffic.production, draft.traffic.canary).length ===
         0
       );
-    case "gateway":
-      return (
-        draft.gateway.name.trim().length > 0 &&
-        dnsLabel(draft.gateway.namespace)
-      );
     case "route":
       return (
+        draft.gateway.name.trim().length > 0 &&
+        dnsLabel(draft.gateway.namespace) &&
         ROUTE_PATH.test(draft.route.path ?? "") &&
         dnsLabel(draft.route.productionOpenrestyService)
       );

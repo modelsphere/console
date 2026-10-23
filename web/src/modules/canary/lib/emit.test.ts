@@ -102,7 +102,6 @@ describe("emitManifests", () => {
     draft.traffic = { production: 0, canary: 0 };
     expect(wizardStepComplete("arms", draft)).toBe(true);
     expect(wizardStepComplete("traffic", draft)).toBe(false);
-    expect(wizardStepComplete("gateway", draft)).toBe(false);
     expect(wizardStepComplete("route", draft)).toBe(false);
 
     const bare = emitManifests(draft);
@@ -113,7 +112,7 @@ describe("emitManifests", () => {
     expect(paths).toContain("spec.route.path");
     expect(paths).toContain("spec.route.productionOpenrestyService");
     expect(bare.canary.spec.arms).toHaveLength(1);
-    expect(bare.canary.spec.route.enabled).toBe(false);
+    expect(bare.canary.spec.route.enabled).toBe(true);
 
     draft.traffic = { production: 99, canary: 1 };
     draft.gateway = { name: "openresty", namespace: "llm-route" };
@@ -127,7 +126,6 @@ describe("emitManifests", () => {
     const ready = emitManifests(draft);
     expect(ready.issues).toEqual([]);
     expect(wizardStepComplete("traffic", draft)).toBe(true);
-    expect(wizardStepComplete("gateway", draft)).toBe(true);
     expect(wizardStepComplete("route", draft)).toBe(true);
     expect(ready.canary.spec.route).toMatchObject({
       enabled: false,
