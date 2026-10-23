@@ -15,7 +15,7 @@ export interface RouteOptions {
 
 const common = new Set([
   "adaptive_cc", "adaptive_cc_min", "adaptive_cc_min_frac", "adaptive_cc_init", "adaptive_cc_init_frac", "adaptive_cc_hold_when_idle", "adaptive_cc_use_ttft",
-  "tps_limit_tps", "ttft_limit_ms", "default_max", "max_more_tries", "cross_tier_fallback", "health_probe_path", "session_affinity_enabled", "expose_routed_peer", "bodylog_default_pct",
+  "default_max", "max_more_tries", "cross_tier_fallback", "health_probe_path", "session_affinity_enabled", "expose_routed_peer", "bodylog_default_pct",
 ]);
 const additions: Directive[] = [
   { key: "adaptive_cc", label: "Adaptive concurrency", group: "Adaptive concurrency", kind: "boolean", fallback: "", detail: "Adjust the pool limit using measured performance." },
@@ -23,8 +23,6 @@ const additions: Directive[] = [
   { key: "adaptive_cc_init", label: "Start point", group: "Adaptive concurrency", kind: "number", fallback: "", detail: "Absolute initial pool limit.", needsAdaptive: true },
   { key: "adaptive_cc_init_frac", label: "Start fraction", group: "Adaptive concurrency", kind: "number", fallback: "", detail: "Fraction of the static maximum used as the initial limit.", needsAdaptive: true },
   { key: "adaptive_cc_hold_when_idle", label: "Hold when idle", group: "Adaptive concurrency", kind: "boolean", fallback: "", detail: "Keep the learned limit when idle instead of returning to the start point.", needsAdaptive: true },
-  { key: "tps_limit_tps", label: "Decode rate threshold", group: "Thresholds", kind: "number", fallback: "", detail: "Static decode-rate threshold, used when no TPS metrics are declared." },
-  { key: "ttft_limit_ms", label: "TTFT threshold", group: "Thresholds", kind: "number", fallback: "", detail: "Static time-to-first-token threshold in milliseconds, used when no TTFT metrics are declared." },
   { key: "session_affinity_enabled", label: "Session affinity", group: "Routing", kind: "boolean", fallback: "", detail: "Keep requests in a session on the same peer." },
   { key: "expose_routed_peer", label: "Expose routed peer", group: "Observability", kind: "boolean", fallback: "", detail: "Return the selected peer in the X-Routed-Peer response header." },
 ];
@@ -38,15 +36,20 @@ const corrections: Record<string, string> = {
 };
 // Reachable only from the advanced menu: modelsphere/console#89.
 const ADVANCED_ONLY = new Set(["default_max"]);
+// The static TTFT/TPS fallbacks are not offered: the SLO declares the thresholds.
+const HIDDEN = new Set(["ttft_limit_ms", "tps_limit_tps"]);
 
-export function demote(options: RouteOptions): RouteOptions {
-  const moved = options.directives.filter((d) => ADVANCED_ONLY.has(d.key));
-  if (!moved.length) return options;
-  return { ...options, directives: options.directives.filter((d) => !ADVANCED_ONLY.has(d.key)), advanced: [...options.advanced, ...moved] };
+export function curate(options: RouteOptions): RouteOptions {
+  const directives = options.directives.filter((d) => !HIDDEN.has(d.key));
+  return {
+    ...options,
+    directives: directives.filter((d) => !ADVANCED_ONLY.has(d.key)),
+    advanced: [...options.advanced.filter((d) => !HIDDEN.has(d.key)), ...directives.filter((d) => ADVANCED_ONLY.has(d.key))],
+  };
 }
 
 const bundled = [...DIRECTIVES.map((d) => ({ ...d, fallback: "", detail: corrections[d.key] ?? d.detail })), ...additions];
-export const FALLBACK_ROUTE_OPTIONS: RouteOptions = demote({
+export const FALLBACK_ROUTE_OPTIONS: RouteOptions = curate({
   route: "",
   directives: bundled.filter((d) => common.has(d.key)),
   advanced: bundled.filter((d) => !common.has(d.key)),

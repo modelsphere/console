@@ -31,7 +31,6 @@ import { isAdaptiveOption, toggleAdaptive } from "../adaptive-concurrency";
 import { NAMED_VALUES, extraValue, fracOutOfRange, serviceIdError, type Section } from "@/modules/inferences/deploy-lib";
 
 const EFFECTS = ["", "NoSchedule", "PreferNoSchedule", "NoExecute"];
-const digits = (v: string) => v.replace(/\D/g, "");
 
 export interface DeployFormProps {
   form: Form;
@@ -62,7 +61,6 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
     return showRuntime && d?.set !== undefined ? `${detail} · ${runtimeText(t, d)}` : detail;
   };
   const text = (k: keyof Form) => ({ value: form[k] as string, onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange({ [k]: e.target.value }) });
-  const count = (k: "replicaCount" | "scalerMin" | "scalerMax") => ({ value: form[k], inputMode: "numeric" as const, onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange({ [k]: digits(e.target.value) }) });
   const sw = (k: keyof Form, label: string) => <Switch aria-label={label} checked={form[k] as boolean} onCheckedChange={(v) => onChange({ [k]: v })} />;
   const idError = submitted ? serviceIdError(form.serviceId || defaults.serviceId || "") : undefined;
   // A float label hides the placeholder until it floats; float it whenever there is a default to show.
@@ -147,26 +145,6 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
               <Switch aria-label={f("image")} checked={!!form.image.trim()} onCheckedChange={(v) => onChange({ image: v ? defaults.image!.site : "" })} />
             </FloatingField>
           )}
-          <FloatingField
-            layout="inline"
-            label={f("scaler")}
-            hint={f("scalerHint")}
-            expanded
-            expandedContent={
-              form.scaler ? (
-                <div className="grid grid-cols-2 gap-3 pb-3">
-                  <Input {...count("scalerMin")} placeholder={f("scalerMin")} aria-label={f("scalerMin")} />
-                  <Input {...count("scalerMax")} placeholder={f("scalerMax")} aria-label={f("scalerMax")} />
-                </div>
-              ) : (
-                <div className="pb-3">
-                  <Input {...count("replicaCount")} placeholder={f("replicas")} aria-label={f("replicas")} />
-                </div>
-              )
-            }
-          >
-            {sw("scaler", f("scaler"))}
-          </FloatingField>
         </>,
       )}
 
@@ -209,14 +187,6 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
             <Switch aria-label={f("adaptiveCc")} checked={form.adaptiveCc} onCheckedChange={(value) => onChange(toggleAdaptive(form, value, routeOptions))} />
           </FloatingField>
           <RouteExtras form={form} onChange={onChange} options={routeOptions} showRuntime={showRuntime} mode="other" />
-          <div className="grid grid-cols-2 gap-3">
-            <FloatingField layout={byKey.get("ttft_limit_ms")?.fallback ? "block" : "float"} label={form.slo ? f("ttftFallback") : label("ttft_limit_ms", "ttft")} hint={hint("ttft_limit_ms", "ttftHint")}>
-              <FieldInput {...text("ttftLimitMs")} inputMode="numeric" placeholder={byKey.get("ttft_limit_ms")?.fallback || undefined} />
-            </FloatingField>
-            <FloatingField layout={byKey.get("tps_limit_tps")?.fallback ? "block" : "float"} label={form.slo ? f("tpsFallback") : label("tps_limit_tps", "tps")} hint={hint("tps_limit_tps", "tpsHint")}>
-              <FieldInput {...text("tpsLimitTps")} inputMode="numeric" placeholder={byKey.get("tps_limit_tps")?.fallback || undefined} />
-            </FloatingField>
-          </div>
           {ENABLE_MONITOR && <FloatingField
             layout="inline"
             label={f("monitor")}

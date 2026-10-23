@@ -35,7 +35,8 @@ describe("deploy route catalog", () => {
     const form = { ...EMPTY, serviceId: "model", adaptiveCc: true, adaptiveCcMinFrac: "0.73", tpsLimitTps: "97", ttftLimitMs: "123", nginxExtras: [{ key: "future_knob", value: "keep-me" }, { key: "rt_limit_factor", value: "2" }] };
     const before = planRequest(form, { model: "model" });
     const html = render(options, true, form);
-    for (const value of ["keep-me", "2", "0.73", "97", "123"]) expect(html).toContain(`value="${value}"`);
+    for (const value of ["keep-me", "2", "0.73"]) expect(html).toContain(`value="${value}"`);
+    for (const value of ["97", "123"]) expect(html).not.toContain(`value="${value}"`);
     expect(html).toContain("future_knob");
     expect(planRequest(form, { model: "model" })).toEqual(before);
   });
@@ -74,14 +75,13 @@ describe("deploy route catalog", () => {
     const form = { ...EMPTY, serviceId: "model", route: "model", nginxExtras: [{ key: "rt_limit_factor", value: "2" }] };
     const before = planRequest(form, { model: "model" });
     const live: RouteOptions = { ...catalog, directives: [
-      { key: "tps_limit_tps", label: "TPS", group: "Thresholds", kind: "number", fallback: "73", detail: "Engine threshold help", value: 81, set: true },
+      { key: "expose_routed_peer", label: "Expose routed peer", group: "Observability", kind: "boolean", fallback: "", detail: "Engine peer help", value: true, set: true },
       { key: "adaptive_cc_min_frac", label: "Floor fraction", group: "Adaptive concurrency", kind: "number", fallback: "0.61", detail: "Engine fraction help", value: 0.61, set: false },
     ] };
     const html = render(live, true, form);
-    expect(html.includes('placeholder="73"')).toBe(true);
     expect(html.includes('placeholder="0.61"')).toBe(true);
     expect(html.includes('value="2"')).toBe(true);
-    expect(html.includes("当前：81")).toBe(true);
+    expect(html.includes("当前：on")).toBe(true);
     expect(html.includes("引擎默认值或派生值")).toBe(true);
     expect(planRequest(form, { model: "model" })).toEqual(before);
   });

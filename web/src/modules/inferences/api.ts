@@ -1,5 +1,5 @@
 import { apiFetch, ApiError } from "@/shell";
-import { demote, type RouteDirective, type RouteOptions } from "./routeOptions";
+import { curate, type RouteDirective, type RouteOptions } from "./routeOptions";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
@@ -29,5 +29,5 @@ export async function readRouteOptions(route?: string, signal?: AbortSignal): Pr
   }
   const keys = [...body.directives, ...body.advanced].map((d) => d.key);
   if (new Set(keys).size !== keys.length) throw new Error("Invalid route options response");
-  return demote(body as unknown as RouteOptions);
+  return curate(body as unknown as RouteOptions);
 }
