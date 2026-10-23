@@ -3,6 +3,7 @@ import type {
   ChartVersionsSource,
   CatalogIndexV2,
   CatalogVariant,
+  CatalogInfo,
   LLMCanary,
   ProductionTarget,
 } from "../types";
@@ -25,13 +26,14 @@ export interface CanaryApi {
 }
 
 export interface CatalogApi {
-  index(): Promise<CatalogIndexV2>;
+  list(): Promise<CatalogInfo[]>;
+  index(catalog?: string): Promise<CatalogIndexV2>;
   variant(
     model: string,
     id: string,
     version?: string,
   ): Promise<CatalogVariant | null>;
-  variants(): Promise<CatalogVariant[]>;
+  variants(catalog?: string): Promise<CatalogVariant[]>;
   chartVersions(source: ChartVersionsSource): Promise<ChartVersions>;
 }
 
@@ -66,6 +68,9 @@ export const fixtureCanaryApi: CanaryApi = {
 };
 
 export const fixtureCatalogApi: CatalogApi = {
+  async list() {
+    return [{ name: catalogIndexV2.name, schema: "v2", default: true }];
+  },
   async index() {
     if (catalogIndexV2.schema !== "v2") {
       throw new Error("catalog schema v1 is not supported");
