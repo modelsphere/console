@@ -191,6 +191,32 @@ describe("installSteps", () => {
   it("calls a deleted ModelRoute bad", () => {
     expect(installSteps(status(), route({ missing: true }) as never, {})[2]!.state).toBe("bad");
   });
+
+  const scaler = (conditions: { type: string; status: string; reason?: string }[], cur = 1, want = 1) => ({
+    result: { ref: { apiVersion: "v1", kind: "LLMScaler", name: "r" } } as ObjectResult,
+    status: { currentReplicas: cur, desiredReplicas: want, conditions },
+  });
+  it("reads ScalingDeferred=False as the normal state, not a failure", () => {
+    const steps = installSteps(status(), {}, scaler([
+      { type: "DecisionAvailable", status: "True", reason: "DecisionReceived" },
+      { type: "ScalingDeferred", status: "False", reason: "NotDeferred" },
+    ]) as never);
+    expect(steps[3]).toEqual({ key: "scaler", state: "ok", detail: "steady", params: { n: 1 } });
+  });
+  it("shows a deferred scale step as waiting, with its reason", () => {
+    const steps = installSteps(status(), {}, scaler([
+      { type: "DecisionAvailable", status: "True", reason: "DecisionReceived" },
+      { type: "ScalingDeferred", status: "True", reason: "RolloutInProgress" },
+    ], 1, 2) as never);
+    expect(steps[3]).toEqual({ key: "scaler", state: "wait", detail: "deferred", params: { reason: "RolloutInProgress" } });
+  });
+  it("still calls a missing decision bad", () => {
+    const steps = installSteps(status(), {}, scaler([
+      { type: "DecisionAvailable", status: "False", reason: "DecisionUnavailable" },
+      { type: "ScalingDeferred", status: "False", reason: "NotDeferred" },
+    ]) as never);
+    expect(steps[3]).toEqual({ key: "scaler", state: "bad", detail: "failing", params: { reason: "DecisionUnavailable" } });
+  });
 });
 
 describe("age", () => {

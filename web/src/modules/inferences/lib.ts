@@ -164,8 +164,12 @@ function scalerStep({ result, status }: Picked<LLMScalerSpec, LLMScalerStatus>):
   if (!result) return { key, state: "off", detail: "none" };
   if (result.error) return { key, state: "wait", detail: "unreadable" };
   if (result.missing) return { key, state: "bad", detail: "deleted" };
-  const failing = status?.conditions?.find((c) => c.status === "False");
+  // ScalingDeferred is inverted: False is the normal state, True a guard holding a step back.
+  const conditions = status?.conditions ?? [];
+  const failing = conditions.find((c) => c.type !== "ScalingDeferred" && c.status === "False");
   if (failing) return { key, state: "bad", detail: "failing", params: { reason: failing.reason || failing.type } };
+  const deferred = conditions.find((c) => c.type === "ScalingDeferred" && c.status === "True");
+  if (deferred) return { key, state: "wait", detail: "deferred", params: { reason: deferred.reason || deferred.type } };
   const cur = status?.currentReplicas;
   const want = status?.desiredReplicas;
   if (cur === undefined) return { key, state: "wait", detail: "noDecision" };
