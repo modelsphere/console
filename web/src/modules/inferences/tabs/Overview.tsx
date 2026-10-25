@@ -14,6 +14,7 @@ import {
   type Run,
 } from "@swiss/lib/api";
 import { pick } from "@swiss/components/ReleaseObjects";
+import { isUninstalling } from "@swiss/lib/phase";
 import { AccessPoint } from "@swiss/components/Endpoint";
 import { useT } from "@/modules/inferences/i18n";
 import { installSteps, modelLine, releaseState, type Step, type StepState } from "@/modules/inferences/lib";
@@ -54,7 +55,7 @@ export function Overview({
     queryFn: () => api.runs({ namespace, release, limit: 200 }),
   });
 
-  if (!s.exists && !p) {
+  if (!s.exists && !p && !isUninstalling(s)) {
     return <p className="rounded-lg border border-dashed p-6 text-muted-foreground">{t("detail.notFound")}</p>;
   }
 
@@ -80,7 +81,7 @@ export function Overview({
                 value: (
                   <span className="inline-flex flex-wrap items-center gap-2">
                     <StatusDot state={releaseState(s)} />
-                    {s.helmStatus && <Badge variant="outline">helm {s.helmStatus}</Badge>}
+                    {s.helmStatus && s.helmStatus !== "uninstalling" && <Badge variant="outline">helm {s.helmStatus}</Badge>}
                   </span>
                 ),
               },
@@ -105,6 +106,7 @@ export function Overview({
               ))}
             </ol>
             {p?.error && <Callout tone="bad">{p.error}</Callout>}
+            {isUninstalling(s) && <Callout tone="warn">{t("overview.uninstallingHint")}</Callout>}
             {p?.phase === "applying" && <Callout tone="warn">{t("overview.applyingHint")}</Callout>}
             <LoadHint status={s} onViewInstances={onViewInstances} />
             {s.warning && <Callout tone="warn">{s.warning}</Callout>}
