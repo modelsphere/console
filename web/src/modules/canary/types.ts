@@ -196,6 +196,12 @@ export interface CatalogIndexV2 {
   models: CatalogIndexModel[];
 }
 
+export interface CatalogInfo {
+  name: string;
+  schema?: string;
+  default?: boolean;
+}
+
 export interface ProductionTarget {
   kind: "HelmRelease";
   name: string;

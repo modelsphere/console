@@ -6,6 +6,7 @@ import type {
   ChartVersionsSource,
   CatalogIndexV2,
   CatalogVariant,
+  CatalogInfo,
   LLMCanary,
   ProductionTarget,
   Experiment,
@@ -29,8 +30,9 @@ export interface CanaryClient {
     get(namespace: string, name: string): Promise<LLMCanary | null>;
   };
   catalog: {
-    index(): Promise<CatalogIndexV2>;
-    variants(): Promise<CatalogVariant[]>;
+    list(): Promise<CatalogInfo[]>;
+    index(catalog?: string): Promise<CatalogIndexV2>;
+    variants(catalog?: string): Promise<CatalogVariant[]>;
     chartVersions(source: ChartVersionsSource): Promise<ChartVersions>;
   };
   swiss: { deployments(): Promise<ProductionTarget[]> };
@@ -164,7 +166,15 @@ export function createLiveApi(
       ),
   };
   const catalog = {
-    index: () => request<CatalogIndexV2>("/catalog"),
+    list: async () => (await request<{ catalogs?: CatalogInfo[] }>("/cluster", "GET", undefined, "/api/deploy")).catalogs ?? [],
+    async index(name?: string): Promise<CatalogIndexV2> {
+      const index = await request<CatalogIndexV2>(
+        name ? `/catalog?${new URLSearchParams({ catalog: name })}` : "/catalog",
+        "GET", undefined, name ? "/api/deploy" : base,
+      );
+      if (index.schema !== "v2") throw new Error("catalog schema v2 is required");
+      return index;
+    },
     async chartVersions(source: ChartVersionsSource): Promise<ChartVersions> {
       const query = new URLSearchParams({
         variant: source.variant,
@@ -182,23 +192,8 @@ export function createLiveApi(
         throw new CanaryApiError("Invalid Swiss chart versions response", undefined, "badResponse");
       return { ...data, versions: [...new Set(data.versions)] };
     },
-    async variants(): Promise<CatalogVariant[]> {
-      const index = await catalog.index();
-      if (index.schema !== "v2")
-        throw new Error("catalog schema v2 is required");
-      return index.models.flatMap((m) =>
-        m.variants.map((v) => ({
-          ...v,
-          apiVersion: "catalog.swiss/v2" as const,
-          kind: "Variant" as const,
-          model: m.name,
-          engine: v.engine as CatalogVariant["engine"],
-          chart: v.chart as CatalogVariant["chart"],
-          // Chart constraints are resolved by Swiss at prepare, never guessed by the UI.
-          resolvedChartVersion: "",
-          values: {},
-        })),
-      );
+    async variants(name?: string): Promise<CatalogVariant[]> {
+      return variantsFromIndex(await catalog.index(name));
     },
   };
   return {
@@ -231,4 +226,17 @@ export function createLiveApi(
       },
     },
   };
+}
+
+export function variantsFromIndex(index: CatalogIndexV2): CatalogVariant[] {
+  return index.models.flatMap((m) => m.variants.map((v) => ({
+    ...v,
+    apiVersion: "catalog.swiss/v2" as const,
+    kind: "Variant" as const,
+    model: m.name,
+    engine: v.engine as CatalogVariant["engine"],
+    chart: v.chart as CatalogVariant["chart"],
+    resolvedChartVersion: "",
+    values: {},
+  })));
 }

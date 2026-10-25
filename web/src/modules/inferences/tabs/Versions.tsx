@@ -7,7 +7,7 @@ import { useT } from "@/modules/inferences/i18n";
 import { modelLine, revisionRows, type RevisionRow } from "@/modules/inferences/lib";
 import { RollbackSheet } from "@/modules/inferences/components/RollbackSheet";
 
-export function Versions({ namespace, release, canRollBack }: { namespace: string; release: string; canRollBack: boolean }) {
+export function Versions({ namespace, release, rollbackBlocked }: { namespace: string; release: string; rollbackBlocked: string | false }) {
   const t = useT();
   const [rollingBack, setRollingBack] = useState<number | null>(null);
   const revisions = useQuery({
@@ -50,7 +50,7 @@ export function Versions({ namespace, release, canRollBack }: { namespace: strin
       key: "rollback",
       label: t("actions.rollback"),
       onClick: (r) => setRollingBack(r.revision),
-      disabled: (r) => (r.current ? t("disabled.current") : !canRollBack ? t("disabled.readOnly") : false),
+      disabled: (r) => (r.current ? t("disabled.current") : rollbackBlocked),
     },
   ];
 

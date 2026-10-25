@@ -3,6 +3,7 @@ import { Link } from "@swiss/lib/host";
 import { ChevronLeft, ChevronRight, Eye, Plus, Settings2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type Deployment } from "@swiss/lib/api";
+import { isUninstalling } from "@swiss/lib/phase";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent } from "@swiss/components/ui/card";
@@ -141,15 +142,15 @@ function Row({ d, onConfigureSLO }: { d: Deployment; onConfigureSLO: () => void 
         {d.route || "—"}
       </TableCell>
       <TableCell className="whitespace-nowrap text-muted-foreground">{d.chart}</TableCell>
-      <TableCell className="tabular-nums">{d.revision}</TableCell>
+      <TableCell className="tabular-nums">{d.revision ?? "—"}</TableCell>
       <TableCell>
-        <StatusBadge status={d.status} />
+        <StatusBadge d={d} />
       </TableCell>
       <TableCell>
         <div className="flex items-center justify-end gap-2">
           {/* Applied is when the chart has created the requirement; whether
               this release has one at all, the popup asks slo-api. */}
-          {d.phase === "applied" && (
+          {d.phase === "applied" && !isUninstalling(d) && (
             <Button size="sm" variant="outline" title="Configure SLO" onClick={onConfigureSLO}>
               <Settings2 className="size-4" /> SLO
             </Button>
@@ -167,7 +168,9 @@ function Row({ d, onConfigureSLO }: { d: Deployment; onConfigureSLO: () => void 
 
 // "pending-upgrade" on this workload usually means a 20-40 minute model load in
 // progress, not a failure -- so it reads as in-flight rather than as an error.
-function StatusBadge({ status }: { status?: string }) {
+function StatusBadge({ d }: { d: Pick<Deployment, "status" | "phase"> }) {
+  if (isUninstalling(d)) return <Badge variant="warning">uninstalling</Badge>;
+  const status = d.status;
   if (!status) return null;
   if (status === "deployed") return <Badge variant="success">deployed</Badge>;
   if (status.startsWith("pending")) return <Badge variant="muted">{status}</Badge>;

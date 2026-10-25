@@ -21,6 +21,9 @@ import {
   cn,
 } from "@modelsphere/ui";
 import { useCanaryApi, useCanaryWrite } from "../lib/provider";
+import { variantsFromIndex } from "../lib/live-api";
+import { changeArmCatalog, defaultCatalog } from "../lib/catalog";
+import type { CatalogInfo } from "../types";
 import { usePluginPath } from "../lib/host";
 import { emptyDraft, emitManifests, layersFromVariant } from "../lib/emit";
 import { applyProductionTarget, findProductionTarget } from "../lib/target";
@@ -130,22 +133,31 @@ export function CanaryCreate() {
       );
     }
   }, [config.data]);
-  const catalog = useQuery({
-    queryKey: ["canary", api.mode, "catalog"],
-    queryFn: () => api.catalog.index(),
+  const catalogs = useQuery({
+    queryKey: ["canary", api.mode, "catalogs"],
+    queryFn: () => api.catalog.list(),
+    staleTime: 60_000,
   });
-  const variants = useQuery({
-    queryKey: ["canary", api.mode, "variants"],
-    queryFn: () => api.catalog.variants(),
+  const catalogName = defaultCatalog(catalogs.data ?? []);
+  const armCatalogs = useQueries({
+    queries: draft.arms.map((arm) => {
+      const name = arm.source?.catalog || catalogName;
+      return {
+        queryKey: ["canary", api.mode, "catalog", name],
+        queryFn: () => api.catalog.index(name),
+        enabled: !!name && !!catalogs.data?.some((c) => c.name === name && c.schema !== "v1"),
+        staleTime: 60_000,
+        retry: false,
+      };
+    }),
   });
   // Keep queries in the wizard so readiness remains valid when arm editors unmount.
   const chartVersions = useQueries({
     queries: draft.arms.map((arm) => ({
-      queryKey: ["canary", api.mode, "chart-versions", arm.source?.catalog ?? catalog.data?.name,
+      queryKey: ["canary", api.mode, "chart-versions", arm.source?.catalog,
         arm.source?.model, arm.source?.variant, arm.source?.version],
-      queryFn: () => api.catalog.chartVersions({ ...arm.source!,
-        catalog: arm.source?.catalog ?? catalog.data?.name }),
-      enabled: !!catalog.data && !!arm.source?.model && !!arm.source?.variant && !!arm.source?.version,
+      queryFn: () => api.catalog.chartVersions(arm.source!),
+      enabled: !!arm.source?.catalog && !!arm.source?.model && !!arm.source?.variant && !!arm.source?.version,
       staleTime: 60_000,
       retry: false,
     })),
@@ -167,7 +179,7 @@ export function CanaryCreate() {
   }, [draft, chartVersions]);
   const chartVersionsReady = draft.arms.every((arm, index) => {
     const result = chartVersions[index];
-    return result?.isSuccess && result.data.chart === arm.chart.name &&
+    return armCatalogs[index]?.isSuccess && result?.isSuccess && result.data.chart === arm.chart.name &&
       isExactChartVersion(arm.chart.version) && result.data.versions.includes(arm.chart.version);
   });
   const deployments = useQuery({
@@ -300,21 +312,12 @@ export function CanaryCreate() {
   }
 
   function blankArm(name: string): ArmDraft {
-    const first = variants.data?.[0];
-    const base: ArmDraft = {
+    return changeArmCatalog({
       name,
-      chart: { name: "sglang", version: "0.8.0" },
+      chart: { name: "", version: "" },
       replicaCount: 1,
-      layers: {
-        form: { replicaCount: 1 },
-        derived: {
-          scaler: { enabled: false },
-          cart: { enabled: true },
-          sloRequirement: { enabled: false },
-        },
-      },
-    };
-    return first ? applyVariant(base, first, 1, catalog.data?.name) : base;
+      layers: {},
+    }, catalogName);
   }
 
   return (
@@ -328,15 +331,13 @@ export function CanaryCreate() {
 
       {(error ||
         config.error ||
-        catalog.error ||
-        variants.error ||
+        catalogs.error ||
         deployments.error) && (
         <ErrorNotice
           error={
             error ??
             config.error ??
-            catalog.error ??
-            variants.error ??
+            catalogs.error ??
             deployments.error
           }
           className="p-4 text-destructive"
@@ -458,7 +459,11 @@ export function CanaryCreate() {
             title={t("create.stepArms")}
             summary={t("create.armsHint")}
           >
+            {catalogs.isPending && <p role="status" className="text-sm text-muted-foreground">{t("create.catalogsLoading")}</p>}
+            {catalogs.error && <Button type="button" variant="outline" onClick={() => { void catalogs.refetch(); }}>{t("create.catalogRetry")}</Button>}
+            {catalogs.isSuccess && !catalogName && <p role="status" className="text-sm text-muted-foreground">{t("create.catalogsEmpty")}</p>}
             <FieldRepeater
+              disabled={catalogs.isPending || !!catalogs.error || !catalogName}
               value={draft.arms}
               onChange={(arms) => {
                 setDraft((d) => ({ ...d, arms }));
@@ -476,15 +481,20 @@ export function CanaryCreate() {
               renderRow={(arm, _index, patchArm) => (
                 <ArmFields
                   arm={arm}
-                  models={catalog.data?.models ?? []}
-                  variants={variants.data ?? []}
-                  catalogName={catalog.data?.name}
+                  catalogs={catalogs.data ?? []}
+                  catalogName={arm.source?.catalog || catalogName}
+                  catalogLoading={catalogs.isPending || (armCatalogs[_index]?.isFetching ?? false)}
+                  catalogError={catalogs.error ?? armCatalogs[_index]?.error}
+                  retryCatalog={() => { void (catalogs.error ? catalogs.refetch() : armCatalogs[_index]?.refetch()); }}
+                  models={armCatalogs[_index]?.data?.models ?? []}
+                  variants={armCatalogs[_index]?.data ? variantsFromIndex(armCatalogs[_index].data) : []}
                   versions={chartVersions[_index]?.data}
                   versionsLoading={chartVersions[_index]?.isFetching ?? false}
                   versionsError={chartVersions[_index]?.error}
                   retryVersions={() => { void chartVersions[_index]?.refetch(); }}
                   onChange={(next) => {
                     if (
+                      next.source?.catalog !== arm.source?.catalog ||
                       next.source?.model !== arm.source?.model ||
                       next.source?.variant !== arm.source?.variant
                     ) {
@@ -750,6 +760,10 @@ export function CanaryCreate() {
 
 function ArmFields({
   arm,
+  catalogs,
+  catalogLoading,
+  catalogError,
+  retryCatalog,
   models,
   variants,
   catalogName,
@@ -763,6 +777,10 @@ function ArmFields({
   onEdit,
 }: {
   arm: ArmDraft;
+  catalogs: CatalogInfo[];
+  catalogLoading: boolean;
+  catalogError: Error | null | undefined;
+  retryCatalog: () => void;
   models: { name: string; displayName?: string; defaultVariant?: string }[];
   variants: CatalogVariant[];
   catalogName?: string;
@@ -776,12 +794,12 @@ function ArmFields({
   onEdit: (text: string) => void;
 }) {
   const { t } = useTranslation("canary");
-  const model = arm.source?.model ?? models[0]?.name ?? "";
+  const model = arm.source?.model ?? "";
   const modelVariants = variants.filter((v) => v.model === model);
   const selected =
     modelVariants.find(
       (v) => v.id === arm.source?.variant && v.version === arm.source?.version,
-    ) ?? modelVariants.find((v) => v.id === arm.source?.variant) ?? modelVariants[0];
+    ) ?? modelVariants.find((v) => v.id === arm.source?.variant);
   const availableVersions = versions?.versions ?? [];
   const versionError = versionsLoading || versionsError || !versions
     ? undefined
@@ -842,6 +860,47 @@ function ArmFields({
         <p className="text-xs text-muted-foreground md:col-span-2">
           {t("economics.bindingHint")}
         </p>
+        <FloatingField label={t("create.catalog")} hint={t("create.catalogHint")}>
+          <FieldSelect
+            value={catalogName || undefined}
+            disabled={catalogs.length === 0}
+            placeholder={t("create.selectCatalog")}
+            options={catalogs.map((c) => ({
+              value: c.name,
+              label: c.schema === "v1" ? `${c.name} (${t("create.catalogV1Unsupported")})` : c.name,
+              disabled: c.schema === "v1",
+            }))}
+            onValueChange={(name) => {
+              if (name !== catalogName) onChange(changeArmCatalog(arm, name));
+            }}
+          />
+        </FloatingField>
+        <FloatingField label={t("create.model")}>
+          <FieldSelect
+            value={model || undefined}
+            disabled={catalogLoading || !!catalogError || !models.length}
+            loading={catalogLoading}
+            loadingText={t("create.catalogLoading")}
+            searchable
+            searchPlaceholder={t("create.searchModels")}
+            placeholder={t("create.selectModel")}
+            onValueChange={(nextModel) => {
+              if (nextModel === arm.source?.model) return;
+              const preferred = models.find((m) => m.name === nextModel)?.defaultVariant;
+              const v = variants.find((item) => item.model === nextModel && item.id === preferred) ??
+                variants.find((item) => item.model === nextModel);
+              if (v) onChange(applyVariant(arm, v, arm.replicaCount, catalogName));
+            }}
+            options={models.map((m) => ({ value: m.name, label: m.displayName ?? m.name }))}
+          />
+        </FloatingField>
+        {catalogLoading && <p role="status" className="text-sm text-muted-foreground md:col-span-2">{t("create.catalogLoading")}</p>}
+        {catalogError && <div className="space-y-2 md:col-span-2">
+          <p className="text-sm text-destructive">{t("create.catalogFailed")}</p>
+          <ErrorNotice error={catalogError} />
+          <Button type="button" variant="outline" onClick={retryCatalog}>{t("create.catalogRetry")}</Button>
+        </div>}
+        {!catalogLoading && !catalogError && !models.length && <p role="status" className="text-sm text-muted-foreground md:col-span-2">{t("create.catalogEmpty")}</p>}
         <FloatingField label={t("experiments.historicalVersion")}>
           <FieldInput
             value={arm.source?.version ?? ""}
@@ -875,29 +934,11 @@ function ArmFields({
             }}
           />
         </FloatingField>
-        <FloatingField label={t("create.model")}>
-          <FieldSelect
-            value={model || undefined}
-            onValueChange={(nextModel) => {
-              // Re-selecting the current value still fires Base UI's
-              // onValueChange; rebuilding the layers would drop `edit` while
-              // the YAML textarea keeps showing it.
-              if (nextModel === arm.source?.model) return;
-              const v = variants.find((item) => item.model === nextModel);
-              if (v)
-                onChange(
-                  applyVariant({ ...arm, name: arm.name }, v, arm.replicaCount, catalogName),
-                );
-            }}
-            options={models.map((m) => ({
-              value: m.name,
-              label: m.displayName ?? m.name,
-            }))}
-          />
-        </FloatingField>
         <FloatingField label={t("create.variant")}>
           <FieldSelect
+            key={`${catalogName}/${model}`}
             value={selected ? `${selected.id}@${selected.version}` : undefined}
+            disabled={catalogLoading || !!catalogError || !modelVariants.length}
             onValueChange={(value) => {
               if (value === `${arm.source?.variant}@${arm.source?.version}`) {
                 return;
