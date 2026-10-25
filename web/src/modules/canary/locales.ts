@@ -49,7 +49,7 @@ export const en = {
     environmentUnset: "Not configured (environment default)",
     environmentDefaultPort: "Use environment default port",
     armsHint:
-      "Choose a catalog, then a model and variant for each arm. The default catalog is upstreamv2 when available.",
+      "Each arm takes one catalog schema v2 variant: chart and values. The traffic split and HTTPRoute are the following steps. Gateway configuration is supplied by the environment.",
     addArm: "Add arm",
     removeArm: "Remove",
     armName: "Arm name",
@@ -103,7 +103,7 @@ export const en = {
     sectionHint:
       "Read-only environment listener. Empty means no specific listener is selected.",
     routeHint:
-      "The operator creates this HTTPRoute and owns it. enabled writes or deletes the route. path is the subpath the canary claims.",
+      "The operator automatically creates and owns this HTTPRoute. The path and production Service come from the environment.",
     routeEnabled: "Write HTTPRoute (route.enabled)",
     routeEnabledHint:
       "Off leaves the arms and proxy running and writes no route, so production keeps serving the path.",
@@ -128,7 +128,7 @@ export const en = {
     needTraffic:
       "Set production and canary weights. At least one must be non-zero.",
     needGateway: "Enter the Gateway name and namespace.",
-    needRoute: "Enter an HTTPRoute path and the production openresty Service.",
+    needRoute: "The selected production target needs Gateway, route path and production Service configuration. Contact an administrator to configure the environment.",
     summary: "Canary definition",
     yaml: "LLMCanary YAML",
     copy: "Copy YAML",
@@ -217,7 +217,7 @@ export const zh = {
     environmentUnset: "未配置（使用环境默认行为）",
     environmentDefaultPort: "使用环境默认端口",
     armsHint:
-      "每个组别先选模型目录，再选该目录中的模型和变体。默认使用 upstreamv2（如已配置）。",
+      "每个组别选择一个目录 schema v2 变体，只决定 chart 和 values。后续步骤设置流量拆分并确认路由，Gateway 自动使用环境配置。",
     addArm: "添加组别",
     removeArm: "删除",
     armName: "组别名称",
@@ -269,7 +269,7 @@ export const zh = {
     sectionName: "监听器 (sectionName)",
     sectionHint: "环境配置的监听器，只读。留空表示不指定某个 listener。",
     routeHint:
-      "operator 创建并拥有这条 HTTPRoute。enabled 决定是否写入路由。path 是北极星实验声明的子路径。",
+      "operator 自动创建并拥有这条 HTTPRoute。路径和生产 Service 使用环境配置。",
     routeEnabled: "写入 HTTPRoute (route.enabled)",
     routeEnabledHint:
       "关闭时各组别和 proxy 继续运行，不写路由，生产继续服务该路径。",
@@ -290,7 +290,7 @@ export const zh = {
     needArms: "从目录变体添加一个组别。",
     needTraffic: "填写生产与北极星权重，至少一个非零。",
     needGateway: "填写 Gateway 名称和命名空间。",
-    needRoute: "填写 HTTPRoute 路径和生产 openresty Service。",
+    needRoute: "所选生产目标缺少 Gateway、路由路径或生产 Service 配置，请联系管理员完善环境配置。",
     summary: "北极星实验定义",
     yaml: "LLMCanary YAML",
     copy: "复制 YAML",

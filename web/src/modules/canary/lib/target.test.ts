@@ -65,7 +65,6 @@ describe("applyProductionTarget", () => {
     expect(next.route.servicePort).toBeUndefined();
     expect(next.route.enabled).toBe(previous.route.enabled);
     expect(next.traffic).toEqual(previous.traffic);
-    expect(wizardStepComplete("gateway", next)).toBe(false);
     expect(wizardStepComplete("route", next)).toBe(false);
   });
 
@@ -94,25 +93,37 @@ describe("applyProductionTarget", () => {
     expect(productionDraft.route.path).toBe("/production-model");
     expect(productionDraft.route.productionOpenrestyService).toBe("production-dispatch");
     expect(productionDraft.route.servicePort).toBeUndefined();
+    expect(productionDraft.route.enabled).toBe(true);
+    expect(productionDraft.route.forceHeader).toEqual({ name: "x-canary", value: "force" });
+    const { canary } = emitManifests(productionDraft);
+    expect(canary.spec.gateway).toEqual(productionDraft.gateway);
+    expect(canary.spec.route).toEqual({
+      enabled: true,
+      path: "/production-model",
+      productionOpenrestyService: "production-dispatch",
+      forceHeader: { name: "x-canary", value: "force" },
+    });
+    expect(canary.spec.proxy).not.toHaveProperty("values");
   });
 });
 
 describe("gateway required fields", () => {
   it("blocks a blank gateway name or namespace in the wizard and on the CR", () => {
-    const draft = emptyDraft();
-    expect(wizardStepComplete("gateway", draft)).toBe(false);
+    const draft = applyProductionTarget(emptyDraft(), qwen!);
+    draft.gateway = { name: "", namespace: "" };
+    expect(wizardStepComplete("route", draft)).toBe(false);
 
     draft.gateway = { name: " ", namespace: "llm-route" };
-    expect(wizardStepComplete("gateway", draft)).toBe(false);
+    expect(wizardStepComplete("route", draft)).toBe(false);
 
     draft.gateway = { name: "openresty", namespace: " " };
-    expect(wizardStepComplete("gateway", draft)).toBe(false);
+    expect(wizardStepComplete("route", draft)).toBe(false);
 
     draft.gateway = { name: "openresty", namespace: "" };
-    expect(wizardStepComplete("gateway", draft)).toBe(false);
+    expect(wizardStepComplete("route", draft)).toBe(false);
 
     draft.gateway = { name: "openresty", namespace: "llm-route" };
-    expect(wizardStepComplete("gateway", draft)).toBe(true);
+    expect(wizardStepComplete("route", draft)).toBe(true);
 
     const blank = emptyDraft();
     blank.gateway = { name: " ", namespace: " " };

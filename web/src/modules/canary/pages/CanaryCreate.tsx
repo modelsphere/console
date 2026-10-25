@@ -18,7 +18,6 @@ import {
   FormSection,
   PageBanner,
   SectionCard,
-  Switch,
   cn,
 } from "@modelsphere/ui";
 import { useCanaryApi, useCanaryWrite } from "../lib/provider";
@@ -93,7 +92,6 @@ function stepLabel(step: Step): `create.step${string}` {
 function removeArmEditor<T>(current: Record<string, T>, removed: number) {
   return Object.fromEntries(
     Object.entries(current).flatMap(([key, value]) => {
-      if (key === "proxy") return [[key, value]];
       const index = Number(key.slice(4));
       return index === removed
         ? []
@@ -198,12 +196,8 @@ export function CanaryCreate() {
   const armsYamlInvalid = Object.entries(yamlErrors).some(
     ([key, message]) => key.startsWith("arm-") && !!message,
   );
-  // Only the step that owns the editor is blocked by its YAML error. A global
-  // lock strands the user on the wrong step: the error is rendered on the
-  // editor's step, but every forward button refuses to take them back to it.
-  const stepYamlInvalid =
-    (step === "arms" && armsYamlInvalid) ||
-    (step === "route" && !!yamlErrors.proxy);
+  // Keep navigation back to the arm editor available when its YAML is invalid.
+  const stepYamlInvalid = step === "arms" && armsYamlInvalid;
   const targets = deployments.data ?? [];
   const selectedTarget = targets.find(
     (d) =>
@@ -255,17 +249,12 @@ export function CanaryCreate() {
 
   function blocker(): string | null {
     if (invalidYaml) {
-      const steps = [
-        armsYamlInvalid ? t("create.stepArms") : null,
-        yamlErrors.proxy ? t("create.stepRoute") : null,
-      ].filter((label): label is string => !!label);
-      return t("create.yamlBlocked", { steps: steps.join(" / ") });
+      return t("create.yamlBlocked", { steps: t("create.stepArms") });
     }
     if (stepReady || step === "review") return null;
     if (step === "target") return t("create.needTarget");
     if (step === "arms") return t("create.needArms");
     if (step === "traffic") return t("create.needTraffic");
-    if (step === "gateway") return t("create.needGateway");
     return t("create.needRoute");
   }
 
@@ -580,38 +569,6 @@ export function CanaryCreate() {
           </FormSection>
         )}
 
-        {step === "gateway" && (
-          <FormSection
-            title={t("create.stepGateway")}
-            summary={t("create.gatewayHint")}
-          >
-            <div className="grid gap-3 md:grid-cols-2">
-              <EnvironmentField
-                label={t("create.gatewayName")}
-                value={draft.gateway.name}
-                emptyText={t("create.selectTargetFirst")}
-              />
-              <EnvironmentField
-                label={t("create.gatewayNs")}
-                value={draft.gateway.namespace}
-                emptyText={t("create.selectTargetFirst")}
-              />
-              <EnvironmentField
-                label={t("create.hostname")}
-                hint={t("create.hostnameHint")}
-                value={draft.gateway.hostname}
-                emptyText={t("create.environmentUnset")}
-              />
-              <EnvironmentField
-                label={t("create.sectionName")}
-                hint={t("create.sectionHint")}
-                value={draft.gateway.sectionName}
-                emptyText={t("create.environmentUnset")}
-              />
-            </div>
-          </FormSection>
-        )}
-
         {step === "route" && (
           <FormSection
             title={t("create.stepRoute")}
@@ -630,87 +587,7 @@ export function CanaryCreate() {
                 value={draft.route.productionOpenrestyService}
                 emptyText={t("create.selectTargetFirst")}
               />
-              <div className="md:col-span-2">
-                <FloatingField
-                  layout="inline"
-                  label={t("create.routeEnabled")}
-                  hint={t("create.routeEnabledHint")}
-                >
-                  <Switch
-                    checked={draft.route.enabled}
-                    onCheckedChange={(checked) =>
-                      patch({ route: { ...draft.route, enabled: checked } })
-                    }
-                    aria-label={t("create.routeEnabled")}
-                  />
-                </FloatingField>
-              </div>
-              <EnvironmentField
-                label={t("create.servicePort")}
-                hint={t("create.servicePortHint")}
-                value={t("create.environmentDefaultPort")}
-              />
-              <FloatingField label={`${t("create.forceHeader")} name`}>
-                <FieldInput
-                  name="canary-force-header"
-                  autoComplete="off"
-                  value={draft.route.forceHeader.name}
-                  onChange={(e) =>
-                    patch({
-                      route: {
-                        ...draft.route,
-                        forceHeader: {
-                          ...draft.route.forceHeader,
-                          name: e.target.value,
-                        },
-                      },
-                    })
-                  }
-                />
-              </FloatingField>
-              <FloatingField label={`${t("create.forceHeader")} value`}>
-                <FieldInput
-                  name="canary-force-header-value"
-                  autoComplete="off"
-                  value={draft.route.forceHeader.value}
-                  onChange={(e) =>
-                    patch({
-                      route: {
-                        ...draft.route,
-                        forceHeader: {
-                          ...draft.route.forceHeader,
-                          value: e.target.value,
-                        },
-                      },
-                    })
-                  }
-                />
-              </FloatingField>
             </div>
-            <FloatingField
-              label={t("create.proxyValues")}
-              hint={t("create.proxyValuesHint")}
-              error={
-                yamlErrors.proxy
-                  ? describeError(yamlErrors.proxy, t).summary
-                  : undefined
-              }
-              multiline
-            >
-              <FieldTextarea
-                rows={8}
-                value={
-                  yamlTexts.proxy ??
-                  (draft.proxy.values ? toYaml(draft.proxy.values) : "")
-                }
-                onChange={(e) =>
-                  editYaml("proxy", e.target.value, (values) =>
-                    patch({ proxy: { ...draft.proxy, values } }),
-                  )
-                }
-              />
-            </FloatingField>
-            {yamlErrors.proxy && <ErrorDetails error={yamlErrors.proxy} />}
           </FormSection>
         )}
 
