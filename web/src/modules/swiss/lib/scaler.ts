@@ -9,7 +9,8 @@ export function scalerFailing(conditions?: Condition[]): Condition | undefined {
   );
 }
 
-// AbleToScale=True reasons that hold a step. Synced and DeferralTimedOut are a normal scale.
+// AbleToScale=True reasons that hold a step. A hold reports as steady; only its AbleToScale
+// condition is marked. Synced and DeferralTimedOut are a normal scale.
 const HOLD_REASONS = new Set(["RolloutInProgress", "ScaleDownSettling", "ScaleDownStabilized"]);
 
 export function scalerHold(conditions?: Condition[]): string | undefined {

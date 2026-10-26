@@ -254,7 +254,7 @@ function ScalerPanel({
   let state: React.ReactNode = null;
   if (failing)
     state = <Badge variant="warning">{failing.reason || failing.type}</Badge>;
-  else if (hold) state = <Badge variant="warning">holding: {hold}</Badge>;
+  else if (hold) state = <Badge variant="success">steady</Badge>;
   else if (current !== undefined && desired !== undefined) {
     if (desired > current) state = <Badge variant="warning">scaling up</Badge>;
     else if (desired < current)
@@ -352,7 +352,11 @@ function ScalerPanel({
             </div>
           )}
 
-          <Conditions conditions={status?.conditions} neutral={scalerNeutral(status?.conditions)} />
+          <Conditions
+            conditions={status?.conditions}
+            neutral={scalerNeutral(status?.conditions)}
+            warn={hold ? ["AbleToScale"] : undefined}
+          />
         </>
       )}
     </ObjectCard>
@@ -684,7 +688,15 @@ function Stale({
   );
 }
 
-export function Conditions({ conditions, neutral = [] }: { conditions?: Condition[]; neutral?: string[] }) {
+export function Conditions({
+  conditions,
+  neutral = [],
+  warn = [],
+}: {
+  conditions?: Condition[];
+  neutral?: string[];
+  warn?: string[];
+}) {
   if (!conditions?.length) return null;
   return (
     <ul className="mt-auto space-y-1.5 border-t pt-3">
@@ -694,13 +706,15 @@ export function Conditions({ conditions, neutral = [] }: { conditions?: Conditio
             <span
               className={cn(
                 "size-1.5 shrink-0 rounded-full",
-                neutral.includes(c.type)
-                  ? "bg-muted-foreground"
-                  : c.status === "True"
-                    ? "bg-success"
-                    : c.status === "False"
-                      ? "bg-warning"
-                      : "bg-muted-foreground",
+                warn.includes(c.type)
+                  ? "bg-warning"
+                  : neutral.includes(c.type)
+                    ? "bg-muted-foreground"
+                    : c.status === "True"
+                      ? "bg-success"
+                      : c.status === "False"
+                        ? "bg-warning"
+                        : "bg-muted-foreground",
               )}
             />
             <span className="font-medium">{c.type}</span>

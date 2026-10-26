@@ -345,12 +345,11 @@ export function scalerStep({ result, status }: ReturnType<typeof pick<LLMScalerS
   if (result.missing) return { label, state: "bad", detail: "LLMScaler deleted" };
   const failing = scalerFailing(status?.conditions);
   if (failing) return { label, state: "bad", detail: failing.reason || failing.type };
-  const hold = scalerHold(status?.conditions);
-  if (hold) return { label, state: "wait", detail: `holding: ${hold}` };
   const cur = status?.currentReplicas;
   const want = status?.desiredReplicas;
   if (cur === undefined) return { label, state: "wait", detail: "no decision yet" };
-  if (want !== undefined && want !== cur) return { label, state: "wait", detail: `${cur} → ${want} replicas` };
+  if (want !== undefined && want !== cur && !scalerHold(status?.conditions))
+    return { label, state: "wait", detail: `${cur} → ${want} replicas` };
   return { label, state: "ok", detail: `${cur} replica${cur === 1 ? "" : "s"}, steady` };
 }
 

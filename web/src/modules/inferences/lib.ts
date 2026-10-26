@@ -172,13 +172,11 @@ function scalerStep({ result, status }: Picked<LLMScalerSpec, LLMScalerStatus>):
     return { key, state: "bad", detail: "failing", params: { reason } };
   }
 
-  const hold = scalerHold(status?.conditions);
-  if (hold) return { key, state: "wait", detail: "deferred", params: { reason: hold } };
-
   const cur = status?.currentReplicas;
   const want = status?.desiredReplicas;
   if (cur === undefined) return { key, state: "wait", detail: "noDecision" };
-  if (want !== undefined && want !== cur) return { key, state: "wait", detail: "scaling", params: { cur, want } };
+  if (want !== undefined && want !== cur && !scalerHold(status?.conditions))
+    return { key, state: "wait", detail: "scaling", params: { cur, want } };
   return { key, state: "ok", detail: "steady", params: { n: cur } };
 }
 

@@ -62,9 +62,15 @@ describe("scalerStep", () => {
     expect(step([c("ScalingActive", "True", "DecisionReceived"), c("AbleToScale", "False", "TargetNotFound")]))
       .toEqual({ label: "Scaling", state: "bad", detail: "TargetNotFound" });
   });
-  it("holds on ScaleDownStabilized", () => {
-    expect(step([c("ScalingActive", "True", "MetricsAvailable"), c("AbleToScale", "True", "ScaleDownStabilized")], 3, 1))
-      .toEqual({ label: "Scaling", state: "wait", detail: "holding: ScaleDownStabilized" });
+  it("reports a hold as steady", () => {
+    for (const reason of ["RolloutInProgress", "ScaleDownSettling", "ScaleDownStabilized"]) {
+      expect(step([c("ScalingActive", "True", "MetricsAvailable"), c("AbleToScale", "True", reason)], 3, 1))
+        .toEqual({ label: "Scaling", state: "ok", detail: "3 replicas, steady" });
+    }
+  });
+  it("lets a failure win over a hold", () => {
+    expect(step([c("ScalingActive", "False", "DecisionUnavailable"), c("AbleToScale", "True", "ScaleDownStabilized")], 3, 1))
+      .toEqual({ label: "Scaling", state: "bad", detail: "DecisionUnavailable" });
   });
   it("reads a healthy 0.5.0 object with DecisionAvailable=True", () => {
     expect(step([c("DecisionAvailable", "True", "DecisionReceived")], 2, 2))
