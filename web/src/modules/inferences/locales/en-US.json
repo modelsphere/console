@@ -578,6 +578,19 @@
       "keep": "Keep {v}",
       "moveTo": "Move to {catalog}"
     },
+    "upgradeValues": {
+      "hint": "The running revision's full values. Only your changes become advanced overrides; unchanged chart defaults can update with a new version. Existing advanced overrides are retained. Changed keys take precedence over form fields; removed keys are sent as null.",
+      "retry": "Retry current values",
+      "errors": {
+        "yaml": "Enter one valid YAML document with unique keys.",
+        "mapping": "Values must be a YAML mapping with string keys.",
+        "unsupported": "Values cannot contain cyclic aliases, non-finite numbers or unsupported YAML types.",
+        "tooLarge": "The values document is too large or deeply nested to edit safely.",
+        "missing": "There is no current Helm revision to edit.",
+        "changed": "The running revision changed. Close and reopen the upgrade sheet to load its current values.",
+        "unavailable": "The current revision's values could not be read or did not match this service. Retry before composing."
+      }
+    },
     "errors": {
       "required": "Required",
       "format": "Lowercase letters, digits and -, starting with a letter and ending with a letter or digit (it names Kubernetes Services, so no dots)",

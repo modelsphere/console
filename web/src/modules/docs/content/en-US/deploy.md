@@ -73,7 +73,7 @@ Click a service for its details. **Overview** shows progress step by step: appli
 
 From a row's actions in the list, or the top of the detail page:
 
-- **Upgrade**: change the model version, variant or settings; again you review the diff before confirming. Service name and namespace are fixed.
+- **Upgrade**: change the model version, variant or settings; again you review the diff before confirming. Service name and namespace are fixed. **Advanced → Override YAML** loads the current Helm revision's full values for editing. Only semantic changes become new advanced overrides, so merely displaying the full document does not pin old chart defaults. Existing advanced overrides remain; arrays replace as a whole, removed keys are sent as `null`. Retry failed reads; close and reopen the sheet if the revision changed.
 - **Roll back**: pick a revision under Versions to restore its plan as it was. To change settings, upgrade instead.
 - **Edit SLO**: the latency and throughput targets and the replica bounds the scaler works with. Services deployed without SLO need it switched on in an upgrade first.
 - **Uninstall**: stops the service and deletes its pods; the activity log is kept. Reinstalling loads the weights again.

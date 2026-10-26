@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { parse } from "yaml";
+import { upgradeEditsYAML } from "./upgrade-values";
 import { EMPTY, planRequest } from "@swiss/components/DeploySettings";
 import type { Plan, PlanRequest } from "@swiss/lib/api";
 import { AdaptivePlanChangedError, composeAdaptivePlan, isAdaptiveOption, toggleAdaptive, withAdaptiveConcurrency } from "./adaptive-concurrency";
@@ -79,6 +81,26 @@ describe("unified adaptive concurrency settings", () => {
     expect(valuesOf(cleaned)).toEqual({ adaptive_cc: "false", default_max: "42", future_nonadaptive: "keep" });
     expect(result.hash).toBe("cleaned");
     expect((validated.layers.form.modelRoute as { nginx: { values: object } }).nginx.values).toHaveProperty("adaptive_cc_min");
+  });
+
+  it.each([false, true])("keeps upgrade YAML minimal through adaptive cleanup (edited: %s)", async (edited) => {
+    const baseline = "image: {tag: old}\nresources: {limits: {cpu: '4'}}\nmodelRoute: {nginx: {values: {adaptive_cc: 'true', adaptive_cc_min: '80'}}}\n";
+    const upgradeForm = { ...form, adaptiveCc: false, edits: baseline.replace("cpu: '4'", edited ? "cpu: '6'" : "cpu: '4'") };
+    const edits = upgradeEditsYAML(baseline, upgradeForm.edits, { custom: "retained" });
+    const upgradeRequest = planRequest({ ...upgradeForm, edits }, { model: "weights", fromRelease: "model" });
+    const compose = vi.fn<(request: PlanRequest) => Promise<Plan>>().mockImplementation(async (req) => ({
+      ...validated, hash: compose.mock.calls.length === 1 ? "proposed" : "cleaned",
+      layers: { form: compose.mock.calls.length === 1 ? validated.layers.form : req.overrides!, edit: parse(req.editsYAML!) },
+    }));
+
+    const result = await composeAdaptivePlan(upgradeRequest, upgradeForm, options, compose, "private");
+
+    expect(compose).toHaveBeenCalledTimes(2);
+    for (const [req] of compose.mock.calls) {
+      expect(parse(req.editsYAML!)).toEqual(edited ? { custom: "retained", resources: { limits: { cpu: "6" } } } : { custom: "retained" });
+    }
+    expect(valuesOf(compose.mock.calls[1][0])).toEqual({ adaptive_cc: "false", default_max: "42", future_nonadaptive: "keep" });
+    expect(result.hash).toBe("cleaned");
   });
 
   it("never bypasses a server rejection of the initial upgrade", async () => {
