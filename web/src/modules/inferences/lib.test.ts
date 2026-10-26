@@ -191,6 +191,94 @@ describe("installSteps", () => {
   it("calls a deleted ModelRoute bad", () => {
     expect(installSteps(status(), route({ missing: true }) as never, {})[2]!.state).toBe("bad");
   });
+
+  const scaler = (conditions: { type: string; status: string; reason?: string; message?: string }[], cur = 1, want = 1) => ({
+    result: { ref: { apiVersion: "v1", kind: "LLMScaler", name: "r" } } as ObjectResult,
+    status: { currentReplicas: cur, desiredReplicas: want, conditions },
+  });
+  const step = (conditions: { type: string; status: string; reason?: string; message?: string }[], cur = 1, want = 1) =>
+    installSteps(status(), {}, scaler(conditions, cur, want) as never)[3];
+
+  it("reads a healthy scaler as steady, including ScalingLimited=False", () => {
+    expect(step([
+      { type: "ScalingActive", status: "True", reason: "DecisionReceived" },
+      { type: "AbleToScale", status: "True", reason: "Synced" },
+      { type: "ScalingLimited", status: "False", reason: "DesiredWithinRange" },
+    ])).toEqual({ key: "scaler", state: "ok", detail: "steady", params: { n: 1 } });
+  });
+  it("calls AbleToScale=False a failure and shows its message", () => {
+    expect(step([
+      { type: "ScalingActive", status: "True", reason: "DecisionReceived" },
+      { type: "AbleToScale", status: "False", reason: "TargetNotFound", message: "deployment demo is gone" },
+    ])).toEqual({ key: "scaler", state: "bad", detail: "failingMessage", params: { reason: "TargetNotFound", message: "deployment demo is gone" } });
+  });
+  it("calls ScalingActive=False a failure", () => {
+    expect(step([
+      { type: "ScalingActive", status: "False", reason: "DecisionUnavailable" },
+      { type: "AbleToScale", status: "True", reason: "Synced" },
+    ])).toEqual({ key: "scaler", state: "bad", detail: "failing", params: { reason: "DecisionUnavailable" } });
+  });
+  it("prefers AbleToScale when it and ScalingActive are both False", () => {
+    expect(step([
+      { type: "ScalingActive", status: "False", reason: "InvalidSpec", message: "bad query" },
+      { type: "AbleToScale", status: "False", reason: "TargetWriteFailed", message: "apiserver rejected the scale" },
+    ])).toEqual({ key: "scaler", state: "bad", detail: "failingMessage", params: { reason: "TargetWriteFailed", message: "apiserver rejected the scale" } });
+  });
+  it("uses the condition type when a failure gives no reason", () => {
+    expect(step([{ type: "AbleToScale", status: "False" }])).toEqual({ key: "scaler", state: "bad", detail: "failing", params: { reason: "AbleToScale" } });
+  });
+  it("does not treat ScalingLimited as a failure", () => {
+    expect(step([
+      { type: "ScalingLimited", status: "False", reason: "DesiredWithinRange" },
+      { type: "SomeOther", status: "False", reason: "Whatever" },
+    ])).toEqual({ key: "scaler", state: "ok", detail: "steady", params: { n: 1 } });
+    expect(step([
+      { type: "ScalingActive", status: "True", reason: "MetricsAvailable" },
+      { type: "AbleToScale", status: "True", reason: "Synced" },
+      { type: "ScalingLimited", status: "True", reason: "TooManyReplicas" },
+    ])).toEqual({ key: "scaler", state: "ok", detail: "steady", params: { n: 1 } });
+  });
+  it("holds while a rollout or scale-down guard is in effect", () => {
+    for (const reason of ["RolloutInProgress", "ScaleDownSettling", "ScaleDownStabilized"]) {
+      expect(step([
+        { type: "ScalingActive", status: "True", reason: "MetricsAvailable" },
+        { type: "AbleToScale", status: "True", reason },
+      ], 3, 1)).toEqual({ key: "scaler", state: "wait", detail: "deferred", params: { reason } });
+    }
+  });
+  it("treats DeferralTimedOut as a normal scale", () => {
+    expect(step([
+      { type: "ScalingActive", status: "True", reason: "DecisionReceived" },
+      { type: "AbleToScale", status: "True", reason: "DeferralTimedOut" },
+    ], 1, 2)).toEqual({ key: "scaler", state: "wait", detail: "scaling", params: { cur: 1, want: 2 } });
+  });
+  // Operator 0.5.0 sets DecisionAvailable only under the Custom provider, and no condition under Prometheus.
+  it("reads a 0.5.0 scaler with a decision as steady", () => {
+    expect(step([
+      { type: "DecisionAvailable", status: "True", reason: "DecisionReceived", message: "decision server recommends 2 replicas" },
+    ], 2, 2)).toEqual({ key: "scaler", state: "ok", detail: "steady", params: { n: 2 } });
+  });
+  it("calls a 0.5.0 DecisionAvailable=False a failure, with its message", () => {
+    expect(step([
+      { type: "DecisionAvailable", status: "False", reason: "DecisionUnavailable", message: "decision server returned 404" },
+    ])).toEqual({ key: "scaler", state: "bad", detail: "failingMessage", params: { reason: "DecisionUnavailable", message: "decision server returned 404" } });
+  });
+  it("reads a 0.5.0 Prometheus scaler with no conditions from its replicas", () => {
+    expect(step([], 1, 3)).toEqual({ key: "scaler", state: "wait", detail: "scaling", params: { cur: 1, want: 3 } });
+    expect(step([], 3, 3)).toEqual({ key: "scaler", state: "ok", detail: "steady", params: { n: 3 } });
+  });
+  it("fails on AbleToScale=False with its message when ScalingActive is missing", () => {
+    expect(step([
+      { type: "AbleToScale", status: "False", reason: "TargetUnreadable", message: "cannot read deployment demo" },
+    ])).toEqual({ key: "scaler", state: "bad", detail: "failingMessage", params: { reason: "TargetUnreadable", message: "cannot read deployment demo" } });
+  });
+  it("prefers ScalingActive over DecisionAvailable", () => {
+    expect(step([
+      { type: "ScalingActive", status: "True", reason: "MetricsAvailable" },
+      { type: "DecisionAvailable", status: "False", reason: "DecisionUnavailable" },
+      { type: "AbleToScale", status: "True", reason: "Synced" },
+    ])).toEqual({ key: "scaler", state: "ok", detail: "steady", params: { n: 1 } });
+  });
 });
 
 describe("age", () => {

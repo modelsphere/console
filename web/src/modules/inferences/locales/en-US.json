@@ -197,6 +197,8 @@
       "unreadable": "Unreadable",
       "deleted": "LLMScaler deleted",
       "failing": "{reason}",
+      "failingMessage": "{reason}: {message}",
+      "deferred": "Holding: {reason}",
       "noDecision": "No decision yet",
       "scaling": "{cur} → {want} replicas",
       "steady": "{n} replicas, steady"
