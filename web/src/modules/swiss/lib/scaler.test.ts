@@ -42,6 +42,46 @@ describe("scalerHealth", () => {
       want: { kind: "ok" },
     },
     {
+      name: "AbleToScale False is failing with its reason",
+      conditions: [c("AbleToScale", "False", "TargetNotFound")],
+      want: { kind: "failing", reason: "TargetNotFound" },
+    },
+    {
+      name: "Ready False outranks AbleToScale",
+      conditions: [c("Ready", "False", "DecisionUnavailable"), c("AbleToScale", "False", "TargetWriteFailed")],
+      want: { kind: "failing", reason: "DecisionUnavailable" },
+    },
+    {
+      name: "AbleToScale True with RolloutInProgress is deferred",
+      conditions: [c("Ready", "True", "Synced"), c("AbleToScale", "True", "RolloutInProgress")],
+      want: { kind: "deferred", reason: "RolloutInProgress" },
+    },
+    {
+      name: "AbleToScale True with ScaleDownSettling is deferred",
+      conditions: [c("Ready", "True", "Synced"), c("AbleToScale", "True", "ScaleDownSettling")],
+      want: { kind: "deferred", reason: "ScaleDownSettling" },
+    },
+    {
+      name: "AbleToScale True with Synced is ok",
+      conditions: [c("Ready", "True", "Synced"), c("AbleToScale", "True", "Synced")],
+      want: { kind: "ok" },
+    },
+    {
+      name: "AbleToScale True with DeferralTimedOut is ok",
+      conditions: [c("Ready", "True", "Synced"), c("AbleToScale", "True", "DeferralTimedOut")],
+      want: { kind: "ok" },
+    },
+    {
+      name: "AbleToScale wins over a leftover ScalingDeferred",
+      conditions: [c("AbleToScale", "True", "Synced"), c("ScalingDeferred", "True", "RolloutInProgress")],
+      want: { kind: "ok" },
+    },
+    {
+      name: "no Ready and ScalingDeferred DeferralTimedOut is ok",
+      conditions: [c("ScalingDeferred", "False", "DeferralTimedOut")],
+      want: { kind: "ok" },
+    },
+    {
       name: "no conditions is ok",
       want: { kind: "ok" },
     },
