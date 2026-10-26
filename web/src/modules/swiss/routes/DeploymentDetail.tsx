@@ -39,6 +39,7 @@ import { SLODialog } from "@swiss/components/SLOCard";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { METHODS } from "@swiss/components/InstallMethod";
 import { isUninstalling } from "@swiss/lib/phase";
+import { scalerHealth } from "@swiss/lib/scaler";
 import { cn, timeAgo } from "@swiss/lib/utils";
 
 export function DeploymentDetail() {
@@ -342,8 +343,9 @@ function scalerStep({ result, status }: ReturnType<typeof pick<LLMScalerSpec, LL
   if (!result) return { label, state: "off", detail: "fixed replicas" };
   if (result.error) return { label, state: "wait", detail: "unreadable" };
   if (result.missing) return { label, state: "bad", detail: "LLMScaler deleted" };
-  const failing = status?.conditions?.find((c) => c.status === "False");
-  if (failing) return { label, state: "bad", detail: failing.reason || failing.type };
+  const health = scalerHealth(status);
+  if (health.kind === "failing") return { label, state: "bad", detail: health.reason };
+  if (health.kind === "deferred") return { label, state: "wait", detail: `deferred: ${health.reason}` };
   const cur = status?.currentReplicas;
   const want = status?.desiredReplicas;
   if (cur === undefined) return { label, state: "wait", detail: "no decision yet" };

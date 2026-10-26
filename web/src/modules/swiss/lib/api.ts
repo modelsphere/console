@@ -759,6 +759,10 @@ export interface LLMScalerSpec {
 export interface LLMScalerStatus {
   currentReplicas?: number;
   desiredReplicas?: number;
+  appliedReplicas?: number;
+  observedGeneration?: number;
+  lastScaleTime?: string;
+  deferredSince?: string;
   conditions?: Condition[];
 }
 

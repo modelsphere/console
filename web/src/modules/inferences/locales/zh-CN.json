@@ -186,6 +186,7 @@
       "unreadable": "读取失败",
       "deleted": "LLMScaler 已被删除",
       "failing": "{reason}",
+      "deferred": "暂缓伸缩：{reason}",
       "noDecision": "还没有伸缩决策",
       "scaling": "{cur} → {want} 副本",
       "steady": "{n} 副本，稳定"

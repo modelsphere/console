@@ -17,6 +17,7 @@ import { HoverHint } from "@swiss/components/ui/hint";
 import { Button } from "@swiss/components/ui/button";
 import { Card } from "@swiss/components/ui/card";
 import { ErrorState } from "@swiss/components/States";
+import { scalerHealth } from "@swiss/lib/scaler";
 import { cn, timeAgo } from "@swiss/lib/utils";
 
 // Unpolled, it loads once per visit and then moves only when the page's own
@@ -246,12 +247,14 @@ function ScalerPanel({
   );
   const current = status?.currentReplicas;
   const desired = status?.desiredReplicas;
-  const failing = status?.conditions?.find((c) => c.status === "False");
+  const health = scalerHealth(status);
   const custom = spec?.metricProvider === "Custom";
 
   let state: React.ReactNode = null;
-  if (failing)
-    state = <Badge variant="warning">{failing.reason || failing.type}</Badge>;
+  if (health.kind === "failing")
+    state = <Badge variant="warning">{health.reason}</Badge>;
+  else if (health.kind === "deferred")
+    state = <Badge variant="warning">deferred: {health.reason}</Badge>;
   else if (current !== undefined && desired !== undefined) {
     if (desired > current) state = <Badge variant="warning">scaling up</Badge>;
     else if (desired < current)
@@ -324,6 +327,9 @@ function ScalerPanel({
             {spec.syncPeriodSeconds !== undefined && (
               <Fact label="Sync every">{spec.syncPeriodSeconds}s</Fact>
             )}
+            {status?.lastScaleTime && (
+              <Fact label="Last scaled">{timeAgo(status.lastScaleTime)}</Fact>
+            )}
           </Facts>
 
           {!custom && !!spec.metrics?.length && (
@@ -349,6 +355,10 @@ function ScalerPanel({
             </div>
           )}
 
+          <Stale
+            generation={result?.live?.generation}
+            observed={status?.observedGeneration}
+          />
           <Conditions conditions={status?.conditions} />
         </>
       )}

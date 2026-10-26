@@ -12,6 +12,7 @@ import type {
   Run,
 } from "@swiss/lib/api";
 import { isUninstalling } from "@swiss/lib/phase";
+import { scalerHealth } from "@swiss/lib/scaler";
 
 export type Tone = "success" | "info" | "warning" | "error" | "muted";
 
@@ -164,8 +165,9 @@ function scalerStep({ result, status }: Picked<LLMScalerSpec, LLMScalerStatus>):
   if (!result) return { key, state: "off", detail: "none" };
   if (result.error) return { key, state: "wait", detail: "unreadable" };
   if (result.missing) return { key, state: "bad", detail: "deleted" };
-  const failing = status?.conditions?.find((c) => c.status === "False");
-  if (failing) return { key, state: "bad", detail: "failing", params: { reason: failing.reason || failing.type } };
+  const health = scalerHealth(status);
+  if (health.kind === "failing") return { key, state: "bad", detail: "failing", params: { reason: health.reason } };
+  if (health.kind === "deferred") return { key, state: "wait", detail: "deferred", params: { reason: health.reason } };
   const cur = status?.currentReplicas;
   const want = status?.desiredReplicas;
   if (cur === undefined) return { key, state: "wait", detail: "noDecision" };

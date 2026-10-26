@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ObjectResult, Plan, ReleaseStatus, Run } from "@swiss/lib/api";
+import type { LLMScalerStatus, ObjectResult, Plan, ReleaseStatus, Run } from "@swiss/lib/api";
 import {
   age,
   defaultContainer,
@@ -190,6 +190,31 @@ describe("installSteps", () => {
   });
   it("calls a deleted ModelRoute bad", () => {
     expect(installSteps(status(), route({ missing: true }) as never, {})[2]!.state).toBe("bad");
+  });
+
+  const scaler = (s: LLMScalerStatus) => ({
+    result: { ref: { apiVersion: "v1", kind: "LLMScaler", name: "s" } } as ObjectResult,
+    status: s,
+  });
+
+  it("treats ScalingDeferred NotDeferred as steady", () => {
+    expect(installSteps(status(), {}, scaler({
+      currentReplicas: 2,
+      desiredReplicas: 2,
+      conditions: [{ type: "ScalingDeferred", status: "False", reason: "NotDeferred" }],
+    }))[3]).toEqual({ key: "scaler", state: "ok", detail: "steady", params: { n: 2 } });
+  });
+  it("reports Ready False as failing", () => {
+    expect(installSteps(status(), {}, scaler({
+      conditions: [{ type: "Ready", status: "False", reason: "MetricsUnavailable" }],
+    }))[3]).toEqual({ key: "scaler", state: "bad", detail: "failing", params: { reason: "MetricsUnavailable" } });
+  });
+  it("waits while ScalingDeferred is true", () => {
+    expect(installSteps(status(), {}, scaler({
+      currentReplicas: 2,
+      desiredReplicas: 3,
+      conditions: [{ type: "ScalingDeferred", status: "True", reason: "RolloutInProgress" }],
+    }))[3]).toEqual({ key: "scaler", state: "wait", detail: "deferred", params: { reason: "RolloutInProgress" } });
   });
 });
 
