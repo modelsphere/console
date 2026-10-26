@@ -159,17 +159,36 @@ function routeStep({ result, spec, status }: Picked<ModelRouteSpec, ModelRouteSt
   return status?.ready ? { key, state: "ok", detail: "ready", params } : { key, state: "wait", detail: "notReady", params };
 }
 
+// AbleToScale=True reasons that hold a step. Synced and DeferralTimedOut are a normal scale.
+const SCALE_HOLD_REASONS = new Set(["RolloutInProgress", "ScaleDownSettling", "ScaleDownStabilized"]);
+
 function scalerStep({ result, status }: Picked<LLMScalerSpec, LLMScalerStatus>): Step {
   const key = "scaler";
   if (!result) return { key, state: "off", detail: "none" };
   if (result.error) return { key, state: "wait", detail: "unreadable" };
   if (result.missing) return { key, state: "bad", detail: "deleted" };
-  // ScalingDeferred is inverted: False is the normal state, True a guard holding a step back.
+  // AbleToScale replaced ScalingDeferred (True meant held back) and ScalingActive replaced
+  // DecisionAvailable. The controller leaves a stale condition of the old type in place.
   const conditions = status?.conditions ?? [];
-  const failing = conditions.find((c) => c.type !== "ScalingDeferred" && c.status === "False");
-  if (failing) return { key, state: "bad", detail: "failing", params: { reason: failing.reason || failing.type } };
-  const deferred = conditions.find((c) => c.type === "ScalingDeferred" && c.status === "True");
-  if (deferred) return { key, state: "wait", detail: "deferred", params: { reason: deferred.reason || deferred.type } };
+  const ofType = (type: string) => conditions.find((c) => c.type === type);
+  const active = ofType("ScalingActive") ?? ofType("DecisionAvailable");
+  const able = ofType("AbleToScale");
+
+  const failing = able?.status === "False" ? able : active?.status === "False" ? active : undefined;
+  if (failing) {
+    const reason = failing.reason || failing.type;
+    if (failing.message) return { key, state: "bad", detail: "failingMessage", params: { reason, message: failing.message } };
+    return { key, state: "bad", detail: "failing", params: { reason } };
+  }
+
+  if (able?.status === "True" && able.reason && SCALE_HOLD_REASONS.has(able.reason)) {
+    return { key, state: "wait", detail: "deferred", params: { reason: able.reason } };
+  }
+  if (!able) {
+    const deferred = ofType("ScalingDeferred");
+    if (deferred?.status === "True") return { key, state: "wait", detail: "deferred", params: { reason: deferred.reason || deferred.type } };
+  }
+
   const cur = status?.currentReplicas;
   const want = status?.desiredReplicas;
   if (cur === undefined) return { key, state: "wait", detail: "noDecision" };
