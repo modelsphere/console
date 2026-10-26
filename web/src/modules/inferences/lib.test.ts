@@ -238,13 +238,19 @@ describe("installSteps", () => {
       { type: "ScalingLimited", status: "True", reason: "TooManyReplicas" },
     ])).toEqual({ key: "scaler", state: "ok", detail: "steady", params: { n: 1 } });
   });
-  it("holds while a rollout or scale-down guard is in effect", () => {
+  it("reports a hold as steady even when the replica count has not caught up", () => {
     for (const reason of ["RolloutInProgress", "ScaleDownSettling", "ScaleDownStabilized"]) {
       expect(step([
         { type: "ScalingActive", status: "True", reason: "MetricsAvailable" },
         { type: "AbleToScale", status: "True", reason },
-      ], 3, 1)).toEqual({ key: "scaler", state: "wait", detail: "deferred", params: { reason } });
+      ], 3, 1)).toEqual({ key: "scaler", state: "ok", detail: "steady", params: { n: 3 } });
     }
+  });
+  it("lets a failure win over a hold", () => {
+    expect(step([
+      { type: "ScalingActive", status: "False", reason: "DecisionUnavailable" },
+      { type: "AbleToScale", status: "True", reason: "ScaleDownStabilized" },
+    ], 3, 1)).toEqual({ key: "scaler", state: "bad", detail: "failing", params: { reason: "DecisionUnavailable" } });
   });
   it("treats DeferralTimedOut as a normal scale", () => {
     expect(step([

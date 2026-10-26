@@ -12,6 +12,7 @@ import type {
   Run,
 } from "@swiss/lib/api";
 import { isUninstalling } from "@swiss/lib/phase";
+import { scalerFailing, scalerHold } from "@swiss/lib/scaler";
 
 export type Tone = "success" | "info" | "warning" | "error" | "muted";
 
@@ -159,35 +160,23 @@ function routeStep({ result, spec, status }: Picked<ModelRouteSpec, ModelRouteSt
   return status?.ready ? { key, state: "ok", detail: "ready", params } : { key, state: "wait", detail: "notReady", params };
 }
 
-// AbleToScale=True reasons that hold a step. Synced and DeferralTimedOut are a normal scale.
-const SCALE_HOLD_REASONS = new Set(["RolloutInProgress", "ScaleDownSettling", "ScaleDownStabilized"]);
-
 function scalerStep({ result, status }: Picked<LLMScalerSpec, LLMScalerStatus>): Step {
   const key = "scaler";
   if (!result) return { key, state: "off", detail: "none" };
   if (result.error) return { key, state: "wait", detail: "unreadable" };
   if (result.missing) return { key, state: "bad", detail: "deleted" };
-  // DecisionAvailable is a deprecated mirror of ScalingActive and the only condition operator 0.5.0 writes.
-  const conditions = status?.conditions ?? [];
-  const ofType = (type: string) => conditions.find((c) => c.type === type);
-  const active = ofType("ScalingActive") ?? ofType("DecisionAvailable");
-  const able = ofType("AbleToScale");
-
-  const failing = able?.status === "False" ? able : active?.status === "False" ? active : undefined;
+  const failing = scalerFailing(status?.conditions);
   if (failing) {
     const reason = failing.reason || failing.type;
     if (failing.message) return { key, state: "bad", detail: "failingMessage", params: { reason, message: failing.message } };
     return { key, state: "bad", detail: "failing", params: { reason } };
   }
 
-  if (able?.status === "True" && able.reason && SCALE_HOLD_REASONS.has(able.reason)) {
-    return { key, state: "wait", detail: "deferred", params: { reason: able.reason } };
-  }
-
   const cur = status?.currentReplicas;
   const want = status?.desiredReplicas;
   if (cur === undefined) return { key, state: "wait", detail: "noDecision" };
-  if (want !== undefined && want !== cur) return { key, state: "wait", detail: "scaling", params: { cur, want } };
+  if (want !== undefined && want !== cur && !scalerHold(status?.conditions))
+    return { key, state: "wait", detail: "scaling", params: { cur, want } };
   return { key, state: "ok", detail: "steady", params: { n: cur } };
 }
 

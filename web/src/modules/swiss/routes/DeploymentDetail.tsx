@@ -32,7 +32,8 @@ import { Dialog } from "@swiss/components/ui/dialog";
 import { Field, Input } from "@swiss/components/ui/input";
 import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { Provenance } from "@swiss/components/Provenance";
-import { ReleaseObjects, pick, scalerFailing, useReleaseObjects } from "@swiss/components/ReleaseObjects";
+import { ReleaseObjects, pick, useReleaseObjects } from "@swiss/components/ReleaseObjects";
+import { scalerFailing, scalerHold } from "@swiss/lib/scaler";
 import { AccessPoint } from "@swiss/components/Endpoint";
 import { ReleaseStatus } from "@swiss/components/ReleaseStatus";
 import { SLODialog } from "@swiss/components/SLOCard";
@@ -337,7 +338,7 @@ function routeStep({ result, spec, status }: ReturnType<typeof pick<ModelRouteSp
   return status?.ready ? { label, state: "ok", detail: backends + route } : { label, state: "wait", detail: `not ready · ${backends}` };
 }
 
-function scalerStep({ result, status }: ReturnType<typeof pick<LLMScalerSpec, LLMScalerStatus>>): Step {
+export function scalerStep({ result, status }: ReturnType<typeof pick<LLMScalerSpec, LLMScalerStatus>>): Step {
   const label = "Scaling";
   if (!result) return { label, state: "off", detail: "fixed replicas" };
   if (result.error) return { label, state: "wait", detail: "unreadable" };
@@ -347,7 +348,8 @@ function scalerStep({ result, status }: ReturnType<typeof pick<LLMScalerSpec, LL
   const cur = status?.currentReplicas;
   const want = status?.desiredReplicas;
   if (cur === undefined) return { label, state: "wait", detail: "no decision yet" };
-  if (want !== undefined && want !== cur) return { label, state: "wait", detail: `${cur} → ${want} replicas` };
+  if (want !== undefined && want !== cur && !scalerHold(status?.conditions))
+    return { label, state: "wait", detail: `${cur} → ${want} replicas` };
   return { label, state: "ok", detail: `${cur} replica${cur === 1 ? "" : "s"}, steady` };
 }
 

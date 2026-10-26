@@ -17,6 +17,7 @@ import { HoverHint } from "@swiss/components/ui/hint";
 import { Button } from "@swiss/components/ui/button";
 import { Card } from "@swiss/components/ui/card";
 import { ErrorState } from "@swiss/components/States";
+import { scalerFailing, scalerHold, scalerNeutral } from "@swiss/lib/scaler";
 import { cn, timeAgo } from "@swiss/lib/utils";
 
 // Unpolled, it loads once per visit and then moves only when the page's own
@@ -247,11 +248,13 @@ function ScalerPanel({
   const current = status?.currentReplicas;
   const desired = status?.desiredReplicas;
   const failing = scalerFailing(status?.conditions);
+  const hold = scalerHold(status?.conditions);
   const custom = spec?.metricProvider === "Custom";
 
   let state: React.ReactNode = null;
   if (failing)
     state = <Badge variant="warning">{failing.reason || failing.type}</Badge>;
+  else if (hold) state = <Badge variant="success">steady</Badge>;
   else if (current !== undefined && desired !== undefined) {
     if (desired > current) state = <Badge variant="warning">scaling up</Badge>;
     else if (desired < current)
@@ -349,7 +352,11 @@ function ScalerPanel({
             </div>
           )}
 
-          <Conditions conditions={status?.conditions} neutral={scalerNeutral(status?.conditions)} />
+          <Conditions
+            conditions={status?.conditions}
+            neutral={scalerNeutral(status?.conditions)}
+            warn={hold ? ["AbleToScale"] : undefined}
+          />
         </>
       )}
     </ObjectCard>
@@ -681,18 +688,15 @@ function Stale({
   );
 }
 
-// Only AbleToScale=False or ScalingActive=False (DecisionAvailable on operator 0.5.0) is a scaler failure.
-export function scalerFailing(conditions?: Condition[]): Condition | undefined {
-  const of = (type: string) => conditions?.find((c) => c.type === type);
-  return [of("AbleToScale"), of("ScalingActive") ?? of("DecisionAvailable")].find((c) => c?.status === "False");
-}
-
-// ScalingLimited is informational; DecisionAvailable only mirrors ScalingActive when that is present.
-function scalerNeutral(conditions?: Condition[]): string[] {
-  return conditions?.some((c) => c.type === "ScalingActive") ? ["ScalingLimited", "DecisionAvailable"] : ["ScalingLimited"];
-}
-
-export function Conditions({ conditions, neutral = [] }: { conditions?: Condition[]; neutral?: string[] }) {
+export function Conditions({
+  conditions,
+  neutral = [],
+  warn = [],
+}: {
+  conditions?: Condition[];
+  neutral?: string[];
+  warn?: string[];
+}) {
   if (!conditions?.length) return null;
   return (
     <ul className="mt-auto space-y-1.5 border-t pt-3">
@@ -702,13 +706,15 @@ export function Conditions({ conditions, neutral = [] }: { conditions?: Conditio
             <span
               className={cn(
                 "size-1.5 shrink-0 rounded-full",
-                neutral.includes(c.type)
-                  ? "bg-muted-foreground"
-                  : c.status === "True"
-                    ? "bg-success"
-                    : c.status === "False"
-                      ? "bg-warning"
-                      : "bg-muted-foreground",
+                warn.includes(c.type)
+                  ? "bg-warning"
+                  : neutral.includes(c.type)
+                    ? "bg-muted-foreground"
+                    : c.status === "True"
+                      ? "bg-success"
+                      : c.status === "False"
+                        ? "bg-warning"
+                        : "bg-muted-foreground",
               )}
             />
             <span className="font-medium">{c.type}</span>
