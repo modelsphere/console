@@ -270,6 +270,22 @@ describe("installSteps", () => {
       { type: "ScalingDeferred", status: "False", reason: "NotDeferred" },
     ])).toEqual({ key: "scaler", state: "bad", detail: "failing", params: { reason: "DecisionUnavailable" } });
   });
+  it("fails on AbleToScale=False with its message when ScalingActive is missing", () => {
+    expect(step([
+      { type: "AbleToScale", status: "False", reason: "TargetUnreadable", message: "cannot read deployment demo" },
+    ])).toEqual({ key: "scaler", state: "bad", detail: "failingMessage", params: { reason: "TargetUnreadable", message: "cannot read deployment demo" } });
+  });
+  it("shows an old object with only ScalingDeferred=True as waiting", () => {
+    expect(step([{ type: "ScalingDeferred", status: "True", reason: "ScaleDownSettling" }], 3, 1))
+      .toEqual({ key: "scaler", state: "wait", detail: "deferred", params: { reason: "ScaleDownSettling" } });
+  });
+  it("fails on AbleToScale=False and ignores a stale ScalingDeferred=True", () => {
+    expect(step([
+      { type: "ScalingActive", status: "True", reason: "DecisionReceived" },
+      { type: "AbleToScale", status: "False", reason: "TargetNotFound" },
+      { type: "ScalingDeferred", status: "True", reason: "RolloutInProgress" },
+    ])).toEqual({ key: "scaler", state: "bad", detail: "failing", params: { reason: "TargetNotFound" } });
+  });
   it("ignores a stale ScalingDeferred when AbleToScale is present", () => {
     expect(step([
       { type: "ScalingActive", status: "True", reason: "DecisionReceived" },
