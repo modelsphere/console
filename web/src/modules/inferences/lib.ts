@@ -167,8 +167,7 @@ function scalerStep({ result, status }: Picked<LLMScalerSpec, LLMScalerStatus>):
   if (!result) return { key, state: "off", detail: "none" };
   if (result.error) return { key, state: "wait", detail: "unreadable" };
   if (result.missing) return { key, state: "bad", detail: "deleted" };
-  // AbleToScale replaced ScalingDeferred (True meant held back), which the controller leaves
-  // in place, stale. DecisionAvailable is still written on every sync as a deprecated mirror of ScalingActive.
+  // DecisionAvailable is a deprecated mirror of ScalingActive and the only condition operator 0.5.0 writes.
   const conditions = status?.conditions ?? [];
   const ofType = (type: string) => conditions.find((c) => c.type === type);
   const active = ofType("ScalingActive") ?? ofType("DecisionAvailable");
@@ -183,10 +182,6 @@ function scalerStep({ result, status }: Picked<LLMScalerSpec, LLMScalerStatus>):
 
   if (able?.status === "True" && able.reason && SCALE_HOLD_REASONS.has(able.reason)) {
     return { key, state: "wait", detail: "deferred", params: { reason: able.reason } };
-  }
-  if (!able) {
-    const deferred = ofType("ScalingDeferred");
-    if (deferred?.status === "True") return { key, state: "wait", detail: "deferred", params: { reason: deferred.reason || deferred.type } };
   }
 
   const cur = status?.currentReplicas;
