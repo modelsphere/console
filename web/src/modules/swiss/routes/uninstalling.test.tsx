@@ -89,6 +89,21 @@ describe("swiss deployment list", () => {
     expect(steady).toContain("deployed");
     expect(steady).toContain("SLO");
   });
+
+  it("offers SLO on an llmsvc row, whose phase is the operator's Applied", () => {
+    const c = client();
+    c.setQueryData(["cluster"], { allowDeploy: true, catalog: "u", name: "c", profile: "p", version: "0" });
+    c.setQueryData(["deployments", 1], {
+      cluster: "c",
+      catalogRef: "r",
+      page: 1,
+      perPage: 25,
+      summary: { total: 1, catalogBehind: 0 },
+      deployments: [deployment({ release: "operated", phase: "Applied", status: "deployed", backend: "llmsvc" })],
+    });
+    const html = page(c, "/deployments", <Deployments />);
+    expect(html.split(/<tr\b/).find((row) => row.includes("operated"))).toContain("SLO");
+  });
 });
 
 describe("swiss deployment detail", () => {
