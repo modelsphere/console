@@ -16,3 +16,24 @@ export function isUninstalling(s: {
     s.llmservice?.phase === "uninstalling"
   );
 }
+
+export type Phase = "applying" | "applied" | "failed" | "uninstalling";
+
+// A list row's phase is swiss's own word for a helm release ("applied") and the
+// operator's for an LLMService ("Applied", "Pending"). This reads either in
+// swiss's words, as the server already does for planStatus.
+export function rowPhase(phase?: string): Phase | undefined {
+  switch (phase?.toLowerCase()) {
+    case "pending":
+    case "applying":
+      return "applying";
+    case "applied":
+      return "applied";
+    case "failed":
+      return "failed";
+    case "deleting":
+    case "uninstalling":
+      return "uninstalling";
+  }
+  return undefined;
+}

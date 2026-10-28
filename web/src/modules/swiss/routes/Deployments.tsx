@@ -3,7 +3,7 @@ import { Link } from "@swiss/lib/host";
 import { ChevronLeft, ChevronRight, Eye, Plus, Settings2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type Deployment } from "@swiss/lib/api";
-import { isUninstalling } from "@swiss/lib/phase";
+import { isUninstalling, rowPhase } from "@swiss/lib/phase";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent } from "@swiss/components/ui/card";
@@ -149,9 +149,8 @@ function Row({ d, onConfigureSLO }: { d: Deployment; onConfigureSLO: () => void 
       <TableCell>
         <div className="flex items-center justify-end gap-2">
           {/* Applied is when the chart has created the requirement; whether
-              this release has one at all, the popup asks slo-api. An llmsvc
-              row carries the operator's "Applied", helm's is "applied". */}
-          {d.phase?.toLowerCase() === "applied" && !isUninstalling(d) && (
+              this release has one at all, the popup asks slo-api. */}
+          {rowPhase(d.phase) === "applied" && !isUninstalling(d) && (
             <Button size="sm" variant="outline" title="Configure SLO" onClick={onConfigureSLO}>
               <Settings2 className="size-4" /> SLO
             </Button>
