@@ -15,7 +15,10 @@ ARG NPM_REGISTRY=https://registry.npmjs.org
 ARG GOPROXY=https://proxy.golang.org,direct
 
 # --- 1. the SPA ------------------------------------------------------------
-FROM node:24-bookworm-slim AS web
+# Multi-arch: the SPA is architecture-independent and Go cross-compiles, so both
+# build stages run on the builder's own platform and only the runtime stage is
+# per-target -- no emulation needed.
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS web
 ARG NPM_REGISTRY
 
 WORKDIR /src/web
@@ -30,8 +33,9 @@ COPY web/ ./
 RUN npm run build
 
 # --- 2. the binary ---------------------------------------------------------
-FROM golang:1.26 AS build
+FROM --platform=$BUILDPLATFORM golang:1.26 AS build
 ARG GOPROXY
+ARG TARGETOS TARGETARCH
 ENV GOPROXY=$GOPROXY
 # auto: -mod=vendor when the context carries vendor/modules.txt, else -mod=mod.
 ARG GO_MOD_MODE=auto
@@ -53,7 +57,7 @@ RUN set -eu ; \
     fi; \
     echo "building with -mod=${mod}"; \
     if [ "${mod}" != "vendor" ]; then go mod download; fi; \
-    CGO_ENABLED=0 GOOS=linux go build \
+    CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" go build \
       -trimpath -mod="${mod}" \
       -ldflags="-s -w" \
       -o /out/console ./cmd/console
