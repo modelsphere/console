@@ -11,7 +11,7 @@ import type {
   Revision,
   Run,
 } from "@swiss/lib/api";
-import { isUninstalling } from "@swiss/lib/phase";
+import { isUninstalling, rowPhase } from "@swiss/lib/phase";
 import { scalerFailing, scalerHold } from "@swiss/lib/scaler";
 
 export type Tone = "success" | "info" | "warning" | "error" | "muted";
@@ -27,8 +27,9 @@ export function rowState(d: Pick<Deployment, "status" | "phase">): State {
   // Ahead of failed and applying: a helm row can already have no release status
   // while its pods are still terminating.
   if (isUninstalling(d)) return { key: "uninstalling", tone: "warning" };
-  if (d.phase === "failed" || d.status === "failed") return { key: "failed", tone: "error" };
-  if (d.phase === "applying" || d.status?.startsWith("pending")) return { key: "applying", tone: "info" };
+  const phase = rowPhase(d.phase);
+  if (phase === "failed" || d.status === "failed") return { key: "failed", tone: "error" };
+  if (phase === "applying" || d.status?.startsWith("pending")) return { key: "applying", tone: "info" };
   if (d.status === "deployed") return { key: "applied", tone: "success" };
   if (!d.status) return { key: "unknown", tone: "muted" };
   return { key: "other", tone: "muted", raw: d.status };

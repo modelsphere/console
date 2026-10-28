@@ -56,6 +56,11 @@ describe("rowState", () => {
   it("calls a row without a status unknown", () => {
     expect(rowState({}).key).toBe("unknown");
   });
+  it("reads an llmsvc row's operator phase over helm's deployed", () => {
+    expect(rowState({ status: "deployed", phase: "Failed" }).key).toBe("failed");
+    expect(rowState({ status: "deployed", phase: "Applying" }).key).toBe("applying");
+    expect(rowState({ phase: "Pending" }).key).toBe("applying");
+  });
 });
 
 describe("releaseState", () => {
