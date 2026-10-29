@@ -34,6 +34,7 @@ import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
 import { gpuShort } from "@swiss/lib/gpu";
 import { isChartRange, movableCatalogs } from "@swiss/lib/upgrade";
+import { cacheCard } from "@swiss/lib/cache";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
@@ -67,7 +68,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes, retry: false });
   // A fresh deploy's switches start from the site's defaults; a profile it
   // cannot read leaves them at EMPTY's. An upgrade starts from its own plan.
-  const profile = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false, enabled: !upgrade });
+  const profile = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false });
   const current = useQuery({
     queryKey: ["releasePlan", upgrade ? target.namespace : "", upgrade ? target.release : ""],
     queryFn: () => api.releasePlan((target as { namespace: string }).namespace, (target as { release: string }).release),
@@ -120,6 +121,12 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     retry: false,
   });
   const chart = chartChoice(chartList, chartVersion, upgrade ? current.data?.chart : undefined);
+  const running = upgrade ? current.data?.chart : undefined;
+  const cache = cacheCard(
+    profile.data?.profile,
+    v,
+    { name: v?.chart.name ?? running?.name, version: chart.resolved ?? v?.chart.version ?? running?.version },
+  );
   const llm = cluster.data?.llmservice;
   const block = llmsvcBlock(llm, entry.data?.schema);
   const method = installMethod(picked, llm, entry.data?.schema);
@@ -178,8 +185,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         return await composeAdaptivePlan(planRequest(
           { ...form, serviceId: form.serviceId || (upgrade ? form.serviceId : defaultServiceId(target.model)) },
           upgrade
-            ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release }
-            : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined },
+            ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported }
+            : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported },
         ), form, routeOptions.data, deployApi.plan, catalogName);
       } catch (error) {
         if (error instanceof AdaptivePlanChangedError) throw new Error(t("deploy.fields.adaptiveChanged"));
@@ -402,7 +409,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               submitted={submitted}
               target={targetFields}
               cluster={cluster.data}
-              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository) }}
+              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), cache }}
               gpuOptions={gpuOptions(v?.requires.gpuProduct, nodes.data?.nodes.map((n) => n.GPUProduct))}
               expanded={expanded}
               onExpand={(s, o) => setExpanded((e) => ({ ...e, [s]: o }))}

@@ -8,7 +8,7 @@ import { toYaml } from "@swiss/lib/yaml";
 // In merge order, and `edit` last because that is when it is applied. Leaving it
 // out of this list is how the one input exempt from ownership becomes the one
 // input nobody can see -- the opposite of why it is labelled at all.
-const LAYERS = ["defaults", "catalog", "site", "derived", "form", "edit"] as const;
+export const LAYERS = ["defaults", "catalog", "site", "derived", "form", "edit"] as const;
 
 const TONE = {
   defaults: "outline",

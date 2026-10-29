@@ -11,6 +11,7 @@ import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { isChartRange } from "@swiss/lib/upgrade";
+import { cacheCard } from "@swiss/lib/cache";
 import { unlistedProducts, vendorProducts } from "@swiss/lib/gpu";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { InstallMethodChoice } from "@swiss/components/InstallMethod";
@@ -117,6 +118,7 @@ export function Deploy() {
           catalog,
           chartVersion: chartVersion || undefined,
           forceGpuProducts: unlistedProducts(model.data?.variant.requires.gpuProduct, form.gpuProducts).length > 0,
+          cacheUnsupported: !!cache.unsupported,
         }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping
@@ -151,6 +153,11 @@ export function Deploy() {
       update({});
     },
   });
+  const cache = cacheCard(
+    profile.data?.profile,
+    variant,
+    { name: variant.chart.name, version: chart.resolved ?? variant.chart.version },
+  );
 
   if (!cluster.data?.allowDeploy) {
     return (
@@ -260,6 +267,7 @@ export function Deploy() {
         image={imageOf(variant, model.data.imageRepository)}
         supportedGPUs={variant?.requires.gpuProduct}
         clusterGPUs={vendorProducts(nodes.data?.nodes, variant?.requires.vendor)}
+        cache={cache}
       />
 
       <Pipeline

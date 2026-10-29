@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DeployForm } from "./DeployForm";
 import { EMPTY, planRequest, type Form } from "@swiss/components/DeploySettings";
+import type { CacheCard } from "@swiss/lib/cache";
 import type { RouteOptions } from "@/modules/inferences/routeOptions";
 
 const catalog: RouteOptions = {
@@ -84,5 +85,61 @@ describe("deploy route catalog", () => {
     expect(html.includes("当前：on")).toBe(true);
     expect(html.includes("引擎默认值或派生值")).toBe(true);
     expect(planRequest(form, { model: "model" })).toEqual(before);
+  });
+});
+
+describe("compile cache card", () => {
+  const defaults = { hostPath: "/mnt/disk0/sglang-cache", historyLimit: 2, maxSlotsPerNode: 4 };
+  const renderAdvanced = (cache?: CacheCard, form: Form = { ...EMPTY, serviceId: "model" }) =>
+    renderToStaticMarkup(
+      <DeployForm
+        form={form} onChange={() => {}} submitted={false} target={null} defaults={{ cache }} gpuOptions={[]}
+        expanded={{ basic: false, resources: false, routing: false, advanced: true }}
+        onExpand={() => {}} idPrefix="test-"
+      />,
+    );
+
+  it("greys out for a chart that cannot take it, and says why", () => {
+    const on = { ...EMPTY, serviceId: "model", cache: true };
+    const none = renderAdvanced({ defaults, siteOn: false, unsupported: { chart: "vllm" } }, on);
+    expect(none).toContain("编译缓存");
+    expect(none).toContain("vllm chart 不支持");
+    expect(none).not.toContain('placeholder="/mnt/disk0/sglang-cache"');
+    expect(none).not.toContain("站点默认开启缓存");
+    expect(renderAdvanced({ defaults, siteOn: false, unsupported: { chart: "sglang", since: "0.9.1" } })).toContain("sglang chart 0.9.1 以下不支持");
+  });
+
+  it("stays editable with the site's cache on, where nothing denies it", () => {
+    const switchOf = (html: string) => /<span[^>]*role="switch"[^>]*aria-label="编译缓存"[^>]*>/.exec(html)?.[0] ?? "";
+    const off = switchOf(renderAdvanced({ defaults, siteOn: true }, { ...EMPTY, serviceId: "model", cache: false }));
+    expect(off).toContain('aria-checked="false"');
+    expect(off).not.toContain('data-disabled=""');
+    const on = renderAdvanced({ defaults, siteOn: true }, { ...EMPTY, serviceId: "model", cache: true });
+    expect(switchOf(on)).toContain('aria-checked="true"');
+    expect(on).toContain('placeholder="/mnt/disk0/sglang-cache"');
+    expect(on).not.toContain("站点默认开启缓存");
+  });
+
+  it("offers what an empty field keeps, and flags a slot count the chart refuses", () => {
+    const html = renderAdvanced({ defaults, siteOn: false }, { ...EMPTY, serviceId: "model", cache: true, cacheMaxSlots: "65" });
+    expect(html).toContain('placeholder="/mnt/disk0/sglang-cache"');
+    expect(html).toContain('placeholder="2"');
+    expect(html).toContain("取值 1 到 64");
+  });
+});
+
+describe("skip values schema switch", () => {
+  it("sits in the advanced section and shows the form's value", () => {
+    const render = (form: Form) =>
+      renderToStaticMarkup(
+        <DeployForm
+          form={form} onChange={() => {}} submitted={false} target={null} defaults={{}} gpuOptions={[]}
+          expanded={{ basic: false, resources: false, routing: false, advanced: true }}
+          onExpand={() => {}} idPrefix="test-"
+        />,
+      );
+    const switchOf = (html: string) => /<span[^>]*role="switch"[^>]*aria-label="跳过 values schema 校验"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(switchOf(render({ ...EMPTY, serviceId: "model" }))).toContain('aria-checked="false"');
+    expect(switchOf(render({ ...EMPTY, serviceId: "model", skipSchemaValidation: true }))).toContain('aria-checked="true"');
   });
 });

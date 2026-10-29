@@ -486,6 +486,10 @@ export const api = {
     get<ReleaseObjects>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/objects`,
     ),
+  autoscaling: (ns: string, release: string) =>
+    get<AutoscaleState>(
+      `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/autoscaling`,
+    ),
   revisions: (ns: string, release: string) =>
     get<RevisionsResponse>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/revisions`,
@@ -553,6 +557,8 @@ export interface Plan {
   // these documents, and reading them from anywhere else is how an upgrade
   // silently seeds an empty form.
   layers: Record<string, Record<string, unknown>>;
+  // helm applies it without checking the values against the chart's schema.
+  skipSchemaValidation?: boolean;
   helmfile?: string;
   hash: string;
   // What compose accepted but a person should see, such as a forced GPU product.
@@ -599,6 +605,8 @@ export interface PlanRequest {
   // profile's own setting. helm creates the namespace; this is the plan saying
   // it may.
   createNamespace?: boolean;
+  // An upgrade sending overrides sets it; one sending none keeps the release's.
+  skipSchemaValidation?: boolean;
   // Must fall in the variant's chart.version. Empty keeps a running release's
   // chart while in range, else takes the newest.
   chartVersion?: string;
@@ -691,6 +699,28 @@ export interface ObjectResult {
 
 export interface ReleaseObjects {
   objects: ObjectResult[];
+}
+
+// swissd's PD slice autoscaler, its last pass for one release. Temporary: PD
+// mode only, and the endpoint is due to be removed.
+export interface AutoscaleState {
+  namespace: string;
+  release: string;
+  // The plan is disaggregated and its form SLO is on.
+  enabled: boolean;
+  // DisaggregatedSet slices the loop saw.
+  current: number;
+  // decision clamped into [1, 64]. Absent on a hold.
+  want?: number;
+  // decision-gen's count.
+  decision?: number;
+  noDecision?: boolean;
+  // Absent until this swissd has evaluated the release.
+  outcome?: "scaled-up" | "scaled-down" | "unchanged" | "no-decision" | "held" | "error";
+  hold?: string;
+  error?: string;
+  lastEvaluated?: string;
+  lastScaled?: string;
 }
 
 // routing.modelsphere.dev ModelRoute: autoconfig keeps openresty's peers and

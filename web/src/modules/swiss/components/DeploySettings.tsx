@@ -2,8 +2,10 @@ import { useState } from "react";
 import { ChevronDown, Plus, TriangleAlert, X } from "lucide-react";
 import type { ClusterInfo, Plan, PlanRequest, ProfileResponse, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
+import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { productChoices, unlistedProducts } from "@swiss/lib/gpu";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
+import { LAYERS } from "@swiss/components/Provenance";
 import {
   DIRECTIVES,
   DIRECTIVES_BY_KEY,
@@ -71,6 +73,16 @@ export interface Form {
   monitor: boolean;
   monitorModel: string;
   monitorGpuType: string;
+  // The sglang chart's compile cache. Empty fields leave the site's, else the
+  // chart's.
+  cache: boolean;
+  cacheHostPath: string;
+  cacheHostPathSuffix: string;
+  cacheHistoryLimit: string;
+  cacheMaxSlots: string;
+  // Apply without checking the values against the chart's values.schema.json:
+  // the way out for a variant carrying a key its chart's schema refuses.
+  skipSchemaValidation: boolean;
 }
 
 export const EMPTY: Form = {
@@ -104,35 +116,43 @@ export const EMPTY: Form = {
   monitor: true,
   monitorModel: "",
   monitorGpuType: "",
+  cache: false,
+  cacheHostPath: "",
+  cacheHostPathSuffix: "",
+  cacheHistoryLimit: "",
+  cacheMaxSlots: "",
+  skipSchemaValidation: false,
 };
 
 // The switches swissd gives a default for, by chart section.
-const DEFAULTED_SWITCHES = { modelRoute: "modelRoute", scaler: "scaler", cart: "cart", slo: "sloRequirement", serviceMonitor: "serviceMonitor" } as const;
+const DEFAULTED_SWITCHES = { modelRoute: "modelRoute", scaler: "scaler", cart: "cart", slo: "sloRequirement", serviceMonitor: "serviceMonitor", cache: "cache" } as const;
 type DefaultedSwitch = keyof typeof DEFAULTED_SWITCHES;
 export type SwitchDefaults = Partial<Pick<Form, DefaultedSwitch>>;
 
 // switchDefaults is where a fresh deploy's switches start: the variant's own
 // <section>.enabled where it sets one, else the site's resolved default from
-// /api/profile. modelRoute is the site's alone, as compose has it. A switch
-// neither names keeps EMPTY's.
+// /api/profile. modelRoute is the site's alone, as compose has it, and a site
+// cache that is on wins over the variant's, since its layer is the higher one.
+// A switch neither names keeps EMPTY's.
 export function switchDefaults(site: Record<string, boolean> | undefined, values: Record<string, unknown> | undefined): SwitchDefaults {
   const out: SwitchDefaults = {};
   for (const [field, section] of Object.entries(DEFAULTED_SWITCHES) as [DefaultedSwitch, string][]) {
     const v = section === "modelRoute" ? undefined : values?.[section];
     const own = v && typeof v === "object" ? (v as Record<string, unknown>).enabled : undefined;
-    const on = typeof own === "boolean" ? own : site?.[section];
+    const on = section === "cache" && site?.cache ? true : typeof own === "boolean" ? own : site?.[section];
     if (typeof on === "boolean") out[field] = on;
   }
   return out;
 }
 
 // siteSwitchDefaults is the site half of switchDefaults: defaults.features with
-// unset as on, the rule the profile editor shows, and modelRoute from
-// route.enabled. Undefined when the profile is unread or does not parse.
+// unset as on, the rule the profile editor shows, modelRoute from route.enabled
+// and cache from cache.enabled. Undefined when the profile is unread or does
+// not parse.
 export function siteSwitchDefaults(r: ProfileResponse | undefined): Record<string, boolean> | undefined {
   const p = r?.profile;
   if (!p) return undefined;
-  return { ...Object.fromEntries(FEATURES.map((k) => [k, featureOn(p.defaults, k)])), modelRoute: !!p.route?.enabled };
+  return { ...Object.fromEntries(FEATURES.map((k) => [k, featureOn(p.defaults, k)])), modelRoute: !!p.route?.enabled, cache: !!p.cache?.enabled };
 }
 
 // reseed moves the switches from prev's defaults to next's, keeping any
@@ -158,6 +178,7 @@ export function DeploySettings({
   image,
   supportedGPUs,
   clusterGPUs,
+  cache,
   // Upgrade locks the namespace: it names the helm release being upgraded, and
   // changing it does not move the release, it installs a second one.
   lockIdentity = false,
@@ -186,6 +207,7 @@ export function DeploySettings({
   // first does not name is marked, and selecting it is a forced deploy.
   supportedGPUs?: string[];
   clusterGPUs?: string[];
+  cache?: CacheCard;
 }) {
   const set =
     (k: keyof Form) =>
@@ -692,6 +714,35 @@ export function DeploySettings({
               placeholder={cluster?.schedulerName ?? "the chart's default"}
             />
           </Row>
+          {cache && (
+            <Row
+              label="Compile cache"
+              note="keeps compiled kernels on the node, so a restarted pod skips the 20–40 minute recompile; empty fields keep the site's, else the chart's. Off writes nothing, so a site that turns it on still applies: set cache.enabled: false in the plan editor to force it off"
+              caption={unsupportedCaption(cache)}
+              muted={!!cache.unsupported}
+              toggle={
+                <Switch
+                  checked={!cache.unsupported && form.cache}
+                  onChange={toggle("cache")}
+                  label="compile cache"
+                  disabled={!!cache.unsupported}
+                />
+              }
+            >
+              {!cache.unsupported && form.cache && <CacheFields form={form} onChange={onChange} defaults={cache.defaults} />}
+            </Row>
+          )}
+          <Row
+            label="Skip values schema"
+            note="apply without checking the values against the chart's values.schema.json — for a variant carrying a key its chart refuses. Every other check the schema makes goes with it."
+            toggle={
+              <Switch
+                checked={form.skipSchemaValidation}
+                onChange={toggle("skipSchemaValidation")}
+                label="skip values schema"
+              />
+            }
+          />
 
         </div>
 
@@ -768,6 +819,47 @@ function Row({
       <div className={cn("flex min-h-9 min-w-0 items-center", muted && "opacity-60")}>
         {hasControl ? children : toggle}
       </div>
+    </div>
+  );
+}
+
+function unsupportedCaption(c: CacheCard): string | undefined {
+  const u = c.unsupported;
+  if (!u?.chart) return undefined;
+  const why = u.since ? `not supported by the ${u.chart} chart before ${u.since}` : `not supported by the ${u.chart} chart`;
+  return c.siteOn ? `${why}: the site turns it on, so the plan still carries the site's cache values, which this chart's schema refuses. Turn on Skip values schema to deploy` : why;
+}
+
+function CacheFields({ form, onChange, defaults }: { form: Form; onChange: (patch: Partial<Form>) => void; defaults: CacheDefaults }) {
+  const digits = (k: "cacheHistoryLimit" | "cacheMaxSlots") => (e: React.ChangeEvent<HTMLInputElement>) =>
+    onChange({ [k]: e.target.value.replace(/\D/g, "") });
+  const field = (label: string, control: React.ReactNode, error?: string) => (
+    <label className="min-w-0 space-y-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      {control}
+      {error && <span className="block text-xs text-destructive">{error}</span>}
+    </label>
+  );
+  return (
+    <div className="my-1 grid w-full gap-3 rounded-md border bg-muted/30 p-3 sm:grid-cols-2">
+      {field(
+        "Host path",
+        <Input value={form.cacheHostPath} onChange={(e) => onChange({ cacheHostPath: e.target.value })} placeholder={defaults.hostPath} className="font-mono text-xs" />,
+      )}
+      {field(
+        "Subdirectory",
+        <Input value={form.cacheHostPathSuffix} onChange={(e) => onChange({ cacheHostPathSuffix: e.target.value })} placeholder="the model name" className="font-mono text-xs" />,
+      )}
+      {field(
+        "Templates kept",
+        <Input value={form.cacheHistoryLimit} onChange={digits("cacheHistoryLimit")} inputMode="numeric" placeholder={String(defaults.historyLimit)} />,
+        cacheFieldError("historyLimit", form.cacheHistoryLimit) ? "at least 1" : undefined,
+      )}
+      {field(
+        "Pods per node",
+        <Input value={form.cacheMaxSlots} onChange={digits("cacheMaxSlots")} inputMode="numeric" placeholder={String(defaults.maxSlotsPerNode)} />,
+        cacheFieldError("maxSlotsPerNode", form.cacheMaxSlots) ? "1 to 64" : undefined,
+      )}
     </div>
   );
 }
@@ -1392,6 +1484,8 @@ export function planRequest(
     // Accept gpuProducts the variant does not list; swissd still requires each
     // on this cluster under the variant's vendor.
     forceGpuProducts?: boolean;
+    // The chart has no cache section (CHART_FEATURES): the switch is forced off.
+    cacheUnsupported?: boolean;
   },
 ): PlanRequest {
   const overrides: Record<string, unknown> = {};
@@ -1464,6 +1558,18 @@ export function planRequest(
 
   overrides.modelRoute = modelRoute;
 
+  // Only on, and only for a chart that has the section. Off writes nothing,
+  // as a site with the cache off does; forcing it off over a site that turns
+  // it on is cache.enabled: false in the plan editor.
+  if (f.cache && !opts.cacheUnsupported) {
+    const cache: Record<string, unknown> = { enabled: true };
+    if (f.cacheHostPath.trim()) cache.hostPath = f.cacheHostPath.trim();
+    if (f.cacheHostPathSuffix.trim()) cache.hostPathSuffix = f.cacheHostPathSuffix.trim();
+    if (num(f.cacheHistoryLimit) !== undefined) cache.historyLimit = num(f.cacheHistoryLimit);
+    if (num(f.cacheMaxSlots) !== undefined) cache.maxSlotsPerNode = num(f.cacheMaxSlots);
+    overrides.cache = cache;
+  }
+
   // A row with no key tolerates nothing; it is a half-typed row, not a value.
   const tolerations = f.tolerations
     .filter((t) => t.key.trim())
@@ -1498,6 +1604,7 @@ export function planRequest(
     release: f.serviceId.trim() || undefined,
     namespace: f.namespace.trim() || undefined,
     createNamespace: f.createNamespace || undefined,
+    skipSchemaValidation: f.skipSchemaValidation || undefined,
     serviceId: f.serviceId.trim() || undefined,
     localPath: f.localPath.trim() || undefined,
     overrides,
@@ -1566,11 +1673,29 @@ export function formFromPlan(plan: Plan): Form {
     monitor: bool("modelRoute.monitor.enabled", true),
     monitorModel: str("modelRoute.monitor.model"),
     monitorGpuType: str("modelRoute.monitor.gpuType"),
+    // What the release ran with, which the site may have decided rather than
+    // the form.
+    cache: cacheOn(plan),
+    cacheHostPath: str("cache.hostPath"),
+    cacheHostPathSuffix: str("cache.hostPathSuffix"),
+    cacheHistoryLimit: str("cache.historyLimit"),
+    cacheMaxSlots: str("cache.maxSlotsPerNode"),
+    skipSchemaValidation: !!plan.skipSchemaValidation,
     edits:
       plan.layers?.edit && Object.keys(plan.layers.edit).length > 0
         ? toYamlish(plan.layers.edit)
         : "",
   };
+}
+
+function cacheOn(plan: Plan): boolean {
+  let on = false;
+  for (const layer of LAYERS) {
+    const c = plan.layers?.[layer]?.cache;
+    const v = c && typeof c === "object" ? (c as Record<string, unknown>).enabled : undefined;
+    if (typeof v === "boolean") on = v;
+  }
+  return on;
 }
 
 // The plan editor round-trips through text, so edits carried forward have to be
