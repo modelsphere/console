@@ -325,6 +325,8 @@ export function CanaryDetail({
                     </span>
                   }
                 >
+                  {st?.llmServiceRef && <p className="mb-2 text-xs">LLMService {st.llmServiceRef} · {st.phase ?? "Pending"}</p>}
+                  {st?.message && <p className="mb-2 text-xs text-muted-foreground">{st.message}</p>}
                   {proxy ? (
                     <p className="mb-2 text-xs text-muted-foreground">
                       proxy {proxy.name}
@@ -332,7 +334,7 @@ export function CanaryDetail({
                   ) : null}
                   <CodeBlock
                     language="yaml"
-                    value={toYaml(arm.values)}
+                    value={toYaml(arm.layers ?? arm.values)}
                     maxHeight="16rem"
                   />
                 </SectionCard>

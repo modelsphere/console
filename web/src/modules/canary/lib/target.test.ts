@@ -14,7 +14,7 @@ describe("applyProductionTarget", () => {
     const filled = applyProductionTarget(emptyDraft(), qwen!);
     expect(filled.name).toBe("qwen-prod-canary");
     expect(filled.targetRef).toEqual({
-      kind: "HelmRelease",
+      kind: "LLMService",
       name: "qwen-prod",
       namespace: "llm-serving",
     });
