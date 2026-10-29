@@ -7,7 +7,7 @@ import { toYaml } from "@swiss/lib/yaml";
 
 // In merge order: `edit` after the form, and `autoscale` last, as swissd
 // applies them.
-export const LAYERS = ["defaults", "catalog", "site", "derived", "form", "edit", "autoscale"] as const;
+export const LAYERS = ["defaults", "catalog", "site", "derived", "form", "edit", "autoscale", "canary-system"] as const;
 
 const TONE = {
   defaults: "outline",
@@ -17,6 +17,7 @@ const TONE = {
   form: "success",
   edit: "destructive",
   autoscale: "warning",
+  "canary-system": "warning",
 } as const;
 
 const WHAT = {
@@ -27,6 +28,7 @@ const WHAT = {
   form: "what this deploy set",
   edit: "typed into the plan editor; exempt from layer ownership",
   autoscale: "replicaCount from PD autoscaling; applied last",
+  "canary-system": "final policy managed by the owning Canary experiment; read only",
 } as const;
 
 // layersOf is every layer the plan carries: the known ones in merge order, then
