@@ -100,6 +100,7 @@
     "slo": "Edit SLO"
   },
   "disabled": {
+    "canaryManaged": "Managed by a Canary experiment; manage configuration and cleanup from Canary",
     "readOnly": "This swissd is read-only: turn on both server.allowDeploy and rbac.allowDeploy",
     "untracked": "A release with no plan beside it cannot be upgraded here",
     "current": "This is already the current revision",
@@ -902,5 +903,13 @@
     "truncated": "Showing the last {n} lines, at most 2 MiB",
     "init": "init",
     "restarts": "{n} restarts"
+  },
+  "canaryOwner": {
+    "managed": "Experiment arm",
+    "description": "This service is managed by an experiment. Manage configuration and cleanup from the experiment page.",
+    "anomaly": "Ownership metadata is inconsistent. Ask an administrator to investigate.",
+    "unavailable": "Experiment record unavailable or access denied. This service remains protected.",
+    "loading": "Looking up experiment…",
+    "view": "View experiment"
   }
 }

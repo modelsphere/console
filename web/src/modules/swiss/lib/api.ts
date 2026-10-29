@@ -65,6 +65,16 @@ export interface Site {
   url: string;
 }
 
+export interface CanaryOwner {
+  apiVersion: string;
+  kind: "LLMCanary";
+  namespace: string;
+  name: string;
+  uid: string;
+  // Owner reference and UID labels agree; this does not assert the parent still exists.
+  verified: boolean;
+}
+
 export interface Deployment {
   release: string;
   namespace: string;
@@ -88,6 +98,7 @@ export interface Deployment {
   // names no route.
   route?: string;
   backend?: ApplyWith;
+  managedBy?: CanaryOwner;
   // An LLMService swiss did not write.
   external?: boolean;
 }
@@ -653,6 +664,7 @@ export interface ReleaseStatus {
   planStatus?: PlanStatus;
   // Set when swiss manages the release; it never changes after install.
   backend?: ApplyWith;
+  managedBy?: CanaryOwner;
   // Present on the llmsvc backend. phase is "uninstalling" while the LLMService
   // has a deletionTimestamp. Absent on helm and on an older swissd.
   llmservice?: { phase?: string };

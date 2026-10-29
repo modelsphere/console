@@ -15,6 +15,7 @@ import { modelLine, parseTab, releaseState, sloBlocked, visibleTabs, type Tab } 
 import { statusOf } from "@/modules/inferences/components/StatusDot";
 import { DeploySheet } from "@/modules/inferences/components/DeploySheet";
 import { UninstallDialog } from "@/modules/inferences/components/UninstallDialog";
+import { CanaryOwnership } from "@/modules/inferences/components/CanaryOwnership";
 import { SLOSheet } from "@/modules/inferences/components/SLOSheet";
 import { Overview } from "@/modules/inferences/tabs/Overview";
 import { Instances } from "@/modules/inferences/tabs/Instances";
@@ -102,12 +103,12 @@ export function InferenceDetail() {
 
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
   const removing = isUninstalling(s);
-  const blockedWrite = readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const blockedWrite = s.managedBy ? t("disabled.canaryManaged") : readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
   const blocked = sloBlocked(s, plan.data);
-  const sloOpen = !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
+  const sloOpen = !s.managedBy && !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
   const closeSLO = () => {
     setEditingSLO(false);
     if (!sloSetup) return;
@@ -155,6 +156,7 @@ export function InferenceDetail() {
           ]}
           metaColumns={4}
         />
+        {s.managedBy && <CanaryOwnership owner={s.managedBy} />}
         <PanelTabs items={visible.map((key) => ({ value: key, label: t(`tabs.${key}`), count: counts[key] }))} />
 
         <TabsContent value="overview">
@@ -176,7 +178,7 @@ export function InferenceDetail() {
           <Endpoint namespace={namespace} release={release} status={s} access={false} />
         </TabsContent>
         <TabsContent value="versions">
-          <Versions namespace={namespace} release={release} rollbackBlocked={removing ? t("disabled.uninstalling") : readOnly || !plan.data ? t("disabled.readOnly") : false} />
+          <Versions namespace={namespace} release={release} rollbackBlocked={blockedWrite || (!plan.data ? t("disabled.readOnly") : false)} />
         </TabsContent>
         <TabsContent value="runs">
           <Runs namespace={namespace} release={release} />
@@ -191,9 +193,9 @@ export function InferenceDetail() {
       </Tabs>
 
       <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
-      <DeploySheet target={upgrading ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
+      <DeploySheet target={upgrading && !s.managedBy ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
-        target={uninstalling ? { namespace, release } : null}
+        target={uninstalling && !s.managedBy ? { namespace, release } : null}
         onClose={() => setUninstalling(false)}
         onDone={() => navigate(p(""))}
       />
