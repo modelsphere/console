@@ -325,7 +325,7 @@ export function CanaryDetail({
                     </span>
                   }
                 >
-                  {st?.llmServiceRef && <p className="mb-2 text-xs">LLMService {st.llmServiceRef} · {st.phase ?? "Pending"}</p>}
+                  {st?.llmServiceRef && <p className="mb-2 text-xs">LLMService <Link className="text-primary hover:underline" to={`/inferences/${encodeURIComponent(st.llmServiceRef.split("/").pop()!)}/details?namespace=${encodeURIComponent(st.llmServiceRef.includes("/") ? st.llmServiceRef.split("/")[0] : canary.metadata.namespace)}`}>{st.llmServiceRef}</Link> · {st.phase ?? "Pending"}</p>}
                   {st?.message && <p className="mb-2 text-xs text-muted-foreground">{st.message}</p>}
                   {proxy ? (
                     <p className="mb-2 text-xs text-muted-foreground">

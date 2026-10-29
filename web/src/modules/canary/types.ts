@@ -341,6 +341,7 @@ export interface Experiment {
 export type ExperimentSummary = Pick<
   Experiment,
   | "id"
+  | "uid"
   | "name"
   | "namespace"
   | "creator"

@@ -124,6 +124,18 @@ describe("inference detail write actions", () => {
       enabled: false,
     },
     {
+      name: "a Canary arm with a readable deployment plan",
+      status: release({ managedBy: { apiVersion: "canary.modelsphere.dev/v1alpha1", kind: "LLMCanary", namespace: "models", name: "demo", uid: "parent-uid", verified: true } }),
+      label: "实验组",
+      enabled: false,
+    },
+    {
+      name: "an arm with inconsistent ownership",
+      status: release({ managedBy: { apiVersion: "canary.modelsphere.dev/v1alpha1", kind: "LLMCanary", namespace: "models", name: "demo", uid: "parent-uid", verified: false } }),
+      label: "归属信息不一致",
+      enabled: false,
+    },
+    {
       name: "a serving release",
       status: release(),
       label: "运行中",
