@@ -5,10 +5,7 @@ import type { Plan } from "@swiss/lib/api";
 import { Code } from "@swiss/components/ui/code";
 import { toYaml } from "@swiss/lib/yaml";
 
-// In merge order, and `edit` last because that is when it is applied. Leaving it
-// out of this list is how the one input exempt from ownership becomes the one
-// input nobody can see -- the opposite of why it is labelled at all.
-const LAYERS = ["defaults", "catalog", "site", "derived", "form", "edit"] as const;
+const LAYERS = ["defaults", "catalog", "site", "derived", "form", "edit", "autoscale", "canary-system"] as const;
 
 const TONE = {
   defaults: "outline",
@@ -17,6 +14,8 @@ const TONE = {
   derived: "warning",
   form: "success",
   edit: "destructive",
+  autoscale: "warning",
+  "canary-system": "warning",
 } as const;
 
 const WHAT = {
@@ -26,6 +25,8 @@ const WHAT = {
   derived: "computed from the variant and the site",
   form: "what this deploy set",
   edit: "typed into the plan editor; exempt from layer ownership",
+  autoscale: "runtime replica policy",
+  "canary-system": "final policy managed by the owning Canary experiment; read only",
 } as const;
 
 interface File {
