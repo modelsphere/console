@@ -1,4 +1,8 @@
 export const errorEn = {
+  obsoletePrepared: "This prepared plan is obsolete. Prepare the experiment again.",
+  targetApplied: "The production LLMService must be active and Applied at its current generation.",
+  managedTarget: "Select this managed production release as an LLMService.",
+  lwsUnsupported: "LWS is not supported for Canary arms. Use Deployment.",
   trafficChanged: "Traffic or experiment configuration changed. Refresh the experiment and retry.",
   trafficWeights: "Use integer traffic weights from 0 to 1,000,000 with a nonzero sum.",
   trafficPending: "Another traffic change is still being applied. Wait for it to finish.",
@@ -32,7 +36,7 @@ export const errorEn = {
   invalidNameNamespace:
     "Invalid experiment name (maximum 28 characters) or namespace (maximum 63 characters).",
   namespaceDisabled: "Namespace {namespace} is not enabled for experiments.",
-  targetRequired: "Select a production HelmRelease.",
+  targetRequired: "Select a production HelmRelease or LLMService.",
   armCount: "Configure two to eight experiment arms.",
   invalidArm:
     "Arm {arm} is invalid or duplicated; use a unique DNS label of at most 20 characters.",
@@ -107,6 +111,10 @@ export const errorEn = {
   fieldContext: "{field}: {message}",
 };
 export const errorZh: Record<keyof typeof errorEn, string> = {
+  obsoletePrepared: "此预览配置已过期，请重新准备实验。",
+  targetApplied: "生产 LLMService 必须未暂停，且当前 generation 已 Applied。",
+  managedTarget: "请以 LLMService 类型选择此托管生产部署。",
+  lwsUnsupported: "实验组暂不支持 LWS，请使用 Deployment。",
   trafficChanged: "流量或实验配置已变化，请刷新实验后重试。",
   trafficWeights: "请输入 0 至 1,000,000 的整数流量权重，且总和不能为零。",
   trafficPending: "另一项流量变更仍在应用，请等待完成。",
@@ -135,7 +143,7 @@ export const errorZh: Record<keyof typeof errorEn, string> = {
   invalidNameNamespace:
     "实验名称或命名空间无效：名称最多 28 个字符，命名空间最多 63 个字符。",
   namespaceDisabled: "命名空间 {namespace} 未启用实验功能。",
-  targetRequired: "请选择生产 HelmRelease。",
+  targetRequired: "请选择生产 HelmRelease 或 LLMService。",
   armCount: "请配置 2–8 个实验组。",
   invalidArm:
     "实验组 {arm} 无效或重复；请使用不超过 20 个字符的唯一 DNS 标签。",

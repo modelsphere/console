@@ -21,12 +21,12 @@ export const fixtureCanaries: LLMCanary[] = [
       arms: [
         {
           name: "baseline",
-          chart: { name: "sglang", version: "0.8.0" },
-          values: {
+          chart: { repo: "https://harbor.4pd.io/chartrepo/hardcore-tech", name: "sglang", version: "0.8.0" },
+          layers: [{ name: "frozen", values: {
             replicaCount: 1,
             model: { localPath: "/mnt/models/qwen3.6-35b-a3b" },
             extraArgs: ["--tp-size=8"],
-          },
+          } }],
           source: {
             model: "qwen3.6-35b-a3b",
             version: "1.1.0",
@@ -35,12 +35,12 @@ export const fixtureCanaries: LLMCanary[] = [
         },
         {
           name: "candidate",
-          chart: { name: "sglang", version: "0.8.0" },
-          values: {
+          chart: { repo: "https://harbor.4pd.io/chartrepo/hardcore-tech", name: "sglang", version: "0.8.0" },
+          layers: [{ name: "frozen", values: {
             replicaCount: 1,
             model: { localPath: "/mnt/models/qwen3.6-35b-a3b" },
             extraArgs: ["--chunked-prefill-size=16384", "--tp-size=8"],
-          },
+          } }],
           source: {
             model: "qwen3.6-35b-a3b",
             version: "1.1.0",
@@ -123,8 +123,8 @@ export const fixtureCanaries: LLMCanary[] = [
       arms: [
         {
           name: "sglang",
-          chart: { name: "sglang", version: "0.7.9" },
-          values: { replicaCount: 1, extraArgs: ["--tp-size=8"] },
+          chart: { repo: "https://harbor.4pd.io/chartrepo/hardcore-tech", name: "sglang", version: "0.7.9" },
+          layers: [{ name: "frozen", values: { replicaCount: 1, extraArgs: ["--tp-size=8"] } }],
           source: {
             model: "kimi-k3",
             version: "1.0.5",
@@ -133,8 +133,8 @@ export const fixtureCanaries: LLMCanary[] = [
         },
         {
           name: "vllm",
-          chart: { name: "vllm", version: "0.5.0" },
-          values: { replicaCount: 1, extraArgs: ["--tensor-parallel-size=8"] },
+          chart: { repo: "https://harbor.4pd.io/chartrepo/hardcore-tech", name: "vllm", version: "0.5.0" },
+          layers: [{ name: "frozen", values: { replicaCount: 1, extraArgs: ["--tensor-parallel-size=8"] } }],
           source: {
             model: "kimi-k3",
             version: "1.0.5",
@@ -192,8 +192,8 @@ export const fixtureCanaries: LLMCanary[] = [
       arms: [
         {
           name: "candidate",
-          chart: { name: "sglang", version: "0.8.0" },
-          values: { replicaCount: 1, scaler: { minReplicas: 1 } },
+          chart: { repo: "https://harbor.4pd.io/chartrepo/hardcore-tech", name: "sglang", version: "0.8.0" },
+          layers: [{ name: "frozen", values: { replicaCount: 1, scaler: { minReplicas: 1 } } }],
         },
       ],
       traffic: { production: 50, canary: 50 },
@@ -241,8 +241,8 @@ export const fixtureCanaries: LLMCanary[] = [
       arms: [
         {
           name: "baseline",
-          chart: { name: "sglang", version: "0.7.9" },
-          values: { replicaCount: 1 },
+          chart: { repo: "https://harbor.4pd.io/chartrepo/hardcore-tech", name: "sglang", version: "0.7.9" },
+          layers: [{ name: "frozen", values: { replicaCount: 1 } }],
         },
       ],
       traffic: { production: 100, canary: 0 },

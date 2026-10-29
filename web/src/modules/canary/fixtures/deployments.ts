@@ -3,7 +3,8 @@ import type { ProductionTarget } from "../types";
 /** Production traffic-route keys (HelmRelease by name). Not arm templates. */
 export const productionTargets: ProductionTarget[] = [
   {
-    kind: "HelmRelease",
+    kind: "LLMService",
+    backend: "llmsvc",
     name: "qwen-prod",
     namespace: "llm-serving",
     model: "qwen3.6-35b-a3b",

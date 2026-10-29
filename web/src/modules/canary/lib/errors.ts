@@ -60,7 +60,13 @@ const exact: Record<string, ErrorKey> = {
   "invalid canary namespace (maximum 63 characters)": "invalidNamespace",
   "invalid canary name (maximum 28 characters) or namespace":
     "invalidNameNamespace",
+  "lws is not supported; use Deployment": "lwsUnsupported",
+  "lws is not supported; use deployment": "lwsUnsupported",
   "a production helmrelease is required": "targetRequired",
+  "a production helmrelease or llmservice is required": "targetRequired",
+  "prepared plan uses an obsolete contract; prepare the experiment again": "obsoletePrepared",
+  "production llmservice must be unsuspended and applied at its current generation": "targetApplied",
+  "production release is managed by llmservice; select it as llmservice": "managedTarget",
   "two to eight arms are required": "armCount",
   "select two distinct comparison arms": "compareArms",
   "traffic weights must be nonnegative integers": "weights",

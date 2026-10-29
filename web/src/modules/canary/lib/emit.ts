@@ -4,8 +4,10 @@ import type {
   CatalogVariant,
   JsonObject,
   LLMCanary,
+  ValueLayer,
 } from "../types";
-import { mergeLayers, stripOperatorOwned } from "./values";
+import { mergeLayers, mergeObjects, canarySystemValues } from "./values";
+import { LAYER_ORDER } from "../types";
 import { toYaml } from "./yaml";
 import { validateDraft, type ValidationIssue } from "./validate";
 import { CANARY_API_VERSION, CANARY_GROUP } from "./kubernetes";
@@ -33,13 +35,12 @@ export function layersFromVariant(
   };
 }
 
-export function armValuesForCr(arm: ArmDraft): {
-  values: JsonObject;
-  stripped: string[];
-} {
-  const merged = mergeLayers(arm.layers);
-  const { stripped, removed } = stripOperatorOwned(merged);
-  return { values: stripped, stripped: removed };
+export function armLayersForCr(arm: ArmDraft): ValueLayer[] {
+ return LAYER_ORDER.filter(name => arm.layers[name] !== undefined).map(name => ({ name, values: structuredClone(arm.layers[name]!) }));
+}
+
+export function previewArmValues(draft: CanaryDraft, arm: ArmDraft): JsonObject {
+ return mergeObjects(mergeLayers(arm.layers), canarySystemValues(draft, arm.name));
 }
 
 export function draftToCanary(draft: CanaryDraft): {
@@ -66,12 +67,12 @@ export function draftToCanary(draft: CanaryDraft): {
           : {}),
       },
       arms: draft.arms.map((arm) => {
-        const built = armValuesForCr(arm);
-        stripped[arm.name] = built.stripped;
+        stripped[arm.name] = ["fullnameOverride", "modelRoute", "scaler.enabled=false", "cart.enabled=true", "sloRequirement.enabled=false"];
         return {
           name: arm.name,
-          chart: arm.chart,
-          values: built.values,
+          chart: { name: arm.chart.name, version: arm.chart.version, repo: arm.chart.repository ?? "" },
+          layers: armLayersForCr(arm),
+          model: { name: arm.source?.model, variant: arm.source?.variant, version: arm.source?.version },
         };
       }),
       proxy: {

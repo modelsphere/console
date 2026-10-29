@@ -4,7 +4,7 @@ import {
   armNameOk,
   dnsLabel,
   isExactChartVersion,
-  stripOperatorOwned,
+  effectiveArmValues,
 } from "./values";
 
 export interface ValidationIssue {
@@ -58,7 +58,7 @@ export function validateCanary(cr: LLMCanary): ValidationIssue[] {
   if (!dnsLabel(metadata.namespace))
     issues.push({ path: "metadata.namespace", message: "must be a DNS label" });
 
-  if (!spec.targetRef.kind)
+  if (!["HelmRelease", "LLMService"].includes(spec.targetRef.kind))
     issues.push({ path: "spec.targetRef.kind", message: "required" });
   if (!spec.targetRef.name)
     issues.push({ path: "spec.targetRef.name", message: "required" });
@@ -72,6 +72,7 @@ export function validateCanary(cr: LLMCanary): ValidationIssue[] {
   if (!spec.arms.length)
     issues.push({ path: "spec.arms", message: "at least one arm is required" });
   const names = new Set<string>();
+  const objects = new Set([`${metadata.name}-openresty`]);
   spec.arms.forEach((arm, i) => {
     const p = `spec.arms[${i}]`;
     if (!armNameOk(arm.name))
@@ -82,6 +83,19 @@ export function validateCanary(cr: LLMCanary): ValidationIssue[] {
         message: `duplicate arm name "${arm.name}"`,
       });
     names.add(arm.name);
+    for (const name of [
+      `${metadata.name}-${arm.name}`,
+      `${metadata.name}-${arm.name}-cart`,
+      `${metadata.name}-openresty-${arm.name}`,
+    ]) {
+      if (objects.has(name)) {
+        issues.push({
+          path: `${p}.name`,
+          message: `generated object name ${name} conflicts with another group or proxy`,
+        });
+      }
+      objects.add(name);
+    }
     if (!CHART_NAME.test(arm.chart.name))
       issues.push({ path: `${p}.chart.name`, message: "must be a chart name" });
     if (!isExactChartVersion(arm.chart.version)) {
@@ -90,12 +104,19 @@ export function validateCanary(cr: LLMCanary): ValidationIssue[] {
         message: "must be an exact version, not a range",
       });
     }
-    const { removed } = stripOperatorOwned(arm.values);
-    if (removed.length) {
-      issues.push({
-        path: `${p}.values`,
-        message: `must not set ${removed.join(", ")} on the CR (managed by the operator)`,
-      });
+    if (arm.chart.repo && !/^(https:\/\/|oci:\/\/).+/.test(arm.chart.repo)) {
+      issues.push({ path: `${p}.chart.repo`, message: "must be an HTTPS or OCI repository" });
+    }
+    const layerNames = new Set<string>();
+    for (const layer of arm.layers ?? []) {
+      if (!layer.name || layer.name === "canary-system" || layerNames.has(layer.name)) {
+        issues.push({ path: `${p}.layers`, message: "invalid, duplicate or reserved layer name" });
+      }
+      layerNames.add(layer.name);
+    }
+    const values = effectiveArmValues(arm);
+    if (values.lws && typeof values.lws === "object" && !Array.isArray(values.lws) && values.lws.enabled === true) {
+      issues.push({ path: `${p}.layers`, message: "LWS is not supported; use Deployment" });
     }
   });
 

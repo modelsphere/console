@@ -1,3 +1,4 @@
+import { mergeObjects, effectiveArmValues, canarySystemValues } from "../lib/values";
 import { ErrorNotice, ErrorDetails } from "../components/ErrorNotice";
 import { asError, describeError } from "../lib/errors";
 import { useEffect, useMemo, useState } from "react";
@@ -715,6 +716,7 @@ export function CanaryCreate() {
               ) : null}
             </SectionCard>
             <SectionCard title={t("create.yaml")}>
+              {prepared?.effectiveValues && <CodeBlock language="yaml" value={toYaml(prepared.effectiveValues)} maxHeight="20rem" />}
               <CodeBlock
                 language="yaml"
                 value={prepared ? toYaml(prepared.canary) : emitted.yaml}
@@ -814,7 +816,8 @@ function ArmFields({
     namespace: "default",
     arms: [arm],
     targetRef: { kind: "HelmRelease", name: "x" },
-  }).canary.spec.arms[0]?.values;
+  }).canary.spec.arms[0];
+  const finalStub = stub ? mergeObjects(effectiveArmValues(stub), canarySystemValues({ name: "preview", namespace: "default", route: { enabled: false, productionOpenrestyService: "", path: "production-route", forceHeader: { name: "", value: "" } } }, arm.name)) : {};
 
   return (
     <SectionCard
@@ -1008,7 +1011,7 @@ function ArmFields({
             <FieldTextarea
               readOnly
               rows={10}
-              value={stub ? toYaml(stub) : ""}
+              value={stub ? toYaml(finalStub) : ""}
             />
           </FloatingField>
         </div>

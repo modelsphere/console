@@ -1,3 +1,4 @@
+import { effectiveArmValues } from "./values";
 // Synthetic development data only. Production calculations live in canaryd.
 import type {
   ArmDraft,
@@ -21,11 +22,12 @@ export function freezeFixtureEconomics(
     frozenBy: "fixture",
     arms: Object.fromEntries(
       canary.spec.arms.map((arm) => {
+        const values = effectiveArmValues(arm);
         const draft = drafts.find((a) => a.name === arm.name);
         const model =
           draft?.source?.model ??
           String(
-            (arm.values.model as Record<string, unknown> | undefined)?.name ??
+            (values.model as Record<string, unknown> | undefined)?.name ??
               "",
           );
         const key = draft?.pricingKey || model;
@@ -33,12 +35,12 @@ export function freezeFixtureEconomics(
           throw new Error(`Unknown pricing key ${key}`);
         const exact = table.models[key];
         const gpus = Number(
-          (arm.values.model as Record<string, unknown> | undefined)?.gpus,
+          (values.model as Record<string, unknown> | undefined)?.gpus,
         );
-        const lws = arm.values.lws as Record<string, unknown> | undefined;
+        const lws = values.lws as Record<string, unknown> | undefined;
         const capacity =
           gpus *
-          Number(arm.values.replicaCount ?? 1) *
+          Number(values.replicaCount ?? 1) *
           Number(lws?.enabled ? lws.size : 1);
         const gpuCount =
           draft?.gpuCount ??
