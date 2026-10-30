@@ -89,6 +89,7 @@
     "slo": "编辑 SLO"
   },
   "disabled": {
+    "canaryManaged": "该服务由实验管理，请在 Canary 页面管理配置和资源释放",
     "readOnly": "这个 swissd 是只读的：需要同时打开 server.allowDeploy 和 rbac.allowDeploy",
     "untracked": "没有纳管计划的 release 不能在这里升级",
     "current": "这已经是当前版本",
@@ -891,5 +892,13 @@
     "truncated": "只显示最近 {n} 行，最多 2 MiB",
     "init": "初始化容器",
     "restarts": "重启 {n} 次"
+  },
+  "canaryOwner": {
+    "managed": "实验组",
+    "description": "此服务由实验管理。配置变更和资源释放请到实验页面操作。",
+    "anomaly": "归属信息不一致，请联系管理员核实。",
+    "unavailable": "无法关联实验记录或无权查看，服务仍受实验归属保护。",
+    "loading": "正在关联实验…",
+    "view": "查看实验"
   }
 }

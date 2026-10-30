@@ -226,7 +226,7 @@ export function CanaryDetail({
         <TabsContent value="overview">
           <div className="grid gap-4 md:grid-cols-2">
             <SectionCard
-              title={historical ? t("detail.historicalStatus") : "Status"}
+              title={historical ? t("detail.historicalStatus") : t("detail.status")}
             >
               {historical && (
                 <p className="mb-3 text-sm text-muted-foreground">
@@ -238,37 +238,42 @@ export function CanaryDetail({
                 labelClassName="w-40 shrink-0"
                 valueClassName="whitespace-normal break-all"
                 items={[
-                  { label: "phase", value: canary.status?.phase ?? "—" },
                   {
-                    label: "routePath",
+                    label: t("detail.phase"),
+                    value: canary.status?.phase
+                      ? t(`detail.phases.${canary.status.phase}`)
+                      : "—",
+                  },
+                  {
+                    label: t("detail.routePath"),
                     value: mono(canary.status?.routePath ?? "—"),
                   },
                   {
-                    label: "routeName",
+                    label: t("detail.routeName"),
                     value: mono(canary.status?.routeName ?? "—"),
                   },
                   {
-                    label: "gateway",
+                    label: t("detail.gateway"),
                     value: mono(
                       `${canary.spec.gateway.namespace}/${canary.spec.gateway.name}`,
                     ),
                   },
                   {
-                    label: "arms ready",
+                    label: t("detail.armsReady"),
                     value: `${ready}/${canary.spec.arms.length}`,
                   },
                   {
-                    label: "armsReadySince",
+                    label: t("detail.armsReadySince"),
                     value: canary.status?.armsReadySince ?? "—",
                   },
                   {
-                    label: "generation",
+                    label: t("detail.generation"),
                     value: `${canary.status?.observedGeneration ?? "—"} / ${canary.metadata.generation ?? "—"}`,
                   },
                   ...(canary.status?.drainInFlight != null
                     ? [
                         {
-                          label: "drainInFlight",
+                          label: t("detail.drainInFlight"),
                           value: String(canary.status.drainInFlight),
                         },
                       ]
@@ -325,6 +330,8 @@ export function CanaryDetail({
                     </span>
                   }
                 >
+                  {st?.llmServiceRef && <p className="mb-2 text-xs">LLMService <Link className="text-primary hover:underline" to={`/inferences/${encodeURIComponent(st.llmServiceRef.split("/").pop()!)}/details?namespace=${encodeURIComponent(st.llmServiceRef.includes("/") ? st.llmServiceRef.split("/")[0] : canary.metadata.namespace)}`}>{st.llmServiceRef}</Link> · {st.phase ?? "Pending"}</p>}
+                  {st?.message && <p className="mb-2 text-xs text-muted-foreground">{st.message}</p>}
                   {proxy ? (
                     <p className="mb-2 text-xs text-muted-foreground">
                       proxy {proxy.name}
@@ -332,7 +339,7 @@ export function CanaryDetail({
                   ) : null}
                   <CodeBlock
                     language="yaml"
-                    value={toYaml(arm.values)}
+                    value={toYaml(arm.layers ?? arm.values)}
                     maxHeight="16rem"
                   />
                 </SectionCard>
@@ -448,7 +455,7 @@ function TrafficPanel({ canary }: { canary: LLMCanary }) {
                 value: mono(observedPath ?? "—"),
               },
               {
-                label: "routeName",
+                label: t("detail.routeName"),
                 value: mono(canary.status?.routeName ?? "—"),
               },
               {

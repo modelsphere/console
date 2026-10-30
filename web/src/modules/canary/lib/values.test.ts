@@ -1,24 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { isExactChartVersion, mergeLayers, stripOperatorOwned } from "./values";
+import { isExactChartVersion, mergeLayers, mergeObjects, canarySystemValues } from "./values";
 
-describe("stripOperatorOwned", () => {
-  it("removes only the three operator-owned enabled switches", () => {
-    const { stripped, removed } = stripOperatorOwned({
-      replicaCount: 2,
-      scaler: { enabled: false, minReplicas: 1 },
-      cart: { enabled: true },
-      sloRequirement: { enabled: false, slo: "p99" },
-    });
-    expect(removed.sort()).toEqual([
-      "cart.enabled",
-      "scaler.enabled",
-      "sloRequirement.enabled",
-    ]);
-    expect(stripped.replicaCount).toBe(2);
-    expect(stripped.scaler).toEqual({ minReplicas: 1 });
-    expect(stripped.cart).toBeUndefined();
-    expect(stripped.sloRequirement).toEqual({ slo: "p99" });
-  });
+describe("LLMService merge contract", () => {
+ it("deletes null keys, replaces lists and applies the system layer last", () => {
+  const base = { model: { gpus: 2, remove: true }, list: [1, 2], scaler: { enabled: true } };
+  const values = mergeObjects(base, { model: { remove: null }, list: [3] });
+  expect(values.model).toEqual({ gpus: 2 });
+  expect(values.list).toEqual([3]);
+  expect(base.model.remove).toBe(true);
+  const final = mergeObjects(values, canarySystemValues({ name: "exp", namespace: "canary", route: { enabled: false, path: "/prod", productionOpenrestyService: "openresty", forceHeader: { name: "", value: "" } } }, "a"));
+  expect(final.scaler).toEqual({ enabled: false });
+  expect(final.cart).toEqual({ enabled: true, fullnameOverride: "exp-a-cart" });
+ });
 });
 
 describe("mergeLayers", () => {
@@ -41,6 +34,9 @@ describe("mergeLayers", () => {
 describe("isExactChartVersion", () => {
   it("accepts pins and rejects helm ranges", () => {
     expect(isExactChartVersion("0.8.0")).toBe(true);
+    expect(isExactChartVersion("1.2.3-exp.1+build.2")).toBe(true);
+    expect(isExactChartVersion("1.2.x")).toBe(false);
+    expect(isExactChartVersion("1.2.3-")).toBe(false);
     expect(isExactChartVersion(">=0.7.1")).toBe(false);
     expect(isExactChartVersion("^0.8.0")).toBe(false);
   });

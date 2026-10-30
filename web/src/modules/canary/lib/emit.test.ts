@@ -6,7 +6,7 @@ import { validateCanary, wizardStepComplete } from "./validate";
 import type { ArmDraft } from "../types";
 
 describe("emitManifests", () => {
-  it("puts merged values on the CR without operator-owned enabled keys", () => {
+  it("preserves ordered layers and input switches for the child LLMService", () => {
     const variant =
       catalogVariants.find((v) => v.id === "sglang-tp8-h100-optimized") ??
       catalogVariants[0];
@@ -53,8 +53,9 @@ describe("emitManifests", () => {
     expect(result.canary.apiVersion).toBe("canary.modelsphere.dev/v1alpha1");
     expect(result.yaml).not.toContain("canary.4pd.io");
     expect(result.issues).toEqual([]);
-    expect(result.canary.spec.arms[0]?.values.scaler).toBeUndefined();
-    expect(result.stripped.candidate).toContain("scaler.enabled");
+    expect(result.canary.spec.arms[0]?.layers.map(l => l.name)).toEqual(["catalog", "derived", "form", "edit"]);
+    expect(result.canary.spec.arms[0]?.layers.at(-1)?.values?.scaler).toEqual({ enabled: true });
+    expect(result.stripped.candidate).toContain("scaler.enabled=false");
     expect(result.yaml).toContain("kind: LLMCanary");
     expect(result.yaml).not.toContain("kind: ConfigMap");
     expect(result.canary.spec.traffic).toEqual({ production: 90, canary: 10 });

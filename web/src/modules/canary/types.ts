@@ -13,8 +13,17 @@ export interface ChartRef {
   version: string;
 }
 
+export interface ArmChartRef {
+  repo: string;
+  name: string;
+  version: string;
+  credentialsRef?: { name: string };
+}
+
+export interface ValueLayer { name: string; values?: JsonObject }
+
 export interface TargetRef {
-  kind: string;
+  kind: "HelmRelease" | "LLMService";
   name: string;
   namespace?: string;
 }
@@ -31,8 +40,10 @@ export interface ArmSource {
 
 export interface ArmSpec {
   name: string;
-  chart: ChartRef;
-  values: JsonObject;
+  chart: ArmChartRef;
+  layers: ValueLayer[];
+  model?: { name?: string; variant?: string; version?: string; hf?: string; engine?: string };
+  values?: JsonObject;
   source?: ArmSource;
 }
 
@@ -46,7 +57,6 @@ export interface Condition {
 
 export interface LLMCanarySpec {
   targetRef: TargetRef;
-  inheritValues?: boolean;
   arms: ArmSpec[];
   proxy?: {
     mode?: "PerArm" | "Shared";
@@ -81,7 +91,7 @@ export interface LLMCanaryStatus {
   phase?: Phase;
   observedGeneration?: number;
   armsReadySince?: string;
-  arms?: { name: string; ready?: boolean }[];
+  arms?: { name: string; ready?: boolean; llmServiceRef?: string; phase?: string; message?: string }[];
   canaryProxy?: { name: string; arm?: string; ready?: boolean };
   canaryProxies?: { name: string; arm?: string; ready?: boolean }[];
   routeName?: string;
@@ -203,7 +213,8 @@ export interface CatalogInfo {
 }
 
 export interface ProductionTarget {
-  kind: "HelmRelease";
+  kind: "HelmRelease" | "LLMService";
+  backend?: "helm" | "llmsvc";
   name: string;
   namespace: string;
   model?: string;
@@ -274,6 +285,8 @@ export interface CanaryDraft {
 }
 
 export interface Prepared {
+  contract?: string;
+  effectiveValues?: Record<string, JsonObject>;
   economics?: Economics;
   id: string;
   createdAt: string;
@@ -328,6 +341,7 @@ export interface Experiment {
 export type ExperimentSummary = Pick<
   Experiment,
   | "id"
+  | "uid"
   | "name"
   | "namespace"
   | "creator"
