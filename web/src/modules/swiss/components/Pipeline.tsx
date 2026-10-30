@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, FlaskConical, Layers, Loader2, Rocket, TriangleAlert, Undo2 } from "lucide-react";
-import { api, deployApi, type ApplyResult, type ApplyWith, type DiffResult, type Plan } from "@swiss/lib/api";
+import { api, deployApi, type ApplyFlags, type ApplyResult, type ApplyWith, type DiffResult, type Plan } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
@@ -45,6 +45,7 @@ export function Pipeline({
   onApplied,
   rollbackTo,
   applyWith,
+  applyFlags,
   children,
 }: {
   namespace: string;
@@ -66,6 +67,8 @@ export function Pipeline({
   rollbackTo?: number;
   // How an install stores the release. An existing release keeps its own.
   applyWith?: ApplyWith;
+  // The page's choices for this diff and apply. A rollback sends only the dialog's.
+  applyFlags?: ApplyFlags;
   // Rendered on the Plan tab above the composed plan: what moves, on upgrade.
   children?: React.ReactNode;
 }) {
@@ -76,6 +79,7 @@ export function Pipeline({
   // and a switch that remembered yes would force the next upgrade too --
   // quietly, because nobody sets it twice.
   const [force, setForce] = useState(false);
+  const [skipSchema, setSkipSchema] = useState(false);
   const [open, setOpen] = useState(false);
   // Set when the compose button is clicked, so the dialog opens on the plan
   // that click produced rather than on whatever was lying around. Composing is
@@ -101,11 +105,12 @@ export function Pipeline({
     if (!plan) setOpen(false);
   }, [plan]);
 
+  const flags = dialogFlags(rollbackTo ? undefined : applyFlags, skipSchema, force);
   const diffM = useMutation({
     mutationFn: () =>
       rollbackTo
-        ? deployApi.diffRevision(namespace, release, rollbackTo)
-        : deployApi.diff({ planHash: plan!.hash }),
+        ? deployApi.diffRevision(namespace, release, rollbackTo, flags.dryRun)
+        : deployApi.diff({ planHash: plan!.hash, applyFlags: flags.dryRun }),
     onSuccess: onDiff,
   });
 
@@ -135,12 +140,13 @@ export function Pipeline({
             rollbackTo,
             diff?.revision ?? live.data?.revision ?? 0,
             note.trim(),
+            flags.dryRun,
           )
         : install
-          ? deployApi.install(plan!.hash, note.trim(), applyWith)
+          ? deployApi.install(plan!.hash, note.trim(), applyWith, flags.dryRun)
           : // expectRevision is the optimistic lock the dry run computed. It
             // always exists here: nothing reaches this call without one.
-            deployApi.apply(plan!.hash, diff?.revision, note.trim(), force),
+            deployApi.apply(plan!.hash, diff?.revision, note.trim(), flags.apply),
     onSuccess: (r) => {
       onApplied(r);
       onTab("status");
@@ -167,7 +173,8 @@ export function Pipeline({
   // the honest label is neither -- the dry run is safe to run either way, and
   // by the time it returns `exists` is known from the diff itself.
   const known = exists !== undefined;
-  const actionLabel = rollbackTo ? "Roll back" : install ? "Install" : "Apply";
+  const action = rollbackTo ? "rollback" : install ? "install" : "apply";
+  const actionLabel = { rollback: "Roll back", install: "Install", apply: "Apply" }[action];
 
   // The two halves of one button. A dry run is the diff, and it is the only way
   // to reach the apply -- so the apply cannot be clicked without one, and the
@@ -259,6 +266,8 @@ export function Pipeline({
               known={known}
               rollbackTo={rollbackTo}
               install={install}
+              // Forcing helm's field ownership only means anything on an upgrade.
+              canForce={action === "apply"}
               method={method}
               diff={diff}
               applied={applied}
@@ -266,6 +275,14 @@ export function Pipeline({
               onNote={setNote}
               force={force}
               onForce={setForce}
+              skipSchema={skipSchema}
+              onSkipSchema={(v) => {
+                // The dry run checked the schema the other way: run it again.
+                setSkipSchema(v);
+                diffM.reset();
+                applyM.reset();
+                onDiff(null);
+              }}
               diffPending={diffM.isPending}
               applyPending={applyM.isPending}
               dryRunDone={dryRunDone}
@@ -388,6 +405,7 @@ function Action({
   known,
   rollbackTo,
   install,
+  canForce,
   method,
   diff,
   applied,
@@ -395,6 +413,8 @@ function Action({
   onNote,
   force,
   onForce,
+  skipSchema,
+  onSkipSchema,
   diffPending,
   applyPending,
   dryRunDone,
@@ -407,6 +427,7 @@ function Action({
   known: boolean;
   rollbackTo?: number;
   install: boolean;
+  canForce: boolean;
   method?: ApplyWith;
   diff: DiffResult | null;
   applied: ApplyResult | null;
@@ -414,6 +435,8 @@ function Action({
   onNote: (v: string) => void;
   force: boolean;
   onForce: (v: boolean) => void;
+  skipSchema: boolean;
+  onSkipSchema: (v: boolean) => void;
   diffPending: boolean;
   applyPending: boolean;
   dryRunDone: boolean;
@@ -442,7 +465,8 @@ function Action({
           ? `Asserting the release is still at revision ${diff.revision}.` +
             (method ? ` Install method stays ${METHODS[method].label}.` : "")
           : `The release does not exist; this creates it${method ? ` with ${METHODS[method].label}` : ""}.`) +
-        (force ? " Fields a hand edit left kubectl owning will be overwritten." : "")
+        (force ? " Fields a hand edit left kubectl owning will be overwritten." : "") +
+        (skipSchema ? " The values are not checked against the chart's schema." : "")
       : "";
 
   return (
@@ -464,11 +488,7 @@ function Action({
           className="min-w-48 flex-1 sm:max-w-md"
         />
 
-        {/* Upgrades only. An install has no live object whose fields another
-            manager could own, and a rollback restores a plan that applied
-            cleanly once -- forcing during one would be a second surprise on
-            top of the one being undone. */}
-        {!install && !rollbackTo && (
+        {canForce && (
           <HoverHint text="helm applies server-side, so a field changed by hand with kubectl belongs to kubectl and an upgrade refuses to overwrite it. This takes those fields back — the hand edits on this release are replaced by what the plan says, and are not recoverable from here.">
             <span className="flex items-center gap-2 text-sm">
               <Switch checked={force} onChange={onForce} label="force conflicts" />
@@ -476,6 +496,13 @@ function Action({
             </span>
           </HoverHint>
         )}
+
+        <HoverHint text="The dry run and the apply skip the chart's values.schema.json: for a variant carrying a key its chart refuses, or a site's cache on a chart without one. Every other check the schema makes goes with it. This apply only; nothing keeps it.">
+          <span className="flex items-center gap-2 text-sm">
+            <Switch checked={skipSchema} onChange={onSkipSchema} label="skip values schema" />
+            <span className={skipSchema ? "text-warning" : "text-muted-foreground"}>Skip values schema</span>
+          </span>
+        </HoverHint>
 
         <div className="ml-auto">
           {!dryRunDone ? (
@@ -538,4 +565,11 @@ function Applied({ result }: { result: ApplyResult }) {
       </CardContent>
     </Card>
   );
+}
+
+// dialogFlags is what the dry run (and an install) and an apply send: the
+// page's flags, with the dialog's skip on both and its force on the apply only.
+export function dialogFlags(page: ApplyFlags | undefined, skipSchema: boolean, force: boolean) {
+  const dryRun = skipSchema ? { ...page, skipSchemaValidation: true } : page;
+  return { dryRun, apply: force ? { ...dryRun, forceConflicts: true } : dryRun };
 }

@@ -18,11 +18,14 @@ import {
   FormSection,
   Input,
   Switch,
+  ToggleGroup,
+  ToggleGroupItem,
   cn,
 } from "@modelsphere/ui";
 import { Plus, X } from "lucide-react";
 import type { ClusterInfo } from "@swiss/lib/api";
-import { effective, type Form, type Toleration } from "@swiss/components/DeploySettings";
+import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
+import { effective, imageChoices, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
 import { useT } from "@/modules/inferences/i18n";
@@ -39,7 +42,7 @@ export interface DeployFormProps {
   submitted: boolean;
   target: ReactNode;
   cluster?: ClusterInfo;
-  defaults: { serviceId?: string; localPath?: string; localPathTemplate?: string; image?: { catalog: string; site: string } };
+  defaults: { serviceId?: string; localPath?: string; localPathTemplate?: string; image?: { catalog: string; site: string }; cache?: CacheCard };
   gpuOptions: string[];
   expanded: Record<Section, boolean>;
   onExpand: (s: Section, open: boolean) => void;
@@ -52,6 +55,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
   const t = useT();
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
+  const images = defaults.image ? imageChoices(defaults.image) : [];
   const byKey = new Map(routeDirectives(routeOptions).map((d) => [d.key, d]));
   const showRuntime = !!upgrade && routeOptions?.route === (catalogRoute ?? (form.route || form.serviceId));
   const label = (key: string, fallback: string) => directiveText(t, byKey.get(key), "label") || f(fallback);
@@ -63,6 +67,8 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
   const text = (k: keyof Form) => ({ value: form[k] as string, onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange({ [k]: e.target.value }) });
   const sw = (k: keyof Form, label: string) => <Switch aria-label={label} checked={form[k] as boolean} onCheckedChange={(v) => onChange({ [k]: v })} />;
   const idError = submitted ? serviceIdError(form.serviceId || defaults.serviceId || "") : undefined;
+  const cache = defaults.cache;
+  const cacheOn = !!cache && !cache.unsupported && form.cache;
   // A float label hides the placeholder until it floats; float it whenever there is a default to show.
   const shown = (value: string, fallback?: string) => value || fallback || "";
   const section = (id: Section, children: ReactNode) => (
@@ -137,8 +143,26 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
               hint={f("imageHint")}
               expanded={!!form.image.trim()}
               expandedContent={
-                <div className="pb-3">
+                <div className="space-y-2 pb-3">
                   <Input value={form.image} onChange={(e) => onChange({ image: e.target.value })} placeholder={defaults.image.site} className="font-mono text-xs" aria-label={f("imageValue")} />
+                  {images.length > 0 && (
+                    <ToggleGroup
+                      size="sm"
+                      variant="outline"
+                      spacing={0}
+                      value={images.filter((c) => c.ref === form.image.trim()).map((c) => c.key)}
+                      onValueChange={(v) => {
+                        const ref = images.find((c) => c.key === v[0])?.ref;
+                        if (ref) onChange({ image: ref });
+                      }}
+                    >
+                      {images.map((c) => (
+                        <ToggleGroupItem key={c.key} value={c.key} title={c.ref}>
+                          {f(c.key === "site" ? "imageSite" : "imageCatalog")}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  )}
                 </div>
               }
             >
@@ -209,10 +233,53 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
 
       {section(
         "advanced",
-        <FloatingField label={f("edits")} hint={f("editsHint")} multiline>
-          <FieldTextarea {...text("edits")} rows={10} spellCheck={false} className="font-mono text-xs" />
-        </FloatingField>,
+        <>
+          {cache && (
+            <FloatingField
+              layout="inline"
+              label={f("cache")}
+              hint={f("cacheHint")}
+              description={cache.unsupported?.chart ? t(cache.unsupported.since ? "deploy.fields.cacheSince" : "deploy.fields.cacheNone", { chart: cache.unsupported.chart, since: cache.unsupported.since ?? "" }) : undefined}
+              notice={cache.unsupported && cache.siteOn ? f("cacheSiteOff") : undefined}
+              disabled={!!cache.unsupported}
+              expanded={cacheOn}
+              expandedContent={<CacheFields form={form} onChange={onChange} defaults={cache.defaults} />}
+            >
+              <Switch aria-label={f("cache")} checked={cacheOn} disabled={!!cache.unsupported} onCheckedChange={(v) => onChange({ cache: v })} />
+            </FloatingField>
+          )}
+          <FloatingField layout="inline" label={f("skipSchemaValidation")} hint={f("skipSchemaValidationHint")}>
+            {sw("skipSchemaValidation", f("skipSchemaValidation"))}
+          </FloatingField>
+          <FloatingField label={f("edits")} hint={f("editsHint")} multiline>
+            <FieldTextarea {...text("edits")} rows={10} spellCheck={false} className="font-mono text-xs" />
+          </FloatingField>
+        </>,
       )}
+    </div>
+  );
+}
+
+function CacheFields({ form, onChange, defaults }: { form: Form; onChange: (patch: Partial<Form>) => void; defaults: CacheDefaults }) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+  const digits = (k: "cacheHistoryLimit" | "cacheMaxSlots") => (e: React.ChangeEvent<HTMLInputElement>) => onChange({ [k]: e.target.value.replace(/\D/g, "") });
+  const history = String(defaults.historyLimit);
+  const slots = String(defaults.maxSlotsPerNode);
+  return (
+    <div className="grid grid-cols-2 gap-3 pb-3">
+      <FloatingField value={form.cacheHostPath || defaults.hostPath} label={f("cacheHostPath")}>
+        <FieldInput value={form.cacheHostPath} onChange={(e) => onChange({ cacheHostPath: e.target.value })} placeholder={defaults.hostPath} className="font-mono text-xs" />
+      </FloatingField>
+      <FloatingField value={form.cacheHostPathSuffix || f("cacheModelName")} label={f("cacheHostPathSuffix")} hint={f("cacheHostPathSuffixHint")}>
+        <FieldInput value={form.cacheHostPathSuffix} onChange={(e) => onChange({ cacheHostPathSuffix: e.target.value })} placeholder={f("cacheModelName")} className="font-mono text-xs" />
+      </FloatingField>
+      <FloatingField value={form.cacheHistoryLimit || history} label={f("cacheHistoryLimit")} hint={f("cacheHistoryLimitHint")} error={cacheFieldError("historyLimit", form.cacheHistoryLimit) ? f("cacheHistoryRange") : undefined}>
+        <FieldInput value={form.cacheHistoryLimit} onChange={digits("cacheHistoryLimit")} inputMode="numeric" placeholder={history} />
+      </FloatingField>
+      <FloatingField value={form.cacheMaxSlots || slots} label={f("cacheMaxSlots")} hint={f("cacheMaxSlotsHint")} error={cacheFieldError("maxSlotsPerNode", form.cacheMaxSlots) ? f("cacheSlotsRange") : undefined}>
+        <FieldInput value={form.cacheMaxSlots} onChange={digits("cacheMaxSlots")} inputMode="numeric" placeholder={slots} />
+      </FloatingField>
     </div>
   );
 }

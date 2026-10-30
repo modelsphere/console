@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DeployForm } from "./DeployForm";
 import { EMPTY, planRequest, type Form } from "@swiss/components/DeploySettings";
+import type { CacheCard } from "@swiss/lib/cache";
 import type { RouteOptions } from "@/modules/inferences/routeOptions";
 
 const catalog: RouteOptions = {
@@ -84,5 +85,89 @@ describe("deploy route catalog", () => {
     expect(html.includes("当前：on")).toBe(true);
     expect(html.includes("引擎默认值或派生值")).toBe(true);
     expect(planRequest(form, { model: "model" })).toEqual(before);
+  });
+});
+
+describe("compile cache card", () => {
+  const defaults = { hostPath: "/mnt/disk0/sglang-cache", historyLimit: 2, maxSlotsPerNode: 4 };
+  const renderAdvanced = (cache?: CacheCard, form: Form = { ...EMPTY, serviceId: "model" }) =>
+    renderToStaticMarkup(
+      <DeployForm
+        form={form} onChange={() => {}} submitted={false} target={null} defaults={{ cache }} gpuOptions={[]}
+        expanded={{ basic: false, resources: false, routing: false, advanced: true }}
+        onExpand={() => {}} idPrefix="test-"
+      />,
+    );
+
+  it("greys out for a chart that cannot take it, and says why", () => {
+    const on = { ...EMPTY, serviceId: "model", cache: true };
+    const none = renderAdvanced({ defaults, siteOn: false, unsupported: { chart: "vllm" } }, on);
+    expect(none).toContain("编译缓存");
+    expect(none).toContain("vllm chart 不支持");
+    expect(none).not.toContain('placeholder="/mnt/disk0/sglang-cache"');
+    expect(none).not.toContain("站点默认开启缓存");
+    expect(renderAdvanced({ defaults, siteOn: false, unsupported: { chart: "sglang", since: "0.9.1" } })).toContain("sglang chart 0.9.1 以下不支持");
+  });
+
+  it("stays editable with the site's cache on, where nothing denies it", () => {
+    const switchOf = (html: string) => /<span[^>]*role="switch"[^>]*aria-label="编译缓存"[^>]*>/.exec(html)?.[0] ?? "";
+    const off = switchOf(renderAdvanced({ defaults, siteOn: true }, { ...EMPTY, serviceId: "model", cache: false }));
+    expect(off).toContain('aria-checked="false"');
+    expect(off).not.toContain('data-disabled=""');
+    const on = renderAdvanced({ defaults, siteOn: true }, { ...EMPTY, serviceId: "model", cache: true });
+    expect(switchOf(on)).toContain('aria-checked="true"');
+    expect(on).toContain('placeholder="/mnt/disk0/sglang-cache"');
+    expect(on).not.toContain("站点默认开启缓存");
+  });
+
+  it("offers what an empty field keeps, and flags a slot count the chart refuses", () => {
+    const html = renderAdvanced({ defaults, siteOn: false }, { ...EMPTY, serviceId: "model", cache: true, cacheMaxSlots: "65" });
+    expect(html).toContain('placeholder="/mnt/disk0/sglang-cache"');
+    expect(html).toContain('placeholder="2"');
+    expect(html).toContain("取值 1 到 64");
+  });
+});
+
+describe("skip values schema switch", () => {
+  it("sits in the advanced section and shows the form's value", () => {
+    const render = (form: Form) =>
+      renderToStaticMarkup(
+        <DeployForm
+          form={form} onChange={() => {}} submitted={false} target={null} defaults={{}} gpuOptions={[]}
+          expanded={{ basic: false, resources: false, routing: false, advanced: true }}
+          onExpand={() => {}} idPrefix="test-"
+        />,
+      );
+    const switchOf = (html: string) => /<span[^>]*role="switch"[^>]*aria-label="跳过 values schema 校验"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(switchOf(render({ ...EMPTY, serviceId: "model" }))).toContain('aria-checked="false"');
+    expect(switchOf(render({ ...EMPTY, serviceId: "model", skipSchemaValidation: true }))).toContain('aria-checked="true"');
+  });
+});
+
+describe("image override", () => {
+  const image = { catalog: "docker.io/lmsysorg/sglang:v0.5.4", site: "mirror.example.com/lmsysorg/sglang:v0.5.4" };
+  const render = (form: Form, img = image) =>
+    renderToStaticMarkup(
+      <DeployForm
+        form={form} onChange={() => {}} submitted={false} target={null} defaults={{ image: img }} gpuOptions={[]}
+        expanded={{ basic: false, resources: true, routing: false, advanced: false }}
+        onExpand={() => {}} idPrefix="test-"
+      />,
+    );
+  const pressed = (html: string, label: string) => new RegExp(`<button[^>]*aria-pressed="true"[^>]*>${label}<`).test(html);
+
+  it("offers both the site's mirror and the catalog's own image, marking the one in the field", () => {
+    const mirrored = render({ ...EMPTY, serviceId: "model", image: image.site });
+    expect(mirrored).toContain("站点镜像仓库");
+    expect(mirrored).toContain("目录原始镜像");
+    expect(pressed(mirrored, "站点镜像仓库")).toBe(true);
+    expect(pressed(render({ ...EMPTY, serviceId: "model", image: image.catalog }), "目录原始镜像")).toBe(true);
+    const typed = render({ ...EMPTY, serviceId: "model", image: "ghcr.io/me/sglang:rc1" });
+    expect(pressed(typed, "站点镜像仓库") || pressed(typed, "目录原始镜像")).toBe(false);
+  });
+
+  it("offers nothing to pick between without a mirror", () => {
+    const html = render({ ...EMPTY, serviceId: "model", image: image.catalog }, { catalog: image.catalog, site: image.catalog });
+    expect(html).not.toContain("目录原始镜像");
   });
 });

@@ -5,10 +5,9 @@ import type { Plan } from "@swiss/lib/api";
 import { Code } from "@swiss/components/ui/code";
 import { toYaml } from "@swiss/lib/yaml";
 
-// In merge order, and `edit` last because that is when it is applied. Leaving it
-// out of this list is how the one input exempt from ownership becomes the one
-// input nobody can see -- the opposite of why it is labelled at all.
-const LAYERS = ["defaults", "catalog", "site", "derived", "form", "edit"] as const;
+// In merge order: `edit` after the form, and `autoscale` last, as swissd
+// applies them.
+export const LAYERS = ["defaults", "catalog", "site", "derived", "form", "edit", "autoscale"] as const;
 
 const TONE = {
   defaults: "outline",
@@ -17,6 +16,7 @@ const TONE = {
   derived: "warning",
   form: "success",
   edit: "destructive",
+  autoscale: "warning",
 } as const;
 
 const WHAT = {
@@ -26,7 +26,20 @@ const WHAT = {
   derived: "computed from the variant and the site",
   form: "what this deploy set",
   edit: "typed into the plan editor; exempt from layer ownership",
+  autoscale: "replicaCount from PD autoscaling; applied last",
 } as const;
+
+// layersOf is every layer the plan carries: the known ones in merge order, then
+// any this console does not know, so none is hidden.
+export function layersOf(plan: Plan): string[] {
+  const present = Object.keys(plan.layers ?? {});
+  const ordered: string[] = LAYERS.filter((l) => present.includes(l));
+  return [...ordered, ...present.filter((l) => !ordered.includes(l)).sort()];
+}
+
+function known(layer: string): layer is (typeof LAYERS)[number] {
+  return (LAYERS as readonly string[]).includes(layer);
+}
 
 interface File {
   key: string;
@@ -105,14 +118,14 @@ function filesOf(plan: Plan): File[] {
       body: plan.helmfile,
     });
   }
-  for (const layer of LAYERS) {
-    const tree = plan.layers?.[layer];
+  for (const layer of layersOf(plan)) {
+    const tree = plan.layers[layer];
     if (!tree) continue;
     out.push({
       key: layer,
       name: `${layer}.yaml`,
-      tone: TONE[layer],
-      what: WHAT[layer],
+      tone: known(layer) ? TONE[layer] : "default",
+      what: known(layer) ? WHAT[layer] : "a layer this console does not know",
       count: leafCount(tree),
       body: toYaml(tree),
     });

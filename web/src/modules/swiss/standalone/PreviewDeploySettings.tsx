@@ -15,6 +15,8 @@ export function PreviewDeploySettings() {
       { key: "adaptive_cc_min", value: "8" },
       { key: "some_future_knob", value: "7" },
     ],
+    cache: true,
+    cacheMaxSlots: "0",
   });
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-6">
@@ -26,7 +28,8 @@ export function PreviewDeploySettings() {
           and are labeled "(fallback)" with captions. Monitor (enable, model, GPU type) lives on Routing.
           CART max load and the adaptive rows mute until their switch is on. Adaptive floor fraction is a
           named row; every other openresty knob is added from the Add setting dialog, including a custom key.
-          ServiceMonitor lives under Advanced. No backend required.
+          ServiceMonitor lives under Advanced, and so does the compile cache, as for an sglang chart (its
+          pods-per-node field holds an out-of-range 0). No backend required.
         </p>
       </div>
       <DeploySettings
@@ -41,6 +44,7 @@ export function PreviewDeploySettings() {
         supportedGPUs={["NVIDIA-H100-80GB-HBM3", "NVIDIA-B300-SXM6-AC"]}
         // H20 is racked here but not listed by the variant: offered dashed, and a forced deploy when picked.
         clusterGPUs={["NVIDIA-H100-80GB-HBM3", "NVIDIA-B300-SXM6-AC", "NVIDIA-H20"]}
+        cache={{ defaults: { hostPath: "/mnt/disk0/sglang-cache", historyLimit: 2, maxSlotsPerNode: 4 }, siteOn: true }}
       />
     </div>
   );

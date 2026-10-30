@@ -486,6 +486,10 @@ export const api = {
     get<ReleaseObjects>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/objects`,
     ),
+  autoscaling: (ns: string, release: string) =>
+    get<AutoscaleState>(
+      `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/autoscaling`,
+    ),
   revisions: (ns: string, release: string) =>
     get<RevisionsResponse>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/revisions`,
@@ -595,13 +599,31 @@ export interface PlanRequest {
   overrides?: Record<string, unknown>;
   overridesYAML?: string;
   editsYAML?: string;
-  // Composed into the plan as helmfile's createNamespace, on top of the site
-  // profile's own setting. helm creates the namespace; this is the plan saying
-  // it may.
+
+  /**
+   * @deprecated
+   * Composed into the plan as helmfile's createNamespace. Deprecated for
+   * applyFlags.createNamespace on the install, and sent beside it: a swissd
+   * older than applyFlags reads only this.
+   */
   createNamespace?: boolean;
   // Must fall in the variant's chart.version. Empty keeps a running release's
   // chart while in range, else takes the newest.
   chartVersion?: string;
+}
+
+// Choices for one diff, install or apply. swissd never stores them, so an
+// upgrade that needs one asks again. An endpoint takes the ones that mean
+// something to it: createNamespace only on an install, forceConflicts not on a
+// diff.
+export interface ApplyFlags {
+  // helm skips the chart's values.schema.json.
+  skipSchemaValidation?: boolean;
+  // Take the fields a hand kubectl edit left another manager owning. Sent, it
+  // overrides the apply's deprecated forceConflicts.
+  forceConflicts?: boolean;
+  // The install creates the release's namespace.
+  createNamespace?: boolean;
 }
 
 export interface Pod {
@@ -691,6 +713,28 @@ export interface ObjectResult {
 
 export interface ReleaseObjects {
   objects: ObjectResult[];
+}
+
+// swissd's PD slice autoscaler, its last pass for one release. Temporary: PD
+// mode only, and the endpoint is due to be removed.
+export interface AutoscaleState {
+  namespace: string;
+  release: string;
+  // The plan is disaggregated and its form SLO is on.
+  enabled: boolean;
+  // DisaggregatedSet slices the loop saw.
+  current: number;
+  // decision clamped into [1, 64]. Absent on a hold.
+  want?: number;
+  // decision-gen's count.
+  decision?: number;
+  noDecision?: boolean;
+  // Absent until this swissd has evaluated the release.
+  outcome?: "scaled-up" | "scaled-down" | "unchanged" | "no-decision" | "held" | "error";
+  hold?: string;
+  error?: string;
+  lastEvaluated?: string;
+  lastScaled?: string;
 }
 
 // routing.modelsphere.dev ModelRoute: autoconfig keeps openresty's peers and
@@ -911,17 +955,15 @@ async function del<T>(path: string): Promise<T> {
 
 export const deployApi = {
   plan: (req: PlanRequest) => post<Plan>("/api/plans", req),
-  diff: (req: PlanRequest | { planHash: string }) => post<DiffResult>("/api/diff", req),
+  diff: (req: (PlanRequest | { planHash: string }) & { applyFlags?: ApplyFlags }) => post<DiffResult>("/api/diff", req),
   // expectRevision is the optimistic lock a diff computed. It is left out when
   // no diff was run, and the server reads a missing revision as asserting
   // nothing rather than as revision zero.
-  // forceConflicts is per apply and never stored in the plan: it says "take the
-  // fields a hand kubectl edit left another manager owning", which is a
-  // decision about this one upgrade rather than about the release.
-  apply: (planHash: string, expectRevision?: number, note?: string, forceConflicts?: boolean) =>
-    post<ApplyResult>("/api/apply", { planHash, expectRevision, note, forceConflicts }),
-  install: (planHash: string, note?: string, applyWith?: ApplyWith) =>
-    post<ApplyResult>("/api/install", { planHash, note, applyWith }),
+  // forceConflicts defaults to applyFlags.forceConflicts, for a swissd older than applyFlags.
+  apply: (planHash: string, expectRevision?: number, note?: string, applyFlags?: ApplyFlags, /** @deprecated applyFlags.forceConflicts */ forceConflicts = applyFlags?.forceConflicts) =>
+    post<ApplyResult>("/api/apply", { planHash, expectRevision, note, forceConflicts, applyFlags }),
+  install: (planHash: string, note?: string, applyWith?: ApplyWith, applyFlags?: ApplyFlags) =>
+    post<ApplyResult>("/api/install", { planHash, note, applyWith, applyFlags }),
   probe: (ns: string, release: string, auth: EntrypointAuth = {}) =>
     post<ProbeResult>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/probe`,
@@ -936,10 +978,10 @@ export const deployApi = {
     ),
   // Optional, like every diff here. It carries back the live revision it saw,
   // which is what the rollback then asserts has not moved.
-  diffRevision: (ns: string, release: string, toRevision: number) =>
+  diffRevision: (ns: string, release: string, toRevision: number, applyFlags?: ApplyFlags) =>
     post<RevisionDiff>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/revisions/${toRevision}/diff`,
-      {},
+      { applyFlags },
     ),
   // expectRevision is what the page was showing. A rollback runs when something
   // is already wrong, which is when a second operator is most likely to be
@@ -950,10 +992,11 @@ export const deployApi = {
     toRevision: number,
     expectRevision: number,
     note?: string,
+    applyFlags?: ApplyFlags,
   ) =>
     post<ApplyResult>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/rollback`,
-      { toRevision, expectRevision, note },
+      { toRevision, expectRevision, note, applyFlags },
     ),
   uninstall: (ns: string, release: string) =>
     del<UninstallResult>(`/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}`),
