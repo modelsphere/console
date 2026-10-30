@@ -18,12 +18,14 @@ import {
   FormSection,
   Input,
   Switch,
+  ToggleGroup,
+  ToggleGroupItem,
   cn,
 } from "@modelsphere/ui";
 import { Plus, X } from "lucide-react";
 import type { ClusterInfo } from "@swiss/lib/api";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
-import { effective, type Form, type Toleration } from "@swiss/components/DeploySettings";
+import { effective, imageChoices, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
 import { useT } from "@/modules/inferences/i18n";
@@ -53,6 +55,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
   const t = useT();
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
+  const images = defaults.image ? imageChoices(defaults.image) : [];
   const byKey = new Map(routeDirectives(routeOptions).map((d) => [d.key, d]));
   const showRuntime = !!upgrade && routeOptions?.route === (catalogRoute ?? (form.route || form.serviceId));
   const label = (key: string, fallback: string) => directiveText(t, byKey.get(key), "label") || f(fallback);
@@ -140,8 +143,26 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
               hint={f("imageHint")}
               expanded={!!form.image.trim()}
               expandedContent={
-                <div className="pb-3">
+                <div className="space-y-2 pb-3">
                   <Input value={form.image} onChange={(e) => onChange({ image: e.target.value })} placeholder={defaults.image.site} className="font-mono text-xs" aria-label={f("imageValue")} />
+                  {images.length > 0 && (
+                    <ToggleGroup
+                      size="sm"
+                      variant="outline"
+                      spacing={0}
+                      value={images.filter((c) => c.ref === form.image.trim()).map((c) => c.key)}
+                      onValueChange={(v) => {
+                        const ref = images.find((c) => c.key === v[0])?.ref;
+                        if (ref) onChange({ image: ref });
+                      }}
+                    >
+                      {images.map((c) => (
+                        <ToggleGroupItem key={c.key} value={c.key} title={c.ref}>
+                          {f(c.key === "site" ? "imageSite" : "imageCatalog")}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  )}
                 </div>
               }
             >

@@ -67,7 +67,7 @@ export function Pipeline({
   rollbackTo?: number;
   // How an install stores the release. An existing release keeps its own.
   applyWith?: ApplyWith;
-  // The form's choices for this diff and apply. A rollback sends none.
+  // The page's choices for this diff and apply. A rollback sends none.
   applyFlags?: ApplyFlags;
   // Rendered on the Plan tab above the composed plan: what moves, on upgrade.
   children?: React.ReactNode;
@@ -79,6 +79,7 @@ export function Pipeline({
   // and a switch that remembered yes would force the next upgrade too --
   // quietly, because nobody sets it twice.
   const [force, setForce] = useState(false);
+  const [skipSchema, setSkipSchema] = useState(false);
   const [open, setOpen] = useState(false);
   // Set when the compose button is clicked, so the dialog opens on the plan
   // that click produced rather than on whatever was lying around. Composing is
@@ -104,11 +105,12 @@ export function Pipeline({
     if (!plan) setOpen(false);
   }, [plan]);
 
+  const flags = dialogFlags(applyFlags, skipSchema, force);
   const diffM = useMutation({
     mutationFn: () =>
       rollbackTo
         ? deployApi.diffRevision(namespace, release, rollbackTo)
-        : deployApi.diff({ planHash: plan!.hash, applyFlags }),
+        : deployApi.diff({ planHash: plan!.hash, applyFlags: flags.dryRun }),
     onSuccess: onDiff,
   });
 
@@ -140,10 +142,10 @@ export function Pipeline({
             note.trim(),
           )
         : install
-          ? deployApi.install(plan!.hash, note.trim(), applyWith, applyFlags)
+          ? deployApi.install(plan!.hash, note.trim(), applyWith, flags.dryRun)
           : // expectRevision is the optimistic lock the dry run computed. It
             // always exists here: nothing reaches this call without one.
-            deployApi.apply(plan!.hash, diff?.revision, note.trim(), force ? { ...applyFlags, forceConflicts: true } : applyFlags),
+            deployApi.apply(plan!.hash, diff?.revision, note.trim(), flags.apply),
     onSuccess: (r) => {
       onApplied(r);
       onTab("status");
@@ -269,6 +271,14 @@ export function Pipeline({
               onNote={setNote}
               force={force}
               onForce={setForce}
+              skipSchema={skipSchema}
+              onSkipSchema={(v) => {
+                // The dry run checked the schema the other way: run it again.
+                setSkipSchema(v);
+                diffM.reset();
+                applyM.reset();
+                onDiff(null);
+              }}
               diffPending={diffM.isPending}
               applyPending={applyM.isPending}
               dryRunDone={dryRunDone}
@@ -398,6 +408,8 @@ function Action({
   onNote,
   force,
   onForce,
+  skipSchema,
+  onSkipSchema,
   diffPending,
   applyPending,
   dryRunDone,
@@ -417,6 +429,8 @@ function Action({
   onNote: (v: string) => void;
   force: boolean;
   onForce: (v: boolean) => void;
+  skipSchema: boolean;
+  onSkipSchema: (v: boolean) => void;
   diffPending: boolean;
   applyPending: boolean;
   dryRunDone: boolean;
@@ -445,7 +459,8 @@ function Action({
           ? `Asserting the release is still at revision ${diff.revision}.` +
             (method ? ` Install method stays ${METHODS[method].label}.` : "")
           : `The release does not exist; this creates it${method ? ` with ${METHODS[method].label}` : ""}.`) +
-        (force ? " Fields a hand edit left kubectl owning will be overwritten." : "")
+        (force ? " Fields a hand edit left kubectl owning will be overwritten." : "") +
+        (skipSchema ? " The values are not checked against the chart's schema." : "")
       : "";
 
   return (
@@ -476,6 +491,16 @@ function Action({
             <span className="flex items-center gap-2 text-sm">
               <Switch checked={force} onChange={onForce} label="force conflicts" />
               <span className={force ? "text-warning" : "text-muted-foreground"}>Force conflicts</span>
+            </span>
+          </HoverHint>
+        )}
+
+        {/* Not on a rollback: its endpoint takes no flags. */}
+        {!rollbackTo && (
+          <HoverHint text="The dry run and the apply skip the chart's values.schema.json: for a variant carrying a key its chart refuses, or a site's cache on a chart without one. Every other check the schema makes goes with it. This apply only; nothing keeps it.">
+            <span className="flex items-center gap-2 text-sm">
+              <Switch checked={skipSchema} onChange={onSkipSchema} label="skip values schema" />
+              <span className={skipSchema ? "text-warning" : "text-muted-foreground"}>Skip values schema</span>
             </span>
           </HoverHint>
         )}
@@ -541,4 +566,11 @@ function Applied({ result }: { result: ApplyResult }) {
       </CardContent>
     </Card>
   );
+}
+
+// dialogFlags is what the dry run (and an install) and an apply send: the
+// page's flags, with the dialog's skip on both and its force on the apply only.
+export function dialogFlags(page: ApplyFlags | undefined, skipSchema: boolean, force: boolean) {
+  const dryRun = skipSchema ? { ...page, skipSchemaValidation: true } : page;
+  return { dryRun, apply: force ? { ...dryRun, forceConflicts: true } : dryRun };
 }

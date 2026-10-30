@@ -83,7 +83,8 @@ export interface Form {
   // Apply without checking the values against the chart's values.schema.json:
   // the way out for a variant carrying a key its chart's schema refuses, or a
   // site's cache on a chart without one. Not composed: applyFlags sends it
-  // with the diff and the apply.
+  // with the diff and the apply. The swiss pages leave it off and ask in the
+  // apply dialog instead.
   skipSchemaValidation: boolean;
 }
 
@@ -673,12 +674,10 @@ export function DeploySettings({
               }
             >
               {form.image.trim() ? (
-                <Suggest
-                  value={form.image}
-                  onChange={(v) => onChange({ image: v })}
-                  suggestion={image.catalog}
-                  placeholder={image.site}
-                />
+                <div className="w-full min-w-0 space-y-1.5">
+                  <Suggest value={form.image} onChange={(v) => onChange({ image: v })} placeholder={image.site} />
+                  <ImageChoices image={image} value={form.image} onPick={(v) => onChange({ image: v })} />
+                </div>
               ) : (
                 <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" title={image.site}>
                   {image.site}
@@ -734,17 +733,6 @@ export function DeploySettings({
               {!cache.unsupported && form.cache && <CacheFields form={form} onChange={onChange} defaults={cache.defaults} />}
             </Row>
           )}
-          <Row
-            label="Skip values schema"
-            note="apply without checking the values against the chart's values.schema.json — for a variant carrying a key its chart refuses. Every other check the schema makes goes with it."
-            toggle={
-              <Switch
-                checked={form.skipSchemaValidation}
-                onChange={toggle("skipSchemaValidation")}
-                label="skip values schema"
-              />
-            }
-          />
 
         </div>
 
@@ -825,11 +813,38 @@ function Row({
   );
 }
 
+function ImageChoices({ image, value, onPick }: { image: { catalog: string; site: string }; value: string; onPick: (ref: string) => void }) {
+  const choices = imageChoices(image);
+  if (choices.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {choices.map((c) => {
+        const active = value.trim() === c.ref;
+        return (
+          <button
+            key={c.key}
+            type="button"
+            aria-pressed={active}
+            title={c.ref}
+            onClick={() => onPick(c.ref)}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors",
+              active ? "border-success/40 bg-success/15 font-medium text-success" : "bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+            )}
+          >
+            {c.key === "site" ? "site mirror" : "catalog"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function unsupportedCaption(c: CacheCard): string | undefined {
   const u = c.unsupported;
   if (!u?.chart) return undefined;
   const why = u.since ? `not supported by the ${u.chart} chart before ${u.since}` : `not supported by the ${u.chart} chart`;
-  return c.siteOn ? `${why}: the site turns it on, so the plan still carries the site's cache values, which this chart's schema refuses. Turn on Skip values schema to deploy` : why;
+  return c.siteOn ? `${why}: the site turns it on, so the plan still carries the site's cache values, which this chart's schema refuses. Turn on Skip values schema beside the dry run to deploy` : why;
 }
 
 function CacheFields({ form, onChange, defaults }: { form: Form; onChange: (patch: Partial<Form>) => void; defaults: CacheDefaults }) {
@@ -1449,6 +1464,12 @@ export function imageOf(
     catalog: joinImage(repo, tag),
     site: joinImage(mirrored?.[variant.id] ?? repo, tag),
   };
+}
+
+// imageChoices is what an override offers to fill in. None without a mirror:
+// both would be the same image.
+export function imageChoices(image: { catalog: string; site: string }): { key: "site" | "catalog"; ref: string }[] {
+  return image.site === image.catalog ? [] : [{ key: "site", ref: image.site }, { key: "catalog", ref: image.catalog }];
 }
 
 // splitImage turns what was typed into the two values the chart takes. The last

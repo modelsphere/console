@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Plan } from "@swiss/lib/api";
-import { applyFlags, EMPTY, formFromPlan, planRequest, reseed, siteSwitchDefaults, switchDefaults } from "./DeploySettings";
+import { applyFlags, EMPTY, formFromPlan, imageChoices, planRequest, reseed, siteSwitchDefaults, switchDefaults } from "./DeploySettings";
 
 const site = { modelRoute: false, cart: true, serviceMonitor: false, sloRequirement: true, scaler: false };
 
@@ -103,5 +103,15 @@ describe("applyFlags", () => {
   it("starts off on an upgrade, whatever the plan says", () => {
     const plan = { release: { name: "r", namespace: "n" }, layers: {}, skipSchemaValidation: true, createNamespace: true } as unknown as Plan;
     expect(formFromPlan(plan)).toMatchObject({ skipSchemaValidation: false, createNamespace: false });
+  });
+});
+
+describe("imageChoices", () => {
+  it("offers the mirror and the catalog's image, or nothing when they are one", () => {
+    expect(imageChoices({ catalog: "docker.io/a:1", site: "mirror/a:1" })).toEqual([
+      { key: "site", ref: "mirror/a:1" },
+      { key: "catalog", ref: "docker.io/a:1" },
+    ]);
+    expect(imageChoices({ catalog: "docker.io/a:1", site: "docker.io/a:1" })).toEqual([]);
   });
 });

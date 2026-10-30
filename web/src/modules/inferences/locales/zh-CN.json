@@ -519,6 +519,8 @@
       "image": "覆盖镜像",
       "imageHint": "关闭时使用目录里的 tag 和站点的镜像仓库",
       "imageValue": "镜像（repository:tag）",
+      "imageSite": "站点镜像仓库",
+      "imageCatalog": "目录原始镜像",
       "modelRoute": "发布路由",
       "modelRouteHint": "向 openresty发布 ModelRoute",
       "route": "路由路径",

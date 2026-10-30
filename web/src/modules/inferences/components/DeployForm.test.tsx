@@ -143,3 +143,31 @@ describe("skip values schema switch", () => {
     expect(switchOf(render({ ...EMPTY, serviceId: "model", skipSchemaValidation: true }))).toContain('aria-checked="true"');
   });
 });
+
+describe("image override", () => {
+  const image = { catalog: "docker.io/lmsysorg/sglang:v0.5.4", site: "mirror.example.com/lmsysorg/sglang:v0.5.4" };
+  const render = (form: Form, img = image) =>
+    renderToStaticMarkup(
+      <DeployForm
+        form={form} onChange={() => {}} submitted={false} target={null} defaults={{ image: img }} gpuOptions={[]}
+        expanded={{ basic: false, resources: true, routing: false, advanced: false }}
+        onExpand={() => {}} idPrefix="test-"
+      />,
+    );
+  const pressed = (html: string, label: string) => new RegExp(`<button[^>]*aria-pressed="true"[^>]*>${label}<`).test(html);
+
+  it("offers both the site's mirror and the catalog's own image, marking the one in the field", () => {
+    const mirrored = render({ ...EMPTY, serviceId: "model", image: image.site });
+    expect(mirrored).toContain("站点镜像仓库");
+    expect(mirrored).toContain("目录原始镜像");
+    expect(pressed(mirrored, "站点镜像仓库")).toBe(true);
+    expect(pressed(render({ ...EMPTY, serviceId: "model", image: image.catalog }), "目录原始镜像")).toBe(true);
+    const typed = render({ ...EMPTY, serviceId: "model", image: "ghcr.io/me/sglang:rc1" });
+    expect(pressed(typed, "站点镜像仓库") || pressed(typed, "目录原始镜像")).toBe(false);
+  });
+
+  it("offers nothing to pick between without a mirror", () => {
+    const html = render({ ...EMPTY, serviceId: "model", image: image.catalog }, { catalog: image.catalog, site: image.catalog });
+    expect(html).not.toContain("目录原始镜像");
+  });
+});

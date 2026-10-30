@@ -530,6 +530,8 @@
       "image": "Override image",
       "imageHint": "Off uses the catalog's tag and the site's mirror",
       "imageValue": "Image (repository:tag)",
+      "imageSite": "Site mirror",
+      "imageCatalog": "Catalog",
       "modelRoute": "Publish a route",
       "modelRouteHint": "Publishes a ModelRoute to openresty",
       "route": "Route path",
