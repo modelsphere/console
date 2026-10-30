@@ -67,7 +67,7 @@ export function Pipeline({
   rollbackTo?: number;
   // How an install stores the release. An existing release keeps its own.
   applyWith?: ApplyWith;
-  // The page's choices for this diff and apply. A rollback sends none.
+  // The page's choices for this diff and apply. A rollback sends only the dialog's.
   applyFlags?: ApplyFlags;
   // Rendered on the Plan tab above the composed plan: what moves, on upgrade.
   children?: React.ReactNode;
@@ -105,11 +105,11 @@ export function Pipeline({
     if (!plan) setOpen(false);
   }, [plan]);
 
-  const flags = dialogFlags(applyFlags, skipSchema, force);
+  const flags = dialogFlags(rollbackTo ? undefined : applyFlags, skipSchema, force);
   const diffM = useMutation({
     mutationFn: () =>
       rollbackTo
-        ? deployApi.diffRevision(namespace, release, rollbackTo)
+        ? deployApi.diffRevision(namespace, release, rollbackTo, flags.dryRun)
         : deployApi.diff({ planHash: plan!.hash, applyFlags: flags.dryRun }),
     onSuccess: onDiff,
   });
@@ -140,6 +140,7 @@ export function Pipeline({
             rollbackTo,
             diff?.revision ?? live.data?.revision ?? 0,
             note.trim(),
+            flags.dryRun,
           )
         : install
           ? deployApi.install(plan!.hash, note.trim(), applyWith, flags.dryRun)
@@ -172,7 +173,8 @@ export function Pipeline({
   // the honest label is neither -- the dry run is safe to run either way, and
   // by the time it returns `exists` is known from the diff itself.
   const known = exists !== undefined;
-  const actionLabel = rollbackTo ? "Roll back" : install ? "Install" : "Apply";
+  const action = rollbackTo ? "rollback" : install ? "install" : "apply";
+  const actionLabel = { rollback: "Roll back", install: "Install", apply: "Apply" }[action];
 
   // The two halves of one button. A dry run is the diff, and it is the only way
   // to reach the apply -- so the apply cannot be clicked without one, and the
@@ -264,6 +266,8 @@ export function Pipeline({
               known={known}
               rollbackTo={rollbackTo}
               install={install}
+              // Forcing helm's field ownership only means anything on an upgrade.
+              canForce={action === "apply"}
               method={method}
               diff={diff}
               applied={applied}
@@ -401,6 +405,7 @@ function Action({
   known,
   rollbackTo,
   install,
+  canForce,
   method,
   diff,
   applied,
@@ -422,6 +427,7 @@ function Action({
   known: boolean;
   rollbackTo?: number;
   install: boolean;
+  canForce: boolean;
   method?: ApplyWith;
   diff: DiffResult | null;
   applied: ApplyResult | null;
@@ -482,11 +488,7 @@ function Action({
           className="min-w-48 flex-1 sm:max-w-md"
         />
 
-        {/* Upgrades only. An install has no live object whose fields another
-            manager could own, and a rollback restores a plan that applied
-            cleanly once -- forcing during one would be a second surprise on
-            top of the one being undone. */}
-        {!install && !rollbackTo && (
+        {canForce && (
           <HoverHint text="helm applies server-side, so a field changed by hand with kubectl belongs to kubectl and an upgrade refuses to overwrite it. This takes those fields back — the hand edits on this release are replaced by what the plan says, and are not recoverable from here.">
             <span className="flex items-center gap-2 text-sm">
               <Switch checked={force} onChange={onForce} label="force conflicts" />
@@ -495,15 +497,12 @@ function Action({
           </HoverHint>
         )}
 
-        {/* Not on a rollback: its endpoint takes no flags. */}
-        {!rollbackTo && (
-          <HoverHint text="The dry run and the apply skip the chart's values.schema.json: for a variant carrying a key its chart refuses, or a site's cache on a chart without one. Every other check the schema makes goes with it. This apply only; nothing keeps it.">
-            <span className="flex items-center gap-2 text-sm">
-              <Switch checked={skipSchema} onChange={onSkipSchema} label="skip values schema" />
-              <span className={skipSchema ? "text-warning" : "text-muted-foreground"}>Skip values schema</span>
-            </span>
-          </HoverHint>
-        )}
+        <HoverHint text="The dry run and the apply skip the chart's values.schema.json: for a variant carrying a key its chart refuses, or a site's cache on a chart without one. Every other check the schema makes goes with it. This apply only; nothing keeps it.">
+          <span className="flex items-center gap-2 text-sm">
+            <Switch checked={skipSchema} onChange={onSkipSchema} label="skip values schema" />
+            <span className={skipSchema ? "text-warning" : "text-muted-foreground"}>Skip values schema</span>
+          </span>
+        </HoverHint>
 
         <div className="ml-auto">
           {!dryRunDone ? (

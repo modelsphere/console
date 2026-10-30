@@ -5,7 +5,7 @@ import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { productChoices, unlistedProducts } from "@swiss/lib/gpu";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
-import { LAYERS } from "@swiss/components/Provenance";
+import { layersOf } from "@swiss/components/Provenance";
 import {
   DIRECTIVES,
   DIRECTIVES_BY_KEY,
@@ -1723,8 +1723,8 @@ export function formFromPlan(plan: Plan): Form {
 
 function cacheOn(plan: Plan): boolean {
   let on = false;
-  for (const layer of LAYERS) {
-    const c = plan.layers?.[layer]?.cache;
+  for (const layer of layersOf(plan)) {
+    const c = plan.layers[layer]?.cache;
     const v = c && typeof c === "object" ? (c as Record<string, unknown>).enabled : undefined;
     if (typeof v === "boolean") on = v;
   }

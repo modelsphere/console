@@ -978,10 +978,10 @@ export const deployApi = {
     ),
   // Optional, like every diff here. It carries back the live revision it saw,
   // which is what the rollback then asserts has not moved.
-  diffRevision: (ns: string, release: string, toRevision: number) =>
+  diffRevision: (ns: string, release: string, toRevision: number, applyFlags?: ApplyFlags) =>
     post<RevisionDiff>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/revisions/${toRevision}/diff`,
-      {},
+      { applyFlags },
     ),
   // expectRevision is what the page was showing. A rollback runs when something
   // is already wrong, which is when a second operator is most likely to be
@@ -992,10 +992,11 @@ export const deployApi = {
     toRevision: number,
     expectRevision: number,
     note?: string,
+    applyFlags?: ApplyFlags,
   ) =>
     post<ApplyResult>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/rollback`,
-      { toRevision, expectRevision, note },
+      { toRevision, expectRevision, note, applyFlags },
     ),
   uninstall: (ns: string, release: string) =>
     del<UninstallResult>(`/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}`),

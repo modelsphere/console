@@ -39,3 +39,19 @@ describe("deployApi applyFlags", () => {
     expect(sent[0].body).toEqual({ planHash: "h", expectRevision: 3 });
   });
 });
+
+describe("deployApi rollback applyFlags", () => {
+  beforeEach(() => {
+    sent.length = 0;
+  });
+
+  it("rides the revision dry run and the rollback", async () => {
+    const flags = { skipSchemaValidation: true };
+    await deployApi.diffRevision("models", "r", 4, flags);
+    await deployApi.rollback("models", "r", 4, 6, "why", flags);
+    expect(sent).toEqual([
+      { path: "/api/releases/models/r/revisions/4/diff", body: { applyFlags: flags } },
+      { path: "/api/releases/models/r/rollback", body: { toRevision: 4, expectRevision: 6, note: "why", applyFlags: flags } },
+    ]);
+  });
+});
