@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, FlaskConical, Layers, Loader2, Rocket, TriangleAlert, Undo2 } from "lucide-react";
-import { api, deployApi, type ApplyResult, type ApplyWith, type DiffResult, type Plan } from "@swiss/lib/api";
+import { api, deployApi, type ApplyFlags, type ApplyResult, type ApplyWith, type DiffResult, type Plan } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
@@ -45,6 +45,7 @@ export function Pipeline({
   onApplied,
   rollbackTo,
   applyWith,
+  applyFlags,
   children,
 }: {
   namespace: string;
@@ -66,6 +67,8 @@ export function Pipeline({
   rollbackTo?: number;
   // How an install stores the release. An existing release keeps its own.
   applyWith?: ApplyWith;
+  // The form's choices for this diff and apply. A rollback sends none.
+  applyFlags?: ApplyFlags;
   // Rendered on the Plan tab above the composed plan: what moves, on upgrade.
   children?: React.ReactNode;
 }) {
@@ -105,7 +108,7 @@ export function Pipeline({
     mutationFn: () =>
       rollbackTo
         ? deployApi.diffRevision(namespace, release, rollbackTo)
-        : deployApi.diff({ planHash: plan!.hash }),
+        : deployApi.diff({ planHash: plan!.hash, applyFlags }),
     onSuccess: onDiff,
   });
 
@@ -137,10 +140,10 @@ export function Pipeline({
             note.trim(),
           )
         : install
-          ? deployApi.install(plan!.hash, note.trim(), applyWith)
+          ? deployApi.install(plan!.hash, note.trim(), applyWith, applyFlags)
           : // expectRevision is the optimistic lock the dry run computed. It
             // always exists here: nothing reaches this call without one.
-            deployApi.apply(plan!.hash, diff?.revision, note.trim(), force),
+            deployApi.apply(plan!.hash, diff?.revision, note.trim(), force ? { ...applyFlags, forceConflicts: true } : applyFlags),
     onSuccess: (r) => {
       onApplied(r);
       onTab("status");

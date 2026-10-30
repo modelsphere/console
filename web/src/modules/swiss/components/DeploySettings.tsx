@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, Plus, TriangleAlert, X } from "lucide-react";
-import type { ClusterInfo, Plan, PlanRequest, ProfileResponse, Variant } from "@swiss/lib/api";
+import type { ApplyFlags, ClusterInfo, Plan, PlanRequest, ProfileResponse, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { productChoices, unlistedProducts } from "@swiss/lib/gpu";
@@ -42,9 +42,9 @@ export interface Form {
   slo: boolean;
   serviceMonitor: boolean;
   namespace: string;
-  // createNamespace is composed into the plan as helmfile's createNamespace:
-  // helm creates the namespace, and the plan is where that is declared. The
-  // site profile may already say so, in which case this adds nothing.
+  // createNamespace: the install creates the namespace. applyFlags sends it
+  // with the install, and planRequest the deprecated createNamespace beside
+  // it, for a swissd older than applyFlags.
   createNamespace: boolean;
   serviceId: string;
   localPath: string;
@@ -81,7 +81,9 @@ export interface Form {
   cacheHistoryLimit: string;
   cacheMaxSlots: string;
   // Apply without checking the values against the chart's values.schema.json:
-  // the way out for a variant carrying a key its chart's schema refuses.
+  // the way out for a variant carrying a key its chart's schema refuses, or a
+  // site's cache on a chart without one. Not composed: applyFlags sends it
+  // with the diff and the apply.
   skipSchemaValidation: boolean;
 }
 
@@ -354,13 +356,13 @@ export function DeploySettings({
             />
           </Row>
 
-          {/* A property of the plan, not of the apply: it renders as
-              helmDefaults.createNamespace in the helmfile the plan carries, and
-              helm is what creates the namespace. Composing it here is what
-              makes the rendered helmfile on the Plan tab the one that runs.
+          {/* Sent twice: applyFlags.createNamespace with the install, and the
+              deprecated createNamespace composed into the plan, which renders
+              as helmDefaults.createNamespace in its helmfile. A swissd older
+              than applyFlags reads only the second.
 
-              Hidden on an upgrade: the live release is in that namespace
-              already. */}
+                Hidden on an upgrade: the live release is in that namespace already.
+              */}
           {!lockIdentity && (
             <Row
               label="Create namespace"
@@ -1603,12 +1605,21 @@ export function planRequest(
     variant: opts.variant || undefined,
     release: f.serviceId.trim() || undefined,
     namespace: f.namespace.trim() || undefined,
+    // For a swissd older than applyFlags.
     createNamespace: f.createNamespace || undefined,
-    skipSchemaValidation: f.skipSchemaValidation || undefined,
     serviceId: f.serviceId.trim() || undefined,
     localPath: f.localPath.trim() || undefined,
     overrides,
   };
+}
+
+// applyFlags is what the diff and the apply of a plan composed from f send.
+// forceConflicts is not the form's: the apply dialog adds it, after the diff.
+export function applyFlags(f: Form): ApplyFlags | undefined {
+  const flags: ApplyFlags = {};
+  if (f.skipSchemaValidation) flags.skipSchemaValidation = true;
+  if (f.createNamespace) flags.createNamespace = true;
+  return Object.keys(flags).length ? flags : undefined;
 }
 
 // formFromPlan seeds the upgrade form from what a release was deployed with.
@@ -1680,7 +1691,8 @@ export function formFromPlan(plan: Plan): Form {
     cacheHostPathSuffix: str("cache.hostPathSuffix"),
     cacheHistoryLimit: str("cache.historyLimit"),
     cacheMaxSlots: str("cache.maxSlotsPerNode"),
-    skipSchemaValidation: !!plan.skipSchemaValidation,
+    // Per apply, so not on the plan: an upgrade that needs it asks again.
+    skipSchemaValidation: false,
     edits:
       plan.layers?.edit && Object.keys(plan.layers.edit).length > 0
         ? toYamlish(plan.layers.edit)

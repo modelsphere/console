@@ -557,8 +557,6 @@ export interface Plan {
   // these documents, and reading them from anywhere else is how an upgrade
   // silently seeds an empty form.
   layers: Record<string, Record<string, unknown>>;
-  // helm applies it without checking the values against the chart's schema.
-  skipSchemaValidation?: boolean;
   helmfile?: string;
   hash: string;
   // What compose accepted but a person should see, such as a forced GPU product.
@@ -601,15 +599,31 @@ export interface PlanRequest {
   overrides?: Record<string, unknown>;
   overridesYAML?: string;
   editsYAML?: string;
-  // Composed into the plan as helmfile's createNamespace, on top of the site
-  // profile's own setting. helm creates the namespace; this is the plan saying
-  // it may.
+
+  /**
+   * @deprecated
+   * Composed into the plan as helmfile's createNamespace. Deprecated for
+   * applyFlags.createNamespace on the install, and sent beside it: a swissd
+   * older than applyFlags reads only this.
+   */
   createNamespace?: boolean;
-  // An upgrade sending overrides sets it; one sending none keeps the release's.
-  skipSchemaValidation?: boolean;
   // Must fall in the variant's chart.version. Empty keeps a running release's
   // chart while in range, else takes the newest.
   chartVersion?: string;
+}
+
+// Choices for one diff, install or apply. swissd never stores them, so an
+// upgrade that needs one asks again. An endpoint takes the ones that mean
+// something to it: createNamespace only on an install, forceConflicts not on a
+// diff.
+export interface ApplyFlags {
+  // helm skips the chart's values.schema.json.
+  skipSchemaValidation?: boolean;
+  // Take the fields a hand kubectl edit left another manager owning. Sent, it
+  // overrides the apply's deprecated forceConflicts.
+  forceConflicts?: boolean;
+  // The install creates the release's namespace.
+  createNamespace?: boolean;
 }
 
 export interface Pod {
@@ -941,17 +955,15 @@ async function del<T>(path: string): Promise<T> {
 
 export const deployApi = {
   plan: (req: PlanRequest) => post<Plan>("/api/plans", req),
-  diff: (req: PlanRequest | { planHash: string }) => post<DiffResult>("/api/diff", req),
+  diff: (req: (PlanRequest | { planHash: string }) & { applyFlags?: ApplyFlags }) => post<DiffResult>("/api/diff", req),
   // expectRevision is the optimistic lock a diff computed. It is left out when
   // no diff was run, and the server reads a missing revision as asserting
   // nothing rather than as revision zero.
-  // forceConflicts is per apply and never stored in the plan: it says "take the
-  // fields a hand kubectl edit left another manager owning", which is a
-  // decision about this one upgrade rather than about the release.
-  apply: (planHash: string, expectRevision?: number, note?: string, forceConflicts?: boolean) =>
-    post<ApplyResult>("/api/apply", { planHash, expectRevision, note, forceConflicts }),
-  install: (planHash: string, note?: string, applyWith?: ApplyWith) =>
-    post<ApplyResult>("/api/install", { planHash, note, applyWith }),
+  // forceConflicts defaults to applyFlags.forceConflicts, for a swissd older than applyFlags.
+  apply: (planHash: string, expectRevision?: number, note?: string, applyFlags?: ApplyFlags, /** @deprecated applyFlags.forceConflicts */ forceConflicts = applyFlags?.forceConflicts) =>
+    post<ApplyResult>("/api/apply", { planHash, expectRevision, note, forceConflicts, applyFlags }),
+  install: (planHash: string, note?: string, applyWith?: ApplyWith, applyFlags?: ApplyFlags) =>
+    post<ApplyResult>("/api/install", { planHash, note, applyWith, applyFlags }),
   probe: (ns: string, release: string, auth: EntrypointAuth = {}) =>
     post<ProbeResult>(
       `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/probe`,

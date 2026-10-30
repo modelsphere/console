@@ -5,7 +5,7 @@ import { ChevronLeft, TriangleAlert } from "lucide-react";
 import { api, deployApi, type ApplyResult, type ApplyWith, type DiffResult, type Plan } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
-import { DeploySettings, EMPTY, imageOf, planRequest, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
+import { applyFlags, DeploySettings, EMPTY, imageOf, planRequest, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
@@ -282,6 +282,7 @@ export function Deploy() {
         composing={planM.isPending}
         composeDisabled={!form.serviceId}
         applyWith={method}
+        applyFlags={applyFlags(form)}
         onDiff={setDiff}
         onApplied={setApplied}
       />

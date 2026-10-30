@@ -27,7 +27,7 @@ import {
 import { ArrowRight, FlaskConical, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
-import { imageOf, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
+import { applyFlags, imageOf, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
 import { EMPTY, formFromPlan, planRequest } from "../deployment-settings";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
 import { Provenance } from "@swiss/components/Provenance";
@@ -200,10 +200,16 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
       dryRun.mutate(pl);
     },
   });
-  const dryRun = useMutation({ mutationFn: (pl: Plan) => deployApi.diff({ planHash: pl.hash }), onSuccess: setDiff });
+  // The form is fixed while a plan is on screen, so its flags are the ones
+  // the plan was composed beside.
+  const flags = applyFlags(form);
+  const dryRun = useMutation({ mutationFn: (pl: Plan) => deployApi.diff({ planHash: pl.hash, applyFlags: flags }), onSuccess: setDiff });
   const state = pipelineState({ diff, exists: live.data?.exists, applied: !!applied });
   const apply = useMutation({
-    mutationFn: () => (state.action === "install" ? deployApi.install(plan!.hash, note.trim(), method) : deployApi.apply(plan!.hash, diff?.revision, note.trim(), force)),
+    mutationFn: () => (state.action === "install" ?
+      deployApi.install(plan!.hash, note.trim(), method, flags) :
+      deployApi.apply(plan!.hash, diff?.revision, note.trim(), force ? { ...flags, forceConflicts: true } : flags)
+    ),
     onSuccess: (r) => {
       setApplied(r);
       for (const key of REFRESH) qc.invalidateQueries({ queryKey: key });

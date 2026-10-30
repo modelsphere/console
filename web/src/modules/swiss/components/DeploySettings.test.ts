@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Plan } from "@swiss/lib/api";
-import { EMPTY, formFromPlan, planRequest, reseed, siteSwitchDefaults, switchDefaults } from "./DeploySettings";
+import { applyFlags, EMPTY, formFromPlan, planRequest, reseed, siteSwitchDefaults, switchDefaults } from "./DeploySettings";
 
 const site = { modelRoute: false, cart: true, serviceMonitor: false, sloRequirement: true, scaler: false };
 
@@ -85,12 +85,23 @@ describe("compile cache", () => {
   });
 });
 
-describe("skip values schema", () => {
-  it("is sent only when on, and an upgrade reads it off the plan", () => {
-    expect(planRequest(EMPTY, { model: "m" }).skipSchemaValidation).toBeUndefined();
-    expect(planRequest({ ...EMPTY, skipSchemaValidation: true }, { model: "m" }).skipSchemaValidation).toBe(true);
-    const plan = (skip?: boolean) => ({ release: { name: "r", namespace: "n" }, layers: {}, skipSchemaValidation: skip }) as unknown as Plan;
-    expect(formFromPlan(plan(true)).skipSchemaValidation).toBe(true);
-    expect(formFromPlan(plan()).skipSchemaValidation).toBe(false);
+describe("applyFlags", () => {
+  it("carries the form's per-apply switches", () => {
+    expect(applyFlags(EMPTY)).toBeUndefined();
+    expect(applyFlags({ ...EMPTY, skipSchemaValidation: true })).toEqual({ skipSchemaValidation: true });
+    expect(applyFlags({ ...EMPTY, createNamespace: true })).toEqual({ createNamespace: true });
+  });
+
+  it("keeps the deprecated createNamespace on the plan request, for a swissd older than applyFlags", () => {
+    const req = planRequest({ ...EMPTY, skipSchemaValidation: true, createNamespace: true }, { model: "m" });
+    expect(req.createNamespace).toBe(true);
+    expect(planRequest(EMPTY, { model: "m" }).createNamespace).toBeUndefined();
+    // No released swissd took skipSchemaValidation on a plan request.
+    expect(req).not.toHaveProperty("skipSchemaValidation");
+  });
+
+  it("starts off on an upgrade, whatever the plan says", () => {
+    const plan = { release: { name: "r", namespace: "n" }, layers: {}, skipSchemaValidation: true, createNamespace: true } as unknown as Plan;
+    expect(formFromPlan(plan)).toMatchObject({ skipSchemaValidation: false, createNamespace: false });
   });
 });

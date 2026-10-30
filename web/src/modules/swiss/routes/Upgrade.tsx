@@ -17,6 +17,7 @@ import {
 import { Badge } from "@swiss/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
 import {
+  applyFlags,
   DeploySettings,
   EMPTY,
   formFromPlan,
@@ -479,6 +480,7 @@ export function Upgrade() {
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
         composeLabel={planM.isPending ? "Composing…" : plan ? "Recompose upgrade" : "Compose upgrade"}
+        applyFlags={applyFlags(form)}
         onDiff={setDiff}
         onApplied={setApplied}
       >
