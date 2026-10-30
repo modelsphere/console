@@ -27,13 +27,14 @@ import {
 import { ArrowRight, FlaskConical, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
-import { imageOf, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
+import { applyFlags, imageOf, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
 import { EMPTY, formFromPlan, planRequest } from "../deployment-settings";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
 import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
 import { gpuShort } from "@swiss/lib/gpu";
 import { isChartRange, movableCatalogs } from "@swiss/lib/upgrade";
+import { cacheCard } from "@swiss/lib/cache";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
@@ -67,7 +68,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes, retry: false });
   // A fresh deploy's switches start from the site's defaults; a profile it
   // cannot read leaves them at EMPTY's. An upgrade starts from its own plan.
-  const profile = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false, enabled: !upgrade });
+  const profile = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false });
   const current = useQuery({
     queryKey: ["releasePlan", upgrade ? target.namespace : "", upgrade ? target.release : ""],
     queryFn: () => api.releasePlan((target as { namespace: string }).namespace, (target as { release: string }).release),
@@ -120,6 +121,12 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     retry: false,
   });
   const chart = chartChoice(chartList, chartVersion, upgrade ? current.data?.chart : undefined);
+  const running = upgrade ? current.data?.chart : undefined;
+  const cache = cacheCard(
+    profile.data?.profile,
+    v,
+    { name: v?.chart.name ?? running?.name, version: chart.resolved ?? v?.chart.version ?? running?.version },
+  );
   const llm = cluster.data?.llmservice;
   const block = llmsvcBlock(llm, entry.data?.schema);
   const method = installMethod(picked, llm, entry.data?.schema);
@@ -178,8 +185,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         return await composeAdaptivePlan(planRequest(
           { ...form, serviceId: form.serviceId || (upgrade ? form.serviceId : defaultServiceId(target.model)) },
           upgrade
-            ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release }
-            : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined },
+            ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported }
+            : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported },
         ), form, routeOptions.data, deployApi.plan, catalogName);
       } catch (error) {
         if (error instanceof AdaptivePlanChangedError) throw new Error(t("deploy.fields.adaptiveChanged"));
@@ -193,10 +200,16 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
       dryRun.mutate(pl);
     },
   });
-  const dryRun = useMutation({ mutationFn: (pl: Plan) => deployApi.diff({ planHash: pl.hash }), onSuccess: setDiff });
+  // The form is fixed while a plan is on screen, so its flags are the ones
+  // the plan was composed beside.
+  const flags = applyFlags(form);
+  const dryRun = useMutation({ mutationFn: (pl: Plan) => deployApi.diff({ planHash: pl.hash, applyFlags: flags }), onSuccess: setDiff });
   const state = pipelineState({ diff, exists: live.data?.exists, applied: !!applied });
   const apply = useMutation({
-    mutationFn: () => (state.action === "install" ? deployApi.install(plan!.hash, note.trim(), method) : deployApi.apply(plan!.hash, diff?.revision, note.trim(), force)),
+    mutationFn: () => (state.action === "install" ?
+      deployApi.install(plan!.hash, note.trim(), method, flags) :
+      deployApi.apply(plan!.hash, diff?.revision, note.trim(), force ? { ...flags, forceConflicts: true } : flags)
+    ),
     onSuccess: (r) => {
       setApplied(r);
       for (const key of REFRESH) qc.invalidateQueries({ queryKey: key });
@@ -402,7 +415,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               submitted={submitted}
               target={targetFields}
               cluster={cluster.data}
-              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository) }}
+              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), cache }}
               gpuOptions={gpuOptions(v?.requires.gpuProduct, nodes.data?.nodes.map((n) => n.GPUProduct))}
               expanded={expanded}
               onExpand={(s, o) => setExpanded((e) => ({ ...e, [s]: o }))}

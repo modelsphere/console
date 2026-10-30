@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Gauge, Route, Settings2, ShieldCheck, TriangleAlert } from "lucide-react";
 import {
   api,
+  type AutoscaleState,
   type Condition,
   type LLMScalerSpec,
   type LLMScalerStatus,
@@ -31,6 +32,17 @@ export function useReleaseObjects(namespace: string, release: string, poll = tru
     ...(poll
       ? { refetchInterval: 15_000 }
       : { staleTime: 10_000, refetchOnWindowFocus: false, refetchOnReconnect: false }),
+  });
+}
+
+// Polled only while the release is autoscaling: for any other the answer is a
+// plan read on every call.
+function useAutoscaling(namespace: string, release: string) {
+  return useQuery({
+    queryKey: ["autoscaling", namespace, release],
+    queryFn: () => api.autoscaling(namespace, release),
+    retry: false,
+    refetchInterval: (q) => (q.state.data?.enabled ? 15_000 : false),
   });
 }
 
@@ -78,7 +90,7 @@ export function ReleaseObjects({
       <div className="grid gap-4 lg:grid-cols-3">
         <RoutePanel objects={objects} loading={q.isPending} />
         <ScalerPanel objects={objects} loading={q.isPending} />
-        <SLOPanel objects={objects} loading={q.isPending} onConfigure={onConfigureSLO} />
+        <SLOPanel namespace={namespace} release={release} objects={objects} loading={q.isPending} onConfigure={onConfigureSLO} />
       </div>
     </section>
   );
@@ -364,10 +376,14 @@ function ScalerPanel({
 }
 
 function SLOPanel({
+  namespace,
+  release,
   objects,
   loading,
   onConfigure,
 }: {
+  namespace: string;
+  release: string;
   objects?: ObjectResult[];
   loading: boolean;
   onConfigure?: () => void;
@@ -380,6 +396,8 @@ function SLOPanel({
   const max = spec?.maximumDeployment?.value;
   const suspended = min === 0 && max === 0;
   const priority = spec?.priority ?? 0;
+  const autoscale = useAutoscaling(namespace, release).data;
+  const pd = autoscale?.enabled ? autoscale : undefined;
 
   return (
     <ObjectCard
@@ -389,6 +407,8 @@ function SLOPanel({
       result={result}
       loading={loading}
       absent="No LLMSLORequirement: the decision service has no targets for this model."
+      state={pd && <AutoscaleBadge st={pd} />}
+      footer={pd && <PDAutoscale st={pd} />}
       action={
         onConfigure && (
           <Button
@@ -446,6 +466,64 @@ function SLOPanel({
         </>
       )}
     </ObjectCard>
+  );
+}
+
+// An LLMSLORequirement has no status of its own; for a PD release the SLO
+// card's is swissd's autoscaler pass.
+function AutoscaleBadge({ st }: { st: AutoscaleState }) {
+  const badge = (variant: "success" | "warning" | "destructive" | "muted", text: string) => (
+    <Badge variant={variant} title="PD autoscaling">
+      {text}
+    </Badge>
+  );
+  switch (st.outcome) {
+    case "scaled-up":
+      return badge("warning", "scaled up");
+    case "scaled-down":
+      return badge("warning", "scaled down");
+    case "unchanged":
+      return badge("success", "steady");
+    case "held":
+      return badge("warning", "held");
+    case "no-decision":
+      return badge("muted", "no decision");
+    case "error":
+      return badge("destructive", "error");
+    default:
+      return badge("muted", "not evaluated");
+  }
+}
+
+function PDAutoscale({ st }: { st: AutoscaleState }) {
+  const moving = st.want !== undefined && st.want !== st.current;
+  const clamped = st.want !== undefined && st.decision !== undefined && st.want !== st.decision;
+  return (
+    <div className="mt-auto space-y-2 border-t pt-3">
+      <div className="text-xs font-medium">PD autoscaling</div>
+      <Facts>
+        <Fact label="Slices">
+          <span className="tabular-nums">
+            {st.current}
+            {moving && <> → {st.want}</>}
+          </span>
+        </Fact>
+        <Fact label="Decision">
+          {st.decision !== undefined ? (
+            <span className="tabular-nums">
+              {st.decision}
+              {clamped && <span className="text-muted-foreground"> · clamped to {st.want}</span>}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">{st.noDecision ? "none from decision-gen" : "—"}</span>
+          )}
+        </Fact>
+        {st.hold && <Fact label="Held">{st.hold}</Fact>}
+        <Fact label="Evaluated">{st.lastEvaluated ? timeAgo(st.lastEvaluated) : "not yet"}</Fact>
+        {st.lastScaled && <Fact label="Last scaled">{timeAgo(st.lastScaled)}</Fact>}
+      </Facts>
+      {st.error && <Callout>{st.error}</Callout>}
+    </div>
   );
 }
 
@@ -603,6 +681,7 @@ function ObjectCard({
   absent,
   state,
   action,
+  footer,
   children,
 }: {
   icon: React.ReactNode;
@@ -613,6 +692,8 @@ function ObjectCard({
   absent: string;
   state?: React.ReactNode;
   action?: React.ReactNode;
+  // Shown whatever reading the object found.
+  footer?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -660,6 +741,7 @@ function ObjectCard({
         ) : (
           children
         )}
+        {!loading && footer}
       </div>
     </Card>
   );

@@ -1,6 +1,6 @@
 import { Link, Route, Routes } from "react-router";
 import { DeploymentDetail } from "@swiss/routes/DeploymentDetail";
-import type { ObjectResult, ReleaseStatus } from "@swiss/lib/api";
+import type { AutoscaleState, ObjectResult, ReleaseStatus } from "@swiss/lib/api";
 
 // Dev-only: the release page against canned swissd answers, so the install
 // status track and the cluster resource panels can be looked at in each state
@@ -136,9 +136,14 @@ const status = (ready: number, total: number, phase: string, extra: Partial<Rele
   ...extra,
 });
 
-const CASES: Record<string, { status: ReleaseStatus; objects: ObjectResult[] }> = {
+const CASES: Record<string, { status: ReleaseStatus; objects: ObjectResult[]; autoscale?: Partial<AutoscaleState> }> = {
   healthy: { status: status(2, 2, "applied"), objects: [route(true, 2), scaler(2, 2), slo] },
-  scaling: { status: status(2, 3, "applied"), objects: [route(true, 2), scaler(2, 3), slo] },
+  // As if PD: the SLO card carries swissd's autoscaler pass.
+  scaling: {
+    status: status(2, 3, "applied"),
+    objects: [route(true, 2), scaler(2, 3), slo],
+    autoscale: { enabled: true, current: 2, want: 3, decision: 3, outcome: "scaled-up", lastEvaluated: ago(0.5), lastScaled: ago(0.5) },
+  },
   broken: {
     status: status(0, 2, "failed"),
     objects: [
@@ -146,6 +151,7 @@ const CASES: Record<string, { status: ReleaseStatus; objects: ObjectResult[] }> 
       scaler(2, 2, true),
       { ...slo, live: undefined, error: "swissd may not read LLMSLORequirement in models: upgrade the swiss chart, which grants it" },
     ],
+    autoscale: { enabled: true, current: 2, decision: 4, outcome: "held", hold: "release failed", lastEvaluated: ago(1) },
   },
   bare: { status: status(1, 1, "applied"), objects: [] },
 };
@@ -189,11 +195,12 @@ function installStub() {
       await new Promise((r) => setTimeout(r, 400));
       return json(del[1] === "scaling" ? { release: del[1], planError: "configmaps \"swiss-plan-scaling\" is forbidden" } : { release: del[1] });
     }
-    const m = url.match(/\/api\/releases\/models\/(healthy|scaling|broken|bare)\/(status|objects|plan|slo)$/);
+    const m = url.match(/\/api\/releases\/models\/(healthy|scaling|broken|bare)\/(status|objects|plan|slo|autoscaling)$/);
     if (!m) return real(input, init);
     const c = CASES[m[1]];
     if (m[2] === "status") return json({ ...c.status, release: m[1] });
     if (m[2] === "objects") return json({ objects: c.objects });
+    if (m[2] === "autoscaling") return json({ namespace: "models", release: m[1], enabled: false, current: 2, ...c.autoscale });
     const withSLO = m[1] === "healthy" || m[1] === "scaling";
     if (m[2] === "slo") return json(sloConfig);
     return withSLO ? json(plan(m[1])) : json({ error: "no plan" }, 404);

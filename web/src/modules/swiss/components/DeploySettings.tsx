@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { ChevronDown, Plus, TriangleAlert, X } from "lucide-react";
-import type { ClusterInfo, Plan, PlanRequest, ProfileResponse, Variant } from "@swiss/lib/api";
+import type { ApplyFlags, ClusterInfo, Plan, PlanRequest, ProfileResponse, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
+import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { productChoices, unlistedProducts } from "@swiss/lib/gpu";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
+import { layersOf } from "@swiss/components/Provenance";
 import {
   DIRECTIVES,
   DIRECTIVES_BY_KEY,
@@ -40,9 +42,9 @@ export interface Form {
   slo: boolean;
   serviceMonitor: boolean;
   namespace: string;
-  // createNamespace is composed into the plan as helmfile's createNamespace:
-  // helm creates the namespace, and the plan is where that is declared. The
-  // site profile may already say so, in which case this adds nothing.
+  // createNamespace: the install creates the namespace. applyFlags sends it
+  // with the install, and planRequest the deprecated createNamespace beside
+  // it, for a swissd older than applyFlags.
   createNamespace: boolean;
   serviceId: string;
   localPath: string;
@@ -71,6 +73,19 @@ export interface Form {
   monitor: boolean;
   monitorModel: string;
   monitorGpuType: string;
+  // The sglang chart's compile cache. Empty fields leave the site's, else the
+  // chart's.
+  cache: boolean;
+  cacheHostPath: string;
+  cacheHostPathSuffix: string;
+  cacheHistoryLimit: string;
+  cacheMaxSlots: string;
+  // Apply without checking the values against the chart's values.schema.json:
+  // the way out for a variant carrying a key its chart's schema refuses, or a
+  // site's cache on a chart without one. Not composed: applyFlags sends it
+  // with the diff and the apply. The swiss pages leave it off and ask in the
+  // apply dialog instead.
+  skipSchemaValidation: boolean;
 }
 
 export const EMPTY: Form = {
@@ -104,35 +119,43 @@ export const EMPTY: Form = {
   monitor: true,
   monitorModel: "",
   monitorGpuType: "",
+  cache: false,
+  cacheHostPath: "",
+  cacheHostPathSuffix: "",
+  cacheHistoryLimit: "",
+  cacheMaxSlots: "",
+  skipSchemaValidation: false,
 };
 
 // The switches swissd gives a default for, by chart section.
-const DEFAULTED_SWITCHES = { modelRoute: "modelRoute", scaler: "scaler", cart: "cart", slo: "sloRequirement", serviceMonitor: "serviceMonitor" } as const;
+const DEFAULTED_SWITCHES = { modelRoute: "modelRoute", scaler: "scaler", cart: "cart", slo: "sloRequirement", serviceMonitor: "serviceMonitor", cache: "cache" } as const;
 type DefaultedSwitch = keyof typeof DEFAULTED_SWITCHES;
 export type SwitchDefaults = Partial<Pick<Form, DefaultedSwitch>>;
 
 // switchDefaults is where a fresh deploy's switches start: the variant's own
 // <section>.enabled where it sets one, else the site's resolved default from
-// /api/profile. modelRoute is the site's alone, as compose has it. A switch
-// neither names keeps EMPTY's.
+// /api/profile. modelRoute is the site's alone, as compose has it, and a site
+// cache that is on wins over the variant's, since its layer is the higher one.
+// A switch neither names keeps EMPTY's.
 export function switchDefaults(site: Record<string, boolean> | undefined, values: Record<string, unknown> | undefined): SwitchDefaults {
   const out: SwitchDefaults = {};
   for (const [field, section] of Object.entries(DEFAULTED_SWITCHES) as [DefaultedSwitch, string][]) {
     const v = section === "modelRoute" ? undefined : values?.[section];
     const own = v && typeof v === "object" ? (v as Record<string, unknown>).enabled : undefined;
-    const on = typeof own === "boolean" ? own : site?.[section];
+    const on = section === "cache" && site?.cache ? true : typeof own === "boolean" ? own : site?.[section];
     if (typeof on === "boolean") out[field] = on;
   }
   return out;
 }
 
 // siteSwitchDefaults is the site half of switchDefaults: defaults.features with
-// unset as on, the rule the profile editor shows, and modelRoute from
-// route.enabled. Undefined when the profile is unread or does not parse.
+// unset as on, the rule the profile editor shows, modelRoute from route.enabled
+// and cache from cache.enabled. Undefined when the profile is unread or does
+// not parse.
 export function siteSwitchDefaults(r: ProfileResponse | undefined): Record<string, boolean> | undefined {
   const p = r?.profile;
   if (!p) return undefined;
-  return { ...Object.fromEntries(FEATURES.map((k) => [k, featureOn(p.defaults, k)])), modelRoute: !!p.route?.enabled };
+  return { ...Object.fromEntries(FEATURES.map((k) => [k, featureOn(p.defaults, k)])), modelRoute: !!p.route?.enabled, cache: !!p.cache?.enabled };
 }
 
 // reseed moves the switches from prev's defaults to next's, keeping any
@@ -158,6 +181,7 @@ export function DeploySettings({
   image,
   supportedGPUs,
   clusterGPUs,
+  cache,
   // Upgrade locks the namespace: it names the helm release being upgraded, and
   // changing it does not move the release, it installs a second one.
   lockIdentity = false,
@@ -186,6 +210,7 @@ export function DeploySettings({
   // first does not name is marked, and selecting it is a forced deploy.
   supportedGPUs?: string[];
   clusterGPUs?: string[];
+  cache?: CacheCard;
 }) {
   const set =
     (k: keyof Form) =>
@@ -332,13 +357,13 @@ export function DeploySettings({
             />
           </Row>
 
-          {/* A property of the plan, not of the apply: it renders as
-              helmDefaults.createNamespace in the helmfile the plan carries, and
-              helm is what creates the namespace. Composing it here is what
-              makes the rendered helmfile on the Plan tab the one that runs.
+          {/* Sent twice: applyFlags.createNamespace with the install, and the
+              deprecated createNamespace composed into the plan, which renders
+              as helmDefaults.createNamespace in its helmfile. A swissd older
+              than applyFlags reads only the second.
 
-              Hidden on an upgrade: the live release is in that namespace
-              already. */}
+                Hidden on an upgrade: the live release is in that namespace already.
+              */}
           {!lockIdentity && (
             <Row
               label="Create namespace"
@@ -649,12 +674,10 @@ export function DeploySettings({
               }
             >
               {form.image.trim() ? (
-                <Suggest
-                  value={form.image}
-                  onChange={(v) => onChange({ image: v })}
-                  suggestion={image.catalog}
-                  placeholder={image.site}
-                />
+                <div className="w-full min-w-0 space-y-1.5">
+                  <Suggest value={form.image} onChange={(v) => onChange({ image: v })} placeholder={image.site} />
+                  <ImageChoices image={image} value={form.image} onPick={(v) => onChange({ image: v })} />
+                </div>
               ) : (
                 <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" title={image.site}>
                   {image.site}
@@ -692,6 +715,24 @@ export function DeploySettings({
               placeholder={cluster?.schedulerName ?? "the chart's default"}
             />
           </Row>
+          {cache && (
+            <Row
+              label="Compile cache"
+              note="keeps compiled kernels on the node, so a restarted pod skips the 20–40 minute recompile; empty fields keep the site's, else the chart's. Off writes nothing, so a site that turns it on still applies: set cache.enabled: false in the plan editor to force it off"
+              caption={unsupportedCaption(cache)}
+              muted={!!cache.unsupported}
+              toggle={
+                <Switch
+                  checked={!cache.unsupported && form.cache}
+                  onChange={toggle("cache")}
+                  label="compile cache"
+                  disabled={!!cache.unsupported}
+                />
+              }
+            >
+              {!cache.unsupported && form.cache && <CacheFields form={form} onChange={onChange} defaults={cache.defaults} />}
+            </Row>
+          )}
 
         </div>
 
@@ -768,6 +809,74 @@ function Row({
       <div className={cn("flex min-h-9 min-w-0 items-center", muted && "opacity-60")}>
         {hasControl ? children : toggle}
       </div>
+    </div>
+  );
+}
+
+function ImageChoices({ image, value, onPick }: { image: { catalog: string; site: string }; value: string; onPick: (ref: string) => void }) {
+  const choices = imageChoices(image);
+  if (choices.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {choices.map((c) => {
+        const active = value.trim() === c.ref;
+        return (
+          <button
+            key={c.key}
+            type="button"
+            aria-pressed={active}
+            title={c.ref}
+            onClick={() => onPick(c.ref)}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors",
+              active ? "border-success/40 bg-success/15 font-medium text-success" : "bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+            )}
+          >
+            {c.key === "site" ? "site mirror" : "catalog"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function unsupportedCaption(c: CacheCard): string | undefined {
+  const u = c.unsupported;
+  if (!u?.chart) return undefined;
+  const why = u.since ? `not supported by the ${u.chart} chart before ${u.since}` : `not supported by the ${u.chart} chart`;
+  return c.siteOn ? `${why}: the site turns it on, so the plan still carries the site's cache values, which this chart's schema refuses. Turn on Skip values schema beside the dry run to deploy` : why;
+}
+
+function CacheFields({ form, onChange, defaults }: { form: Form; onChange: (patch: Partial<Form>) => void; defaults: CacheDefaults }) {
+  const digits = (k: "cacheHistoryLimit" | "cacheMaxSlots") => (e: React.ChangeEvent<HTMLInputElement>) =>
+    onChange({ [k]: e.target.value.replace(/\D/g, "") });
+  const field = (label: string, control: React.ReactNode, error?: string) => (
+    <label className="min-w-0 space-y-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      {control}
+      {error && <span className="block text-xs text-destructive">{error}</span>}
+    </label>
+  );
+  return (
+    <div className="my-1 grid w-full gap-3 rounded-md border bg-muted/30 p-3 sm:grid-cols-2">
+      {field(
+        "Host path",
+        <Input value={form.cacheHostPath} onChange={(e) => onChange({ cacheHostPath: e.target.value })} placeholder={defaults.hostPath} className="font-mono text-xs" />,
+      )}
+      {field(
+        "Subdirectory",
+        <Input value={form.cacheHostPathSuffix} onChange={(e) => onChange({ cacheHostPathSuffix: e.target.value })} placeholder="the model name" className="font-mono text-xs" />,
+      )}
+      {field(
+        "Templates kept",
+        <Input value={form.cacheHistoryLimit} onChange={digits("cacheHistoryLimit")} inputMode="numeric" placeholder={String(defaults.historyLimit)} />,
+        cacheFieldError("historyLimit", form.cacheHistoryLimit) ? "at least 1" : undefined,
+      )}
+      {field(
+        "Pods per node",
+        <Input value={form.cacheMaxSlots} onChange={digits("cacheMaxSlots")} inputMode="numeric" placeholder={String(defaults.maxSlotsPerNode)} />,
+        cacheFieldError("maxSlotsPerNode", form.cacheMaxSlots) ? "1 to 64" : undefined,
+      )}
     </div>
   );
 }
@@ -1357,6 +1466,12 @@ export function imageOf(
   };
 }
 
+// imageChoices is what an override offers to fill in. None without a mirror:
+// both would be the same image.
+export function imageChoices(image: { catalog: string; site: string }): { key: "site" | "catalog"; ref: string }[] {
+  return image.site === image.catalog ? [] : [{ key: "site", ref: image.site }, { key: "catalog", ref: image.catalog }];
+}
+
 // splitImage turns what was typed into the two values the chart takes. The last
 // colon separates the tag only when it comes after the last slash:
 // registry.example.com:5000/sglang is a registry port, not a tag.
@@ -1392,6 +1507,8 @@ export function planRequest(
     // Accept gpuProducts the variant does not list; swissd still requires each
     // on this cluster under the variant's vendor.
     forceGpuProducts?: boolean;
+    // The chart has no cache section (CHART_FEATURES): the switch is forced off.
+    cacheUnsupported?: boolean;
   },
 ): PlanRequest {
   const overrides: Record<string, unknown> = {};
@@ -1464,6 +1581,18 @@ export function planRequest(
 
   overrides.modelRoute = modelRoute;
 
+  // Only on, and only for a chart that has the section. Off writes nothing,
+  // as a site with the cache off does; forcing it off over a site that turns
+  // it on is cache.enabled: false in the plan editor.
+  if (f.cache && !opts.cacheUnsupported) {
+    const cache: Record<string, unknown> = { enabled: true };
+    if (f.cacheHostPath.trim()) cache.hostPath = f.cacheHostPath.trim();
+    if (f.cacheHostPathSuffix.trim()) cache.hostPathSuffix = f.cacheHostPathSuffix.trim();
+    if (num(f.cacheHistoryLimit) !== undefined) cache.historyLimit = num(f.cacheHistoryLimit);
+    if (num(f.cacheMaxSlots) !== undefined) cache.maxSlotsPerNode = num(f.cacheMaxSlots);
+    overrides.cache = cache;
+  }
+
   // A row with no key tolerates nothing; it is a half-typed row, not a value.
   const tolerations = f.tolerations
     .filter((t) => t.key.trim())
@@ -1497,11 +1626,21 @@ export function planRequest(
     variant: opts.variant || undefined,
     release: f.serviceId.trim() || undefined,
     namespace: f.namespace.trim() || undefined,
+    // For a swissd older than applyFlags.
     createNamespace: f.createNamespace || undefined,
     serviceId: f.serviceId.trim() || undefined,
     localPath: f.localPath.trim() || undefined,
     overrides,
   };
+}
+
+// applyFlags is what the diff and the apply of a plan composed from f send.
+// forceConflicts is not the form's: the apply dialog adds it, after the diff.
+export function applyFlags(f: Form): ApplyFlags | undefined {
+  const flags: ApplyFlags = {};
+  if (f.skipSchemaValidation) flags.skipSchemaValidation = true;
+  if (f.createNamespace) flags.createNamespace = true;
+  return Object.keys(flags).length ? flags : undefined;
 }
 
 // formFromPlan seeds the upgrade form from what a release was deployed with.
@@ -1566,11 +1705,30 @@ export function formFromPlan(plan: Plan): Form {
     monitor: bool("modelRoute.monitor.enabled", true),
     monitorModel: str("modelRoute.monitor.model"),
     monitorGpuType: str("modelRoute.monitor.gpuType"),
+    // What the release ran with, which the site may have decided rather than
+    // the form.
+    cache: cacheOn(plan),
+    cacheHostPath: str("cache.hostPath"),
+    cacheHostPathSuffix: str("cache.hostPathSuffix"),
+    cacheHistoryLimit: str("cache.historyLimit"),
+    cacheMaxSlots: str("cache.maxSlotsPerNode"),
+    // Per apply, so not on the plan: an upgrade that needs it asks again.
+    skipSchemaValidation: false,
     edits:
       plan.layers?.edit && Object.keys(plan.layers.edit).length > 0
         ? toYamlish(plan.layers.edit)
         : "",
   };
+}
+
+function cacheOn(plan: Plan): boolean {
+  let on = false;
+  for (const layer of layersOf(plan)) {
+    const c = plan.layers[layer]?.cache;
+    const v = c && typeof c === "object" ? (c as Record<string, unknown>).enabled : undefined;
+    if (typeof v === "boolean") on = v;
+  }
+  return on;
 }
 
 // The plan editor round-trips through text, so edits carried forward have to be

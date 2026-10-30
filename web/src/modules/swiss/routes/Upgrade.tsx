@@ -17,6 +17,7 @@ import {
 import { Badge } from "@swiss/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
 import {
+  applyFlags,
   DeploySettings,
   EMPTY,
   formFromPlan,
@@ -28,6 +29,7 @@ import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, SchemaBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
 import { movableCatalogs } from "@swiss/lib/upgrade";
+import { cacheCard } from "@swiss/lib/cache";
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { VariantCard } from "@swiss/components/VariantCard";
@@ -74,6 +76,7 @@ export function Upgrade() {
     refetchInterval: 15_000,
   });
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes });
+  const profile = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false });
   const catalogs = cluster.data?.catalogs ?? [];
   const recorded = current.data?.source;
   const releaseCatalog = recorded ? catalogOfRelease(catalogs, recorded) : undefined;
@@ -160,6 +163,7 @@ export function Upgrade() {
           // value set once from a flag survives the upgrade instead of being
           // dropped by a form that never knew about it.
           fromRelease: release,
+          cacheUnsupported: !!cache.unsupported,
         }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping
@@ -222,6 +226,12 @@ export function Upgrade() {
       reset();
     },
   });
+  const pin = entry.data?.variant;
+  const cache = cacheCard(
+    profile.data?.profile,
+    pin,
+    { name: pin?.chart.name ?? cur.chart.name, version: chart.resolved ?? pin?.chart.version ?? cur.chart.version },
+  );
   // What the pipeline acts on: a composed plan on an upgrade, the archive on a
   // rollback. Nothing else about the page differs.
   const target = rollbackTo ? (archived.data ?? null) : plan;
@@ -453,6 +463,7 @@ export function Upgrade() {
         localPathDefault={entry.data?.localPath}
         localPathPlaceholder={entry.data?.pathTemplate}
         image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
+        cache={cache}
         lockIdentity
         readOnly={rollbackTo > 0}
       />
@@ -469,6 +480,7 @@ export function Upgrade() {
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
         composeLabel={planM.isPending ? "Composing…" : plan ? "Recompose upgrade" : "Compose upgrade"}
+        applyFlags={applyFlags(form)}
         onDiff={setDiff}
         onApplied={setApplied}
       >

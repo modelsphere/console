@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, AlertDescription, Button, Sheet, SheetBody, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, Spinner } from "@modelsphere/ui";
+import { Alert, AlertDescription, Button, FloatingField, Sheet, SheetBody, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, Spinner, Switch } from "@modelsphere/ui";
 import { TriangleAlert } from "lucide-react";
 import { api, deployApi } from "@swiss/lib/api";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
@@ -25,16 +25,19 @@ function Body({ target, onClose }: { target: RollbackTarget; onClose: () => void
   const qc = useQueryClient();
   const { namespace, release, revision } = target;
   const [note, setNote] = useState("");
+  const [skipSchema, setSkipSchema] = useState(false);
+  const flags = (skip: boolean) => (skip ? { skipSchemaValidation: true } : undefined);
   const current = useQuery({ queryKey: ["releasePlan", namespace, release], queryFn: () => api.releasePlan(namespace, release), retry: false });
   const archived = useQuery({ queryKey: ["revision-plan", namespace, release, revision], queryFn: () => api.revisionPlan(namespace, release, revision), staleTime: Infinity });
   const live = useQuery({ queryKey: ["status", namespace, release], queryFn: () => api.status(namespace, release) });
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
   const currentCatalog = current.data ? releaseCatalog(cluster.data?.catalogs ?? [], current.data.source) : undefined;
-  const diff = useMutation({ mutationFn: () => deployApi.diffRevision(namespace, release, revision) });
-  useEffect(() => diff.mutate(), []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Takes the switch as it is now, so toggling it can re-run the dry run at once.
+  const diff = useMutation({ mutationFn: (skip: boolean) => deployApi.diffRevision(namespace, release, revision, flags(skip)) });
+  useEffect(() => diff.mutate(false), []); // eslint-disable-line react-hooks/exhaustive-deps
   const state = pipelineState({ rollback: true, diff: diff.data ?? null, exists: live.data?.exists, applied: false });
   const run = useMutation({
-    mutationFn: () => deployApi.rollback(namespace, release, revision, diff.data?.revision ?? live.data?.revision ?? 0, note.trim()),
+    mutationFn: () => deployApi.rollback(namespace, release, revision, diff.data?.revision ?? live.data?.revision ?? 0, note.trim(), flags(skipSchema)),
     onSuccess: () => {
       for (const key of REFRESH) qc.invalidateQueries({ queryKey: key });
       onClose();
@@ -62,21 +65,36 @@ function Body({ target, onClose }: { target: RollbackTarget; onClose: () => void
             </div>
           ) : (
             archived.data && (
-              <Review
-                upgrade={false}
-                rollback
-                current={current.data}
-                currentCatalog={currentCatalog}
-                plan={archived.data}
-                diff={diff.data ?? null}
-                diffing={diff.isPending}
-                diffError={diff.error?.message}
-                state={state}
-                note={note}
-                onNote={setNote}
-                force={false}
-                onForce={() => {}}
-              />
+              <>
+                <Review
+                  upgrade={false}
+                  rollback
+                  current={current.data}
+                  currentCatalog={currentCatalog}
+                  plan={archived.data}
+                  diff={diff.data ?? null}
+                  diffing={diff.isPending}
+                  diffError={diff.error?.message}
+                  state={state}
+                  note={note}
+                  onNote={setNote}
+                  force={false}
+                  onForce={() => {}}
+                />
+                <FloatingField layout="inline" label={t("deploy.fields.skipSchemaValidation")} hint={t("deploy.fields.skipSchemaValidationHint")}>
+                  <Switch
+                    aria-label={t("deploy.fields.skipSchemaValidation")}
+                    checked={skipSchema}
+                    disabled={diff.isPending || run.isPending}
+                    onCheckedChange={(v) => {
+                      // The dry run checked the schema the other way: run it again.
+                      setSkipSchema(v);
+                      run.reset();
+                      diff.mutate(v);
+                    }}
+                  />
+                </FloatingField>
+              </>
             )
           )}
         </SheetBody>
