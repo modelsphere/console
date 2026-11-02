@@ -3,7 +3,6 @@ import { Button, Checkbox, FieldHint, FieldInput, FieldSelect, FloatingField, Fo
 import { Plus, X } from "lucide-react";
 import type { RouteAuth, SiteProfile } from "@swiss/lib/api";
 import { useT } from "@/modules/inferences/i18n";
-import { ENABLE_MONITOR } from "../features";
 import { fromRows, markDefault, toRows, withNodes, type Row } from "@/modules/inferences/profile-lib";
 import { aliasErrors, aliasMap, aliasRows, catalogErrors, FEATURES, featureOn, withFeature, type AliasError, type AliasRow, type CatalogError } from "@swiss/lib/profile";
 
@@ -129,7 +128,7 @@ export function ProfileForm({
             {input(f("nginxSelector"), p.route?.nginxSelector, (v) => route({ nginxSelector: str(v) }), { placeholder: "key=value", mono: true })}
             {input(f("nginxPort"), p.route?.nginxPort, (v) => route({ nginxPort: v.replace(/\D/g, "") ? Number(v.replace(/\D/g, "")) : undefined }), { placeholder: "8080" })}
           </div>
-          {ENABLE_MONITOR && input(f("monitorConfigMap"), p.route?.monitorConfigMap, (v) => route({ monitorConfigMap: str(v) }), { placeholder: "namespace/name", mono: true })}
+          {input(f("monitorConfigMap"), p.route?.monitorConfigMap, (v) => route({ monitorConfigMap: str(v) }), { placeholder: "namespace/name", mono: true })}
         </>,
       )}
 
