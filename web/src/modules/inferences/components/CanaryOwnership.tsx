@@ -11,7 +11,7 @@ export function matchingExperiment(owner: CanaryOwner, records: ExperimentSummar
   return records.find((e) => e.uid === owner.uid && e.name === owner.name && e.namespace === owner.namespace);
 }
 
-export function CanaryOwnership({ owner, compact = false }: { owner: CanaryOwner; compact?: boolean }) {
+export function CanaryOwnership({ owner, compact = false, assigned = false }: { owner: CanaryOwner; compact?: boolean; assigned?:boolean }) {
   const t = useT();
   const records = useQuery({
     queryKey: ["canary-owner-experiments"],
@@ -23,11 +23,11 @@ export function CanaryOwnership({ owner, compact = false }: { owner: CanaryOwner
   const experiment = matchingExperiment(owner, records.data);
   return (
     <div className={compact ? "mt-1 flex flex-wrap items-center gap-1 text-xs" : "rounded-md border bg-muted/30 p-3 text-sm"}>
-      <Badge variant="outline">{t("canaryOwner.managed")}</Badge>{" "}
+      <Badge variant="outline">{assigned?t("canaryOwner.assigned"):t("canaryOwner.managed")}</Badge>{" "}
       {experiment ? (
         <Link className="text-primary hover:underline" to={`/canary/experiments/${encodeURIComponent(experiment.id)}`}>{owner.namespace}/{owner.name}</Link>
       ) : <span>{owner.namespace}/{owner.name}</span>}
-      {!compact && <p className="mt-2">{t("canaryOwner.description")}</p>}
+      {!compact && <p className="mt-2">{assigned?t("canaryOwner.assignmentDescription"):t("canaryOwner.description")}</p>}
       {!compact && <p className="mt-1 text-xs text-muted-foreground">{!owner.verified ? t("canaryOwner.anomaly") : records.isPending ? t("canaryOwner.loading") : experiment ? `${experiment.phase ?? experiment.state} · UID ${owner.uid}` : t("canaryOwner.unavailable")}</p>}
     </div>
   );

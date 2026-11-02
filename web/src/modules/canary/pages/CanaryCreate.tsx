@@ -1,3 +1,4 @@
+import { ExistingCanaryCreate } from "./ExistingCanaryCreate";
 import { mergeObjects, effectiveArmValues, canarySystemValues } from "../lib/values";
 import { ErrorNotice, ErrorDetails } from "../components/ErrorNotice";
 import { asError, describeError } from "../lib/errors";
@@ -102,6 +103,13 @@ function removeArmEditor<T>(current: Record<string, T>, removed: number) {
 }
 
 export function CanaryCreate() {
+ const api=useCanaryApi();const {t}=useTranslation("canary");const [source,setSource]=useState("existing");
+ const config=useQuery({queryKey:["canary",api.mode,"config"],queryFn:()=>api.config()});
+ if(config.error)return <ErrorNotice error={config.error}/>;
+ if(!config.data)return <p className="p-4">{t("existing.loading")}</p>;
+ return <>{config.data.existingArms&&<div className="mx-auto max-w-5xl p-4"><FieldSelect value={source} options={[{value:"existing",label:t("existing.mode")},{value:"provisioned",label:t("existing.advanced")}]} onValueChange={v=>setSource(String(v))}/></div>}{config.data.existingArms&&source==="existing"?<ExistingCanaryCreate namespaces={config.data.namespaces}/>:<ProvisionedCanaryCreate/>}</>;
+}
+function ProvisionedCanaryCreate() {
   const { t } = useTranslation("canary");
   const api = useCanaryApi();
   const canWrite = useCanaryWrite();
@@ -199,7 +207,7 @@ export function CanaryCreate() {
   );
   // Keep navigation back to the arm editor available when its YAML is invalid.
   const stepYamlInvalid = step === "arms" && armsYamlInvalid;
-  const targets = deployments.data ?? [];
+  const targets = (deployments.data ?? []).filter(target=>target.selectable!==false);
   const selectedTarget = targets.find(
     (d) =>
       d.name === draft.targetRef.name &&

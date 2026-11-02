@@ -95,7 +95,8 @@
     "current": "这已经是当前版本",
     "sloOff": "部署时没有开启 SLO，可在升级时打开",
     "sloPending": "部署完成后才能查看 SLO",
-    "uninstalling": "这个服务正在卸载，等 Pod 消失后再操作"
+    "uninstalling": "这个服务正在卸载，等 Pod 消失后再操作",
+    "canaryAssigned": "请先停止占用此服务的实验"
   },
   "state": {
     "applied": "已应用",
@@ -433,44 +434,125 @@
         "Other": "其他"
       },
       "options": {
-        "adaptive_cc": { "label": "自适应并发" },
-        "adaptive_cc_min": { "label": "自适应下限" },
-        "adaptive_cc_min_frac": { "label": "下限比例" },
-        "adaptive_cc_init": { "label": "起始并发" },
-        "adaptive_cc_init_frac": { "label": "起始比例" },
-        "adaptive_cc_hold_when_idle": { "label": "空闲时保持并发" },
-        "adaptive_cc_use_ttft": { "label": "同时依据 TTFT 调整" },
-        "default_max": { "label": "默认节点并发上限" },
-        "max_more_tries": { "label": "重试次数" },
-        "cross_tier_fallback": { "label": "跨层故障切换" },
-        "health_probe_path": { "label": "探测路径" },
-        "session_affinity_enabled": { "label": "会话亲和性" },
-        "expose_routed_peer": { "label": "暴露路由后端" },
-        "bodylog_default_pct": { "label": "请求体日志采样比例" },
-        "adaptive_cc_inc": { "label": "增大倍率" },
-        "adaptive_cc_dec": { "label": "缩小倍率" },
-        "adaptive_cc_abs": { "label": "绝对余量" },
-        "adaptive_cc_pressure_frac": { "label": "压力比例" },
-        "adaptive_cc_slack_frac": { "label": "松弛比例", "detail": "相对起始并发的松弛区间；开启空闲保持时不生效。" },
-        "adaptive_cc_ttl": { "label": "起始状态 TTL", "detail": "空闲起始状态的保留时间；开启空闲保持时不生效。" },
-        "adaptive_cc_interval": { "label": "调整间隔" },
-        "rt_limit_factor": { "label": "运行时并发倍率", "detail": "缩放整个池的运行时并发上限，不是每个节点的上限。" },
-        "health_check_interval": { "label": "探测间隔" },
-        "health_ban_ttl": { "label": "封禁 TTL" },
-        "cluster_avg_interval": { "label": "集群均值计算间隔" },
-        "ttft_ewma_alpha": { "label": "TTFT 平滑系数" },
-        "ttft_window": { "label": "TTFT 时间窗口" },
-        "ttft_ttl": { "label": "TTFT TTL" },
-        "tps_ewma_alpha": { "label": "TPS 平滑系数" },
-        "tps_window": { "label": "TPS 时间窗口" },
-        "tps_ttl": { "label": "TPS TTL" },
-        "tps_min_tokens": { "label": "最少 token 数" },
-        "tps_min_decode_s": { "label": "最短解码时间" },
-        "ttft_probe_window": { "label": "TTFT 探测窗口" },
-        "ttft_probe_per_window": { "label": "每窗口 TTFT 探测请求数", "detail": "TTFT 限流期间每个探测窗口放行的请求数，不是采样率。" },
-        "tps_probe_window": { "label": "TPS 探测窗口" },
-        "tps_probe_per_window": { "label": "每窗口 TPS 探测请求数", "detail": "TPS 限流期间每个探测窗口放行的请求数，不是采样率。" },
-        "reject_rules_status": { "label": "拒绝状态码" }
+        "adaptive_cc": {
+          "label": "自适应并发"
+        },
+        "adaptive_cc_min": {
+          "label": "自适应下限"
+        },
+        "adaptive_cc_min_frac": {
+          "label": "下限比例"
+        },
+        "adaptive_cc_init": {
+          "label": "起始并发"
+        },
+        "adaptive_cc_init_frac": {
+          "label": "起始比例"
+        },
+        "adaptive_cc_hold_when_idle": {
+          "label": "空闲时保持并发"
+        },
+        "adaptive_cc_use_ttft": {
+          "label": "同时依据 TTFT 调整"
+        },
+        "default_max": {
+          "label": "默认节点并发上限"
+        },
+        "max_more_tries": {
+          "label": "重试次数"
+        },
+        "cross_tier_fallback": {
+          "label": "跨层故障切换"
+        },
+        "health_probe_path": {
+          "label": "探测路径"
+        },
+        "session_affinity_enabled": {
+          "label": "会话亲和性"
+        },
+        "expose_routed_peer": {
+          "label": "暴露路由后端"
+        },
+        "bodylog_default_pct": {
+          "label": "请求体日志采样比例"
+        },
+        "adaptive_cc_inc": {
+          "label": "增大倍率"
+        },
+        "adaptive_cc_dec": {
+          "label": "缩小倍率"
+        },
+        "adaptive_cc_abs": {
+          "label": "绝对余量"
+        },
+        "adaptive_cc_pressure_frac": {
+          "label": "压力比例"
+        },
+        "adaptive_cc_slack_frac": {
+          "label": "松弛比例",
+          "detail": "相对起始并发的松弛区间；开启空闲保持时不生效。"
+        },
+        "adaptive_cc_ttl": {
+          "label": "起始状态 TTL",
+          "detail": "空闲起始状态的保留时间；开启空闲保持时不生效。"
+        },
+        "adaptive_cc_interval": {
+          "label": "调整间隔"
+        },
+        "rt_limit_factor": {
+          "label": "运行时并发倍率",
+          "detail": "缩放整个池的运行时并发上限，不是每个节点的上限。"
+        },
+        "health_check_interval": {
+          "label": "探测间隔"
+        },
+        "health_ban_ttl": {
+          "label": "封禁 TTL"
+        },
+        "cluster_avg_interval": {
+          "label": "集群均值计算间隔"
+        },
+        "ttft_ewma_alpha": {
+          "label": "TTFT 平滑系数"
+        },
+        "ttft_window": {
+          "label": "TTFT 时间窗口"
+        },
+        "ttft_ttl": {
+          "label": "TTFT TTL"
+        },
+        "tps_ewma_alpha": {
+          "label": "TPS 平滑系数"
+        },
+        "tps_window": {
+          "label": "TPS 时间窗口"
+        },
+        "tps_ttl": {
+          "label": "TPS TTL"
+        },
+        "tps_min_tokens": {
+          "label": "最少 token 数"
+        },
+        "tps_min_decode_s": {
+          "label": "最短解码时间"
+        },
+        "ttft_probe_window": {
+          "label": "TTFT 探测窗口"
+        },
+        "ttft_probe_per_window": {
+          "label": "每窗口 TTFT 探测请求数",
+          "detail": "TTFT 限流期间每个探测窗口放行的请求数，不是采样率。"
+        },
+        "tps_probe_window": {
+          "label": "TPS 探测窗口"
+        },
+        "tps_probe_per_window": {
+          "label": "每窗口 TPS 探测请求数",
+          "detail": "TPS 限流期间每个探测窗口放行的请求数，不是采样率。"
+        },
+        "reject_rules_status": {
+          "label": "拒绝状态码"
+        }
       }
     },
     "fields": {
@@ -932,6 +1014,8 @@
     "anomaly": "归属信息不一致，请联系管理员核实。",
     "unavailable": "无法关联实验记录或无权查看，服务仍受实验归属保护。",
     "loading": "正在关联实验…",
-    "view": "查看实验"
+    "view": "查看实验",
+    "assigned": "被实验占用",
+    "assignmentDescription": "此服务被临时占用，实验组配置在停止且清理完成前不可修改。停止后模型服务继续运行。"
   }
 }

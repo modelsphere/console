@@ -96,15 +96,15 @@ export function validateCanary(cr: LLMCanary): ValidationIssue[] {
       }
       objects.add(name);
     }
-    if (!CHART_NAME.test(arm.chart.name))
+    if (!CHART_NAME.test(arm.chart?.name ?? ""))
       issues.push({ path: `${p}.chart.name`, message: "must be a chart name" });
-    if (!isExactChartVersion(arm.chart.version)) {
+    if (!isExactChartVersion(arm.chart?.version ?? "")) {
       issues.push({
         path: `${p}.chart.version`,
         message: "must be an exact version, not a range",
       });
     }
-    if (arm.chart.repo && !/^(https:\/\/|oci:\/\/).+/.test(arm.chart.repo)) {
+    if ((arm.chart?.repo ?? "") && !/^(https:\/\/|oci:\/\/).+/.test(arm.chart?.repo ?? "")) {
       issues.push({ path: `${p}.chart.repo`, message: "must be an HTTPS or OCI repository" });
     }
     const layerNames = new Set<string>();
@@ -226,8 +226,8 @@ export function wizardStepComplete(
         draft.arms.every(
           (arm) =>
             armNameOk(arm.name) &&
-            CHART_NAME.test(arm.chart.name) &&
-            isExactChartVersion(arm.chart.version),
+            CHART_NAME.test(arm.chart?.name ?? "") &&
+            isExactChartVersion(arm.chart?.version ?? ""),
         )
       );
     case "traffic":

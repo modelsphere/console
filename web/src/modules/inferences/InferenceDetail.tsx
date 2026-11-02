@@ -104,12 +104,13 @@ export function InferenceDetail() {
 
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
   const removing = isUninstalling(s);
-  const blockedWrite = s.managedBy ? t("disabled.canaryManaged") : readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const assignmentLocked=!!s.assignedTo && (!s.assignedTo.verified || s.assignedTo.role==="arm");
+  const blockedWrite = s.assignedTo && (!s.assignedTo.verified || s.assignedTo.role==="arm") ? t("disabled.canaryAssigned") : s.managedBy ? t("disabled.canaryManaged") : readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
   const blocked = sloBlocked(s, plan.data);
-  const sloOpen = !s.managedBy && !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
+  const sloOpen = !s.managedBy && !removing && !assignmentLocked && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
   const closeSLO = () => {
     setEditingSLO(false);
     if (!sloSetup) return;
@@ -157,7 +158,7 @@ export function InferenceDetail() {
           ]}
           metaColumns={4}
         />
-        {s.managedBy && <CanaryOwnership owner={s.managedBy} />}
+        {s.managedBy && <CanaryOwnership owner={s.managedBy} />}{s.assignedTo && <CanaryOwnership owner={{...s.assignedTo,verified:s.assignedTo.verified}} assigned />}
         <PanelTabs items={visible.map((key) => ({ value: key, label: t(`tabs.${key}`), count: counts[key] }))} />
 
         <TabsContent value="overview">
@@ -179,7 +180,7 @@ export function InferenceDetail() {
           <Endpoint namespace={namespace} release={release} status={s} access={false} />
         </TabsContent>
         <TabsContent value="versions">
-          <Versions namespace={namespace} release={release} rollbackBlocked={blockedWrite || (!plan.data ? t("disabled.readOnly") : false)} />
+          <Versions namespace={namespace} release={release} rollbackBlocked={blockedWrite || (!plan.data ? t("disabled.untracked") : false)} />
         </TabsContent>
         <TabsContent value="runs">
           <Runs namespace={namespace} release={release} />
@@ -193,10 +194,10 @@ export function InferenceDetail() {
         )}
       </Tabs>
 
-      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
-      <DeploySheet target={upgrading && !s.managedBy ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
+      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !assignmentLocked && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
+      <DeploySheet target={upgrading && !s.managedBy && !assignmentLocked && !removing ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
-        target={uninstalling && !s.managedBy ? { namespace, release } : null}
+        target={uninstalling && !s.managedBy && !assignmentLocked && !removing ? { namespace, release } : null}
         onClose={() => setUninstalling(false)}
         onDone={() => navigate(p(""))}
       />

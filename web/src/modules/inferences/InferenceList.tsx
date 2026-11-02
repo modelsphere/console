@@ -62,7 +62,7 @@ export function InferenceList() {
             {d.release}
           </Link>
           <div className="truncate text-xs text-muted-foreground" title={modelLine(d) || undefined}>{modelLine(d) || t("list.untracked")}</div>
-          {d.managedBy && <CanaryOwnership owner={d.managedBy} compact />}
+          {d.managedBy && <CanaryOwnership owner={d.managedBy} compact />}{d.assignedTo && <CanaryOwnership owner={{...d.assignedTo,verified:d.assignedTo.verified}} compact assigned />}
         </div>
       ),
     },
@@ -101,7 +101,7 @@ export function InferenceList() {
   ];
 
   const writeBlocked = (d: Deployment, untracked = false): boolean | string =>
-    d.managedBy ? t("disabled.canaryManaged") : readOnly ? t("disabled.readOnly") : isUninstalling(d) ? t("disabled.uninstalling") : untracked && !d.model ? t("disabled.untracked") : false;
+    d.assignedTo && (!d.assignedTo.verified || d.assignedTo.role==="arm") ? t("disabled.canaryAssigned") : d.managedBy ? t("disabled.canaryManaged") : readOnly ? t("disabled.readOnly") : isUninstalling(d) ? t("disabled.uninstalling") : untracked && !d.model ? t("disabled.untracked") : false;
 
   const rowActions: ResourceRowAction<Row>[] = [
     { key: "detail", label: t("actions.detail"), onClick: open },

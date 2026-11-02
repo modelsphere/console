@@ -242,3 +242,12 @@ describe("arm chart versions", () => {
     expect(payload.arms.map((a: { chart: { version: string } }) => a.chart.version)).toEqual(["0.9.0", "0.8.0"]);
   });
 });
+
+it("loads existing arm candidates through authenticated read transport and preserves errors",async()=>{
+ const fetcher=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify([{serviceRef:{namespace:"canary",name:"existing",uid:"u"},selectable:false,reasons:["assigned"],snapshot:{}}])));
+ const rows=await createLiveApi(fetcher).armCandidates!("canary & test");
+ expect(fetcher.mock.calls[0][0]).toBe("/api/canary/arm-candidates?namespace=canary%20%26%20test");
+ expect(rows[0].selectable).toBe(false);
+ const failed=createLiveApi(async()=>new Response(JSON.stringify({error:"discovery forbidden"}),{status:502}));
+ await expect(failed.armCandidates!("canary")).rejects.toThrow("discovery forbidden");
+});

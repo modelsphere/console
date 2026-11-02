@@ -53,8 +53,8 @@ describe("emitManifests", () => {
     expect(result.canary.apiVersion).toBe("canary.modelsphere.dev/v1alpha1");
     expect(result.yaml).not.toContain("canary.4pd.io");
     expect(result.issues).toEqual([]);
-    expect(result.canary.spec.arms[0]?.layers.map(l => l.name)).toEqual(["catalog", "derived", "form", "edit"]);
-    expect(result.canary.spec.arms[0]?.layers.at(-1)?.values?.scaler).toEqual({ enabled: true });
+    expect(result.canary.spec.arms[0]?.layers?.map(l => l.name)).toEqual(["catalog", "derived", "form", "edit"]);
+    expect(result.canary.spec.arms[0]?.layers?.at(-1)?.values?.scaler).toEqual({ enabled: true });
     expect(result.stripped.candidate).toContain("scaler.enabled=false");
     expect(result.yaml).toContain("kind: LLMCanary");
     expect(result.yaml).not.toContain("kind: ConfigMap");

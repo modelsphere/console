@@ -1,4 +1,4 @@
-import type {
+import type { CanaryDraft,
   ChartVersions,
   ChartVersionsSource,
   CatalogIndexV2,
@@ -188,7 +188,9 @@ export const fixtureApi: CanaryClient = {
     async get(id) {
       return structuredClone(fixtureExperiment(id));
     },
-    async prepare(draft) {
+    async prepare(input) {
+ if(input.armSource==="existing")throw new Error("Existing services require the live Kubernetes API");
+ const draft=input as CanaryDraft;
       const emitted = emitManifests(draft);
       const issues = emitted.issues;
       if (issues.length)

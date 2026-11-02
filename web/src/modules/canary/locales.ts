@@ -1,6 +1,7 @@
 import { errorEn, errorZh, validationEn, validationZh } from "./error-locales";
 import type { i18n as I18n } from "i18next";
 export const en = {
+ existing: {"mode": "Use existing services", "advanced": "Advanced: deploy new experiment arms", "loading": "Loading experiment configuration…", "description": "Compare two ready services without changing their model deployments.", "showUnavailable": "Show unavailable services", "recheck": "Check again", "deployServices": "Deploy model services", "baseline": "Control service", "candidate": "Candidate service", "ready": "Ready and available", "insufficient": "Two compatible services are required. Show unavailable services for reasons, then adjust them in Model Services and check again.", "productionWeight": "Production weight", "canaryWeight": "Whole experiment weight", "retentionTitle": "Service use and retention", "retention": "Arm configuration is locked during the experiment. Stopping retains all model services and their GPU allocation; stop before upgrading, scaling or uninstalling an arm.", "metrics": "Metrics are measured at the existing service entry. The added forwarding layer’s full latency is excluded. Model, GPU, replica, CART and SLO differences can affect results.", "acknowledge": "These two services are dedicated to this experiment, and accept the same production API, model aliases and authentication without changing requests. Assignment does not block other entry points.", "create": "Create experiment"},
   trafficUpdate: {
     title: "Adjust live traffic", hint: "Change production versus the whole Canary group. Arms keep running and metrics stay in this experiment. Weights are relative; they need not sum to 100.",
     submit: "Apply weights", submitting: "Submitting…", invalid: "Enter integer weights from 0 to 1,000,000 with a nonzero sum.",
@@ -186,6 +187,7 @@ export const en = {
 };
 
 export const zh = {
+ existing: {"mode": "使用已有服务", "advanced": "高级：部署新实验组", "loading": "正在加载实验配置…", "description": "选择两个就绪服务进行比较，全程保留原模型部署。", "showUnavailable": "显示不可选服务", "recheck": "重新检查", "deployServices": "前往部署模型服务", "baseline": "对照服务", "candidate": "候选服务", "ready": "就绪且可选", "insufficient": "需要两个兼容服务。可显示不可选服务查看原因，在模型服务中调整后重新检查。", "productionWeight": "生产权重", "canaryWeight": "整个实验组权重", "retentionTitle": "占用与资源保留", "retention": "实验期间锁定实验组配置。停止后保留全部模型服务，GPU 继续占用；升级、伸缩、卸载实验组前请先停止实验。", "metrics": "指标采用已有服务入口口径，不包含新增转发层的全部延迟。模型、GPU、副本、CART 与 SLO 差异均可能影响结果。", "acknowledge": "确认两个服务专用于本实验，能用相同的 API、模型别名与鉴权处理未经改写的生产请求。占用不会关闭其他访问入口。", "create": "创建实验"},
   trafficUpdate: {
     title: "调整在线流量", hint: "调整生产与整个北极星组的流量比例。实验组保持运行，指标继续归属同一实验。权重为相对值，无需合计为 100。",
     submit: "应用权重", submitting: "正在提交…", invalid: "请输入 0 至 1,000,000 的整数权重，且总和不能为零。",

@@ -16,11 +16,13 @@ import type {
   PricingTable,
   ValuationView,
   ArmDraft,
+ ExistingDraft, ArmCandidate,
 } from "../types";
 
 export interface CanaryClient {
   mode: "live" | "fixture";
-  config(): Promise<{ namespaces: string[] }>;
+  config(): Promise<{ namespaces: string[];existingArms?:boolean }>;
+ armCandidates?(namespace:string):Promise<ArmCandidate[]>;
   pricing: {
     get(): Promise<PricingTable>;
     save(table: PricingTable): Promise<PricingTable>;
@@ -39,7 +41,7 @@ export interface CanaryClient {
   experiments: {
     list(): Promise<ExperimentSummary[]>;
     get(id: string): Promise<Experiment>;
-    prepare(draft: CanaryDraft): Promise<Prepared>;
+    prepare(draft: CanaryDraft|ExistingDraft): Promise<Prepared>;
     create(prepareId: string): Promise<Experiment>;
     stop(id: string): Promise<Experiment>;
     updateTraffic(id: string, change: { production: number; canary: number; expectedGeneration: number }): Promise<Experiment>;
@@ -132,7 +134,7 @@ export function createLiveApi(
     list: () => request<ExperimentSummary[]>("/experiments"),
     get: (id: string) =>
       request<Experiment>(`/experiments/${encodeURIComponent(id)}`),
-    prepare: (draft: CanaryDraft) =>
+    prepare: (draft: CanaryDraft|ExistingDraft) =>
       request<Prepared>("/prepare", "POST", draft),
     create: (prepareId: string) =>
       request<Experiment>("/experiments", "POST", { prepareId }),
@@ -198,7 +200,8 @@ export function createLiveApi(
   };
   return {
     mode: "live",
-    config: () => request<{ namespaces: string[] }>("/config"),
+    armCandidates:(namespace:string)=>request<ArmCandidate[]>(`/arm-candidates?namespace=${encodeURIComponent(namespace)}`),
+ config: () => request<{ namespaces: string[];existingArms?:boolean }>("/config"),
     pricing: {
       get: () => request<PricingTable>("/pricing"),
       save: (table) => request<PricingTable>("/pricing", "PATCH", table),

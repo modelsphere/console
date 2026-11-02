@@ -19,6 +19,7 @@ export function applyProductionTarget(
     name,
     targetRef: {
       kind: target.kind,
+ ...(target.uid?{uid:target.uid}:{}),
       name: target.name,
       namespace: target.namespace,
     },

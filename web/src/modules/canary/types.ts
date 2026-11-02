@@ -23,6 +23,7 @@ export interface ArmChartRef {
 export interface ValueLayer { name: string; values?: JsonObject }
 
 export interface TargetRef {
+ uid?: string;
   kind: "HelmRelease" | "LLMService";
   name: string;
   namespace?: string;
@@ -39,9 +40,11 @@ export interface ArmSource {
 }
 
 export interface ArmSpec {
+ serviceRef?: ServiceIdentity;
+ configDigest?:string;
   name: string;
-  chart: ArmChartRef;
-  layers: ValueLayer[];
+  chart?: ArmChartRef;
+  layers?: ValueLayer[];
   model?: { name?: string; variant?: string; version?: string; hf?: string; engine?: string };
   values?: JsonObject;
   source?: ArmSource;
@@ -56,6 +59,7 @@ export interface Condition {
 }
 
 export interface LLMCanarySpec {
+ armSource?: "existing"|"provisioned";
   targetRef: TargetRef;
   arms: ArmSpec[];
   proxy?: {
@@ -213,6 +217,9 @@ export interface CatalogInfo {
 }
 
 export interface ProductionTarget {
+ uid?:string;
+ selectable?:boolean;
+ unavailableReason?:string;
   kind: "HelmRelease" | "LLMService";
   backend?: "helm" | "llmsvc";
   name: string;
@@ -257,6 +264,7 @@ export interface ArmDraft {
 }
 
 export interface CanaryDraft {
+ armSource?:"existing"|"provisioned";
   compareArms?: string[];
   name: string;
   namespace: string;
@@ -285,6 +293,7 @@ export interface CanaryDraft {
 }
 
 export interface Prepared {
+ services?:Record<string,ServiceSnapshot>;
   contract?: string;
   effectiveValues?: Record<string, JsonObject>;
   economics?: Economics;
@@ -309,6 +318,7 @@ export interface TrafficChange {
 }
 
 export interface Experiment {
+ creationError?:string;
   trafficChanges?: TrafficChange[];
   id: string;
   prepareId: string;
@@ -445,3 +455,8 @@ export interface ValuationView {
   normalization: "raw" | "per-gpu" | "as-if";
   targetGPUs?: number;
 }
+
+export interface ServiceIdentity { namespace?:string;name:string;uid:string }
+export interface ServiceSnapshot { service:ServiceIdentity;capacity?:JsonObject;chart?:JsonObject;entry?:ServiceIdentity;prefix?:string;evidence?:JsonObject;configDigest?:string }
+export interface ArmCandidate {serviceRef:ServiceIdentity;model?:JsonObject;selectable:boolean;reasons:string[];snapshot:ServiceSnapshot;assignedTo?:JsonObject}
+export type ExistingDraft = Omit<CanaryDraft,"arms"> & {armSource:"existing";arms:{name:string;serviceRef:ServiceIdentity;pricingKey?:string;gpuCount?:number}[]};

@@ -98,7 +98,9 @@ export interface Deployment {
   // names no route.
   route?: string;
   backend?: ApplyWith;
-  managedBy?: CanaryOwner;
+  uid?:string;
+ assignedTo?:CanaryAssignment;
+ managedBy?: CanaryOwner;
   // An LLMService swiss did not write.
   external?: boolean;
 }
@@ -689,7 +691,9 @@ export interface ReleaseStatus {
   planStatus?: PlanStatus;
   // Set when swiss manages the release; it never changes after install.
   backend?: ApplyWith;
-  managedBy?: CanaryOwner;
+  uid?:string;
+ assignedTo?:CanaryAssignment;
+ managedBy?: CanaryOwner;
   // Present on the llmsvc backend. phase is "uninstalling" while the LLMService
   // has a deletionTimestamp. Absent on helm and on an older swissd.
   llmservice?: { phase?: string };
@@ -1068,3 +1072,5 @@ export interface SLOEdit {
   ttft?: SLOSection;
   otps?: SLOSection;
 }
+
+export interface CanaryAssignment extends Omit<CanaryOwner,"verified"> {role:"production"|"arm";arm?:string;verified:boolean}

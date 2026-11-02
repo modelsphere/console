@@ -1,3 +1,4 @@
+import { api as swissApi } from "@swiss/lib/api";
 import { asError, visibleExperimentError } from "../lib/errors";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useState, type ReactNode } from "react";
@@ -102,6 +103,8 @@ export function CanaryDetail({
 
   return (
     <div className="flex flex-col gap-4 p-4">
+ {experiment?.creationError&&<ErrorNotice error={new Error(experiment.creationError)}/>}
+ {canary.spec.armSource==="existing"&&<div className="rounded-md border p-3 text-sm"><Badge>{t("existing.mode")}</Badge><p className="mt-2">{t("existing.retention")}</p><p>{t("existing.metrics")}</p></div>}
       {experiment && (
         <div className="flex flex-wrap items-center gap-3">
           <Badge>{t(`experiments.${experiment.state}`)}</Badge>
@@ -325,12 +328,12 @@ export function CanaryDetail({
                         {st?.ready ? t("detail.ready") : "not ready"}
                       </Badge>
                       <Badge variant="outline">
-                        {arm.chart.name}:{arm.chart.version}
+                        {arm.serviceRef ? `${arm.serviceRef.name} · UID ${arm.serviceRef.uid}` : `${arm.chart?.name ?? "?"}:${arm.chart?.version ?? "?"}`}
                       </Badge>
                     </span>
                   }
                 >
-                  {st?.llmServiceRef && <p className="mb-2 text-xs">LLMService <Link className="text-primary hover:underline" to={`/inferences/${encodeURIComponent(st.llmServiceRef.split("/").pop()!)}/details?namespace=${encodeURIComponent(st.llmServiceRef.includes("/") ? st.llmServiceRef.split("/")[0] : canary.metadata.namespace)}`}>{st.llmServiceRef}</Link> · {st.phase ?? "Pending"}</p>}
+                  {st?.llmServiceRef && <p className="mb-2 text-xs"><VerifiedServiceLink namespace={canary.metadata.namespace} name={arm.serviceRef?.name??st.llmServiceRef} uid={arm.serviceRef?.uid}/> · {st.phase??"Pending"}</p>}
                   {st?.message && <p className="mb-2 text-xs text-muted-foreground">{st.message}</p>}
                   {proxy ? (
                     <p className="mb-2 text-xs text-muted-foreground">
@@ -339,7 +342,7 @@ export function CanaryDetail({
                   ) : null}
                   <CodeBlock
                     language="yaml"
-                    value={toYaml(arm.layers ?? arm.values)}
+                    value={toYaml(arm.serviceRef ? {serviceRef:arm.serviceRef,frozen:experiment?.prepared.services?.[arm.name]} : arm.layers ?? arm.values)}
                     maxHeight="16rem"
                   />
                 </SectionCard>
@@ -484,4 +487,10 @@ function TrafficPanel({ canary }: { canary: LLMCanary }) {
 
 function mono(value: string): ReactNode {
   return <span className="font-mono text-xs">{value}</span>;
+}
+
+function VerifiedServiceLink({namespace,name,uid}:{namespace:string;name:string;uid?:string}){
+ const current=useQuery({queryKey:["status",namespace,name],queryFn:()=>swissApi.status(namespace,name),enabled:!!uid,retry:false,refetchInterval:15000});
+ if(uid && current.data?.uid!==uid)return <span>{namespace}/{name} · UID {uid}</span>;
+ return <Link className="text-primary hover:underline" to={`/inferences/${encodeURIComponent(name)}/details?namespace=${encodeURIComponent(namespace)}`}>{namespace}/{name}</Link>;
 }
