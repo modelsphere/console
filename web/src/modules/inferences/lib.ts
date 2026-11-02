@@ -1,4 +1,5 @@
 import type {
+  AutoscaleState,
   Deployment,
   LLMScalerSpec,
   LLMScalerStatus,
@@ -110,7 +111,7 @@ export function revisionRows(revisions: Revision[], runs: Run[]): RevisionRow[] 
 
 export type StepState = "ok" | "wait" | "bad" | "off";
 export interface Step {
-  key: "applied" | "pods" | "route" | "scaler";
+  key: "applied" | "pods" | "route" | "scaler" | "pdScale";
   state: StepState;
   detail: string;
   params?: Record<string, string | number>;
@@ -120,21 +121,25 @@ type Picked<Spec, Status> = { result?: ObjectResult; spec?: Spec; status?: Statu
 
 // From swiss's DeploymentDetail, where these are private. objectsUnreadable: an
 // older swissd has no /objects, and then the route and scaler are unknown, not absent.
+// autoscale: a PD release has no LLMScaler; its last step is swissd's own pass, read from
+// /autoscaling rather than /objects.
 export function installSteps(
   s: ReleaseStatus,
   route: Picked<ModelRouteSpec, ModelRouteStatus>,
   scaler: Picked<LLMScalerSpec, LLMScalerStatus>,
   objectsUnreadable = false,
+  autoscale?: AutoscaleState,
 ): Step[] {
+  const pd = autoscale?.enabled ? pdScaleStep(autoscale) : undefined;
   if (objectsUnreadable) {
     return [
       appliedStep(s, s.planStatus),
       podsStep(s),
       { key: "route", state: "wait", detail: "unreadable" },
-      { key: "scaler", state: "wait", detail: "unreadable" },
+      pd ?? { key: "scaler", state: "wait", detail: "unreadable" },
     ];
   }
-  return [appliedStep(s, s.planStatus), podsStep(s), routeStep(route), scalerStep(scaler)];
+  return [appliedStep(s, s.planStatus), podsStep(s), routeStep(route), pd ?? scalerStep(scaler)];
 }
 
 function appliedStep(s: ReleaseStatus, p?: PlanStatus): Step {
@@ -179,6 +184,22 @@ function scalerStep({ result, status }: Picked<LLMScalerSpec, LLMScalerStatus>):
   if (want !== undefined && want !== cur && !scalerHold(status?.conditions))
     return { key, state: "wait", detail: "scaling", params: { cur, want } };
   return { key, state: "ok", detail: "steady", params: { n: cur } };
+}
+
+function pdScaleStep(st: AutoscaleState): Step {
+  const key = "pdScale";
+  switch (st.outcome) {
+    case undefined:
+      return { key, state: "wait", detail: "notEvaluated" };
+    case "error":
+      return st.error ? { key, state: "bad", detail: "error", params: { error: st.error } } : { key, state: "bad", detail: "failed" };
+    case "no-decision":
+      return { key, state: "wait", detail: "noDecision" };
+    case "held":
+      return st.hold ? { key, state: "wait", detail: "held", params: { n: st.current, hold: st.hold } } : { key, state: "wait", detail: "heldBare", params: { n: st.current } };
+  }
+  if (st.want !== undefined && st.want !== st.current) return { key, state: "wait", detail: "scaling", params: { cur: st.current, want: st.want } };
+  return { key, state: "ok", detail: "steady", params: { n: st.current } };
 }
 
 export function age(seconds: number): string {

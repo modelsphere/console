@@ -29,7 +29,6 @@ import { effective, imageChoices, type Form, type Toleration } from "@swiss/comp
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
 import { useT } from "@/modules/inferences/i18n";
-import { ENABLE_MONITOR } from "../features";
 import { isAdaptiveOption, toggleAdaptive } from "../adaptive-concurrency";
 import { NAMED_VALUES, extraValue, fracOutOfRange, serviceIdError, type Section } from "@/modules/inferences/deploy-lib";
 
@@ -211,20 +210,6 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
             <Switch aria-label={f("adaptiveCc")} checked={form.adaptiveCc} onCheckedChange={(value) => onChange(toggleAdaptive(form, value, routeOptions))} />
           </FloatingField>
           <RouteExtras form={form} onChange={onChange} options={routeOptions} showRuntime={showRuntime} mode="other" />
-          {ENABLE_MONITOR && <FloatingField
-            layout="inline"
-            label={f("monitor")}
-            hint={f("monitorHint")}
-            expanded={form.monitor}
-            expandedContent={
-              <div className="grid grid-cols-2 gap-3 pb-3">
-                <Input {...text("monitorModel")} placeholder={f("monitorModel")} aria-label={f("monitorModel")} title={f("monitorModelHint")} />
-                <Input {...text("monitorGpuType")} placeholder={f("monitorGpuType")} aria-label={f("monitorGpuType")} title={f("monitorGpuTypeHint")} />
-              </div>
-            }
-          >
-            {sw("monitor", f("monitor"))}
-          </FloatingField>}
           <FloatingField layout="inline" label={f("serviceMonitor")} hint={f("serviceMonitorHint")}>
             {sw("serviceMonitor", f("serviceMonitor"))}
           </FloatingField>

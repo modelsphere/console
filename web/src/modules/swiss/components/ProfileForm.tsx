@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FolderTree, Gauge, Globe, KeyRound, Library, MapPin, Plus, Route, ToggleRight, TriangleAlert, X, type LucideIcon } from "lucide-react";
+import { FolderTree, Gauge, Globe, KeyRound, Library, MapPin, Plus, Route, Scaling, ToggleRight, TriangleAlert, X, type LucideIcon } from "lucide-react";
 import { api, type Site, type SiteProfile } from "@swiss/lib/api";
 import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent, CardHeader } from "@swiss/components/ui/card";
@@ -206,6 +206,18 @@ export function ProfileForm({
         </Row>
         <Row top label="Scaler headers">
           <Pairs keyLabel="header" valueLabel="value" value={value.scaler?.serverHeaders} onChange={(serverHeaders) => setIn("scaler", { serverHeaders })} />
+        </Row>
+      </Section>
+
+      <Section icon={Scaling} title="PD autoscale" hint="swissd's PD slice autoscaler, for releases planned with PD on and the form SLO on. Field names follow the LLMScaler's.">
+        <Row label="Sync period" hint="Seconds between asks to decision-gen for a PD slice count. Empty or 0 is 60.">
+          <Text label="Sync period" number value={value.pdScale?.syncPeriodSeconds} placeholder="60" onChange={(v) => setIn("pdScale", { syncPeriodSeconds: num(v) })} />
+        </Row>
+        <Row
+          label="Defer timeout"
+          hint="Seconds a hold may defer a scale before it is applied anyway: a DisaggregatedSet rollout that never lands, a failed release, pods that never get ready. Uninstalling, a missing DisaggregatedSet and an apply in flight still hold. Empty is 600; 0 defers indefinitely."
+        >
+          <Text label="Defer timeout" number value={value.pdScale?.deferTimeoutSeconds} placeholder="600" onChange={(v) => setIn("pdScale", { deferTimeoutSeconds: num(v) })} />
         </Row>
       </Section>
 

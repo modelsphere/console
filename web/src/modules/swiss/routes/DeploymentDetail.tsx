@@ -16,6 +16,7 @@ import {
 import {
   api,
   deployApi,
+  type AutoscaleState,
   type LLMScalerSpec,
   type LLMScalerStatus,
   type ModelRouteSpec,
@@ -32,7 +33,7 @@ import { Dialog } from "@swiss/components/ui/dialog";
 import { Field, Input } from "@swiss/components/ui/input";
 import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { Provenance } from "@swiss/components/Provenance";
-import { ReleaseObjects, pick, useReleaseObjects } from "@swiss/components/ReleaseObjects";
+import { ReleaseObjects, pick, useAutoscaling, useReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { scalerFailing, scalerHold } from "@swiss/lib/scaler";
 import { AccessPoint } from "@swiss/components/Endpoint";
 import { ReleaseStatus } from "@swiss/components/ReleaseStatus";
@@ -168,7 +169,7 @@ export function DeploymentDetail() {
         deployed={plan.data?.layers.catalog}
       />
 
-      <InstallStatus status={s} objects={objects.data?.objects} />
+      <InstallStatus namespace={namespace} release={release} status={s} objects={objects.data?.objects} />
 
       <ReleaseObjects namespace={namespace} release={release} onConfigureSLO={showSLO ? openSLO : undefined} />
       <SLODialog
@@ -205,8 +206,9 @@ export function DeploymentDetail() {
 // helm's own status describes the last apply that returned. The track under it
 // adds what the controllers say: a release can be applied with ready pods and
 // still serve nobody, because nothing routed to it.
-function InstallStatus({ status, objects }: { status: Status; objects?: ObjectResult[] }) {
+function InstallStatus({ namespace, release, status, objects }: { namespace: string; release: string; status: Status; objects?: ObjectResult[] }) {
   const p: PlanStatus | undefined = status.planStatus;
+  const autoscale = useAutoscaling(namespace, release).data;
 
   if (!status.exists && !p && !isUninstalling(status)) {
     return (
@@ -222,7 +224,7 @@ function InstallStatus({ status, objects }: { status: Status; objects?: ObjectRe
     appliedStep(status, p),
     podsStep(status),
     routeStep(pick<ModelRouteSpec, ModelRouteStatus>(objects, "ModelRoute")),
-    scalerStep(pick<LLMScalerSpec, LLMScalerStatus>(objects, "LLMScaler")),
+    autoscale?.enabled ? pdScaleStep(autoscale) : scalerStep(pick<LLMScalerSpec, LLMScalerStatus>(objects, "LLMScaler")),
   ];
   const updated = p?.updatedAt ?? p?.startedAt;
   const summary = [
@@ -351,6 +353,24 @@ export function scalerStep({ result, status }: ReturnType<typeof pick<LLMScalerS
   if (want !== undefined && want !== cur && !scalerHold(status?.conditions))
     return { label, state: "wait", detail: `${cur} → ${want} replicas` };
   return { label, state: "ok", detail: `${cur} replica${cur === 1 ? "" : "s"}, steady` };
+}
+
+// A PD release has no LLMScaler: swissd scales its slices, and this is its last pass.
+export function pdScaleStep(st: AutoscaleState): Step {
+  const label = "PD autoscaling";
+  const slices = (n: number) => `${n} slice${n === 1 ? "" : "s"}`;
+  switch (st.outcome) {
+    case undefined:
+      return { label, state: "wait", detail: "not evaluated yet" };
+    case "error":
+      return { label, state: "bad", detail: st.error || "failed" };
+    case "no-decision":
+      return { label, state: "wait", detail: "no decision yet" };
+    case "held":
+      return { label, state: "wait", detail: st.hold ? `${slices(st.current)}, held: ${st.hold}` : `${slices(st.current)}, held` };
+  }
+  if (st.want !== undefined && st.want !== st.current) return { label, state: "wait", detail: `${st.current} → ${slices(st.want)}` };
+  return { label, state: "ok", detail: `${slices(st.current)}, steady` };
 }
 
 const STEP_STYLE: Record<StepState, { icon: React.ReactNode; tile: string }> = {
