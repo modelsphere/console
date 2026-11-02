@@ -13,7 +13,7 @@ import {
   type ReleaseStatus,
   type Run,
 } from "@swiss/lib/api";
-import { pick } from "@swiss/components/ReleaseObjects";
+import { pick, useAutoscaling } from "@swiss/components/ReleaseObjects";
 import { isUninstalling } from "@swiss/lib/phase";
 import { AccessPoint } from "@swiss/components/Endpoint";
 import { useT } from "@/modules/inferences/i18n";
@@ -54,6 +54,7 @@ export function Overview({
     queryKey: ["runs", namespace, release],
     queryFn: () => api.runs({ namespace, release, limit: 200 }),
   });
+  const autoscale = useAutoscaling(namespace, release).data;
 
   if (!s.exists && !p && !isUninstalling(s)) {
     return <p className="rounded-lg border border-dashed p-6 text-muted-foreground">{t("detail.notFound")}</p>;
@@ -64,6 +65,7 @@ export function Overview({
     pick<ModelRouteSpec, ModelRouteStatus>(objects, "ModelRoute"),
     pick<LLMScalerSpec, LLMScalerStatus>(objects, "LLMScaler"),
     objectsUnreadable,
+    autoscale,
   );
   const updated = p?.updatedAt ?? p?.startedAt;
   const catalog = source && [source.catalogName ?? source.catalog, source.ref].filter(Boolean).join(" @ ");

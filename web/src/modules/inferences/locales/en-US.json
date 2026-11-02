@@ -201,6 +201,17 @@
       "noDecision": "No decision yet",
       "scaling": "{cur} → {want} replicas",
       "steady": "{n} replicas, steady"
+    },
+    "pdScale": {
+      "label": "PD autoscaling",
+      "notEvaluated": "Not evaluated yet",
+      "error": "{error}",
+      "failed": "Autoscaler pass failed",
+      "noDecision": "No decision yet",
+      "held": "{n} slices, held: {hold}",
+      "heldBare": "{n} slices, held",
+      "scaling": "{cur} → {want} slices",
+      "steady": "{n} slices, steady"
     }
   },
   "instances": {
@@ -742,6 +753,8 @@
     "save": "Save",
     "saving": "Saving…",
     "unset": "Not set",
+    "unsetIs": "Not set: {value}",
+    "seconds": "{n}s",
     "on": "On",
     "off": "Off",
     "parseError": "The site profile does not parse: {error}",
@@ -753,6 +766,7 @@
       "routing": "Routing",
       "auth": "Entrypoint auth",
       "scaler": "Cache and scaler",
+      "pdScale": "PD autoscale",
       "defaults": "Feature defaults",
       "sites": "Other sites",
       "extra": "Extra"
@@ -763,6 +777,7 @@
       "model": "Built from the catalog's source.hf. Variables: hf (the full repo id), org and name (its halves), model (the catalog entry name); see the field's example for the syntax.",
       "routing": "The openresty entrypoint every model publishes a route on.",
       "auth": "Used only by the serving and health checks. This document is a ConfigMap, so it names a Secret rather than holding the key.",
+      "pdScale": "swissd's PD slice autoscaler, for releases planned with PD on and the form SLO on. Field names follow the LLMScaler's.",
       "defaults": "What a deploy starts each feature at; unset is on. A catalog variant that sets its own wins over these, and a deploy can still choose either way.",
       "sites": "The swissd instances in other clusters, for the switcher in the header. A list you keep."
     },
@@ -836,6 +851,11 @@
       "sloTokenKey": "SLO token key",
       "sloTokenKeyHint": "Key inside that Secret; defaults to token",
       "serverHeaders": "Scaler headers",
+      "syncPeriod": "Sync period (s)",
+      "syncPeriodHint": "How often swissd asks decision-gen for a PD slice count. Empty or 0 is 60",
+      "deferTimeout": "Defer timeout (s)",
+      "deferTimeoutHint": "How long a hold may defer a scale before it is applied anyway: a DisaggregatedSet rollout that never lands, a failed release, pods that never get ready. Uninstalling, a missing DisaggregatedSet and an apply in flight still hold. Empty is 600; 0 defers indefinitely",
+      "deferTimeoutNever": "Never; defers indefinitely",
       "siteName": "Site",
       "siteUrl": "URL",
       "siteAdd": "Add site"

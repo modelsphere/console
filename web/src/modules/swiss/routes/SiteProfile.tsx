@@ -208,6 +208,15 @@ export function SiteProfile() {
             />
           </Section>
 
+          <Section title="PD autoscale" hint="swissd's PD slice autoscaler, for releases planned with PD on and the form SLO on.">
+            <Row label="Sync period" value={p.pdScale?.syncPeriodSeconds ? `${p.pdScale.syncPeriodSeconds}s` : undefined} fallback="60s" />
+            <Row
+              label="Defer timeout"
+              value={p.pdScale?.deferTimeoutSeconds === 0 ? "never; defers indefinitely" : p.pdScale?.deferTimeoutSeconds ? `${p.pdScale.deferTimeoutSeconds}s` : undefined}
+              fallback="600s"
+            />
+          </Section>
+
           {p.sites && p.sites.length > 0 && (
             <Section
               title="Other sites"

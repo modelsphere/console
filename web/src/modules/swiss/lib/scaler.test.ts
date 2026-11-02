@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Condition, ObjectResult } from "@swiss/lib/api";
+import type { AutoscaleState, Condition, ObjectResult } from "@swiss/lib/api";
 import { scalerFailing, scalerHold, scalerNeutral } from "@swiss/lib/scaler";
-import { scalerStep } from "@swiss/routes/DeploymentDetail";
+import { pdScaleStep, scalerStep } from "@swiss/routes/DeploymentDetail";
 
 const c = (type: string, status: Condition["status"], reason?: string): Condition => ({ type, status, reason });
 
@@ -79,5 +79,17 @@ describe("scalerStep", () => {
   it("reads a Prometheus object with no conditions from its replicas", () => {
     expect(step([], 1, 3)).toEqual({ label: "Scaling", state: "wait", detail: "1 → 3 replicas" });
     expect(step([], 3, 3)).toEqual({ label: "Scaling", state: "ok", detail: "3 replicas, steady" });
+  });
+});
+
+describe("pdScaleStep", () => {
+  const st = (s: Partial<AutoscaleState>): AutoscaleState => ({ namespace: "models", release: "glm", enabled: true, current: 2, ...s });
+
+  it("reads swissd's pass in slices", () => {
+    expect(pdScaleStep(st({ outcome: "unchanged" }))).toEqual({ label: "PD autoscaling", state: "ok", detail: "2 slices, steady" });
+    expect(pdScaleStep(st({ outcome: "scaled-down", current: 2, want: 1 }))).toEqual({ label: "PD autoscaling", state: "wait", detail: "2 → 1 slice" });
+    expect(pdScaleStep(st({ outcome: "held", hold: "role-not-ready" }))).toEqual({ label: "PD autoscaling", state: "wait", detail: "2 slices, held: role-not-ready" });
+    expect(pdScaleStep(st({ outcome: "error", error: "boom" }))).toEqual({ label: "PD autoscaling", state: "bad", detail: "boom" });
+    expect(pdScaleStep(st({}))).toEqual({ label: "PD autoscaling", state: "wait", detail: "not evaluated yet" });
   });
 });

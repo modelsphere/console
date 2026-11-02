@@ -20,7 +20,7 @@ export interface TokenField {
   onChange: (v: string) => void;
 }
 
-const GROUPS = ["placement", "catalog", "model", "routing", "auth", "scaler", "defaults", "sites"] as const;
+const GROUPS = ["placement", "catalog", "model", "routing", "auth", "scaler", "pdScale", "defaults", "sites"] as const;
 
 export function ProfileForm({
   value: p,
@@ -42,6 +42,9 @@ export function ProfileForm({
   const route = (patch: NonNullable<SiteProfile["route"]>) => set({ route: { ...p.route, ...patch } });
   const auth = (patch: RouteAuth) => route({ auth: { ...p.route?.auth, ...patch } });
   const scaler = (patch: NonNullable<SiteProfile["scaler"]>) => set({ scaler: { ...p.scaler, ...patch } });
+  const pdScale = (patch: NonNullable<SiteProfile["pdScale"]>) => set({ pdScale: { ...p.pdScale, ...patch } });
+  // Empty is unset; 0 is a value (deferTimeoutSeconds 0 defers indefinitely).
+  const secs = (v: string) => (v.replace(/\D/g, "") ? Number(v.replace(/\D/g, "")) : undefined);
   const str = (v: string) => v || undefined;
   const catalogs = p.catalogs ?? [];
   const catalogErrs = catalogErrors(catalogs);
@@ -169,6 +172,14 @@ export function ProfileForm({
           </div>
           <KV label={f("serverHeaders")} value={p.scaler?.serverHeaders} onChange={(h) => scaler({ serverHeaders: h })} />
         </>,
+      )}
+
+      {group(
+        "pdScale",
+        <div className="grid grid-cols-2 gap-3">
+          {input(f("syncPeriod"), p.pdScale?.syncPeriodSeconds, (v) => pdScale({ syncPeriodSeconds: secs(v) }), { hint: f("syncPeriodHint"), placeholder: "60" })}
+          {input(f("deferTimeout"), p.pdScale?.deferTimeoutSeconds, (v) => pdScale({ deferTimeoutSeconds: secs(v) }), { hint: f("deferTimeoutHint"), placeholder: "600" })}
+        </div>,
       )}
 
       {group(

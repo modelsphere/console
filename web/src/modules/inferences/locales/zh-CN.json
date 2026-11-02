@@ -190,6 +190,17 @@
       "noDecision": "还没有伸缩决策",
       "scaling": "{cur} → {want} 副本",
       "steady": "{n} 副本，稳定"
+    },
+    "pdScale": {
+      "label": "PD 自动伸缩",
+      "notEvaluated": "尚未评估",
+      "error": "{error}",
+      "failed": "伸缩失败",
+      "noDecision": "还没有伸缩决策",
+      "held": "{n} 个 slice，暂缓：{hold}",
+      "heldBare": "{n} 个 slice，暂缓",
+      "scaling": "{cur} → {want} 个 slice",
+      "steady": "{n} 个 slice，稳定"
     }
   },
   "instances": {
@@ -731,6 +742,8 @@
     "save": "保存",
     "saving": "保存中…",
     "unset": "未设置",
+    "unsetIs": "未设置：{value}",
+    "seconds": "{n} 秒",
     "on": "开启",
     "off": "关闭",
     "parseError": "站点配置解析失败：{error}",
@@ -742,6 +755,7 @@
       "routing": "路由",
       "auth": "入口鉴权",
       "scaler": "缓存与伸缩",
+      "pdScale": "PD 自动伸缩",
       "defaults": "功能默认值",
       "sites": "其他站点",
       "extra": "其他配置"
@@ -752,6 +766,7 @@
       "model": "根据目录的 source.hf 生成路径。可用变量：hf（完整 repo id）、org 和 name（它的两段）、model（目录里的模型名），写法见输入框里的示例。",
       "routing": "每个模型发布路由的 openresty 入口。",
       "auth": "只用于服务检查。这份配置是 ConfigMap，所以只写 Secret 的名字，不保存密钥本身。",
+      "pdScale": "swissd 的 PD slice 自动伸缩，作用于开启 PD 且表单开启 SLO 的发布。字段名沿用 LLMScaler。",
       "defaults": "部署时各功能的初始开关，未设置即开启。目录变体自己设置了的以变体为准，部署时仍可任意开关。",
       "sites": "其他集群里的 swissd，用于顶部的站点切换。这是一份手工维护的清单。"
     },
@@ -825,6 +840,11 @@
       "sloTokenKey": "SLO token key",
       "sloTokenKeyHint": "Secret 里的 key，默认 token",
       "serverHeaders": "伸缩服务 Header",
+      "syncPeriod": "同步周期（秒）",
+      "syncPeriodHint": "swissd 向 decision-gen 询问 PD slice 数量的间隔。留空或 0 为 60",
+      "deferTimeout": "延迟超时（秒）",
+      "deferTimeoutHint": "暂缓条件最多能把一次伸缩推迟多久，超时后照常执行：DisaggregatedSet 滚动一直未完成、发布失败、Pod 一直未就绪。卸载中、DisaggregatedSet 不存在、正在 apply 时仍会一直暂缓。留空为 600；0 表示无限期暂缓",
+      "deferTimeoutNever": "永不超时，无限期暂缓",
       "siteName": "站点名",
       "siteUrl": "地址",
       "siteAdd": "添加站点"

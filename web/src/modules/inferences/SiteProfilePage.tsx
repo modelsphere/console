@@ -87,6 +87,7 @@ function ProfileView({ p }: { p: SiteProfile }) {
   const f = (k: string) => t(`profile.fields.${k}`);
   const v = (x: unknown) => (x === undefined || x === null || x === "" ? <span className="text-muted-foreground">{t("profile.unset")}</span> : String(x));
   const onOff = (on: boolean) => t(on ? "profile.on" : "profile.off");
+  const unsetIs = (d: string) => <span className="text-muted-foreground">{t("profile.unsetIs", { value: d })}</span>;
   const mono = (x?: string) => (x ? <code className="font-mono text-xs break-all">{x}</code> : v(x));
   const aliases = (a?: Record<string, string[]>) =>
     a && Object.keys(a).length ? (
@@ -177,6 +178,13 @@ function ProfileView({ p }: { p: SiteProfile }) {
         { label: f("sloTokenSecret"), value: mono(p.scaler?.sloTokenSecret) },
         { label: f("sloTokenKey"), value: mono(p.scaler?.sloTokenKey) },
         { label: f("serverHeaders"), value: kv(p.scaler?.serverHeaders) },
+      ])}
+      {card("pdScale", [
+        { label: f("syncPeriod"), value: p.pdScale?.syncPeriodSeconds ? t("profile.seconds", { n: p.pdScale.syncPeriodSeconds }) : unsetIs(t("profile.seconds", { n: 60 })) },
+        {
+          label: f("deferTimeout"),
+          value: p.pdScale?.deferTimeoutSeconds === 0 ? f("deferTimeoutNever") : p.pdScale?.deferTimeoutSeconds ? t("profile.seconds", { n: p.pdScale.deferTimeoutSeconds }) : unsetIs(t("profile.seconds", { n: 600 })),
+        },
       ])}
       {card(
         "defaults",

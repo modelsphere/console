@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ObjectResult, Plan, ReleaseStatus, Run } from "@swiss/lib/api";
+import type { AutoscaleState, ObjectResult, Plan, ReleaseStatus, Run } from "@swiss/lib/api";
 import {
   age,
   defaultContainer,
@@ -195,6 +195,19 @@ describe("installSteps", () => {
   });
   it("calls a deleted ModelRoute bad", () => {
     expect(installSteps(status(), route({ missing: true }) as never, {})[2]!.state).toBe("bad");
+  });
+  const pd = (st: Partial<AutoscaleState>): AutoscaleState => ({ namespace: "models", release: "glm", enabled: true, current: 2, ...st });
+  it("reads a PD release's last step from swissd's pass, not the LLMScaler, readable objects or not", () => {
+    expect(installSteps(status(), {}, {}, false, pd({ outcome: "unchanged" }))[3]).toEqual({ key: "pdScale", state: "ok", detail: "steady", params: { n: 2 } });
+    expect(installSteps(status(), {}, {}, true, pd({ outcome: "unchanged" }))[3]!.key).toBe("pdScale");
+    expect(installSteps(status(), {}, {}, false, pd({ enabled: false }))[3]!.key).toBe("scaler");
+  });
+  it("reports a PD scale in flight, a hold, an error and no evaluation yet", () => {
+    const last = (st: Partial<AutoscaleState>) => installSteps(status(), {}, {}, false, pd(st))[3];
+    expect(last({ outcome: "scaled-up", want: 3 })).toEqual({ key: "pdScale", state: "wait", detail: "scaling", params: { cur: 2, want: 3 } });
+    expect(last({ outcome: "held", hold: "role-not-ready" })).toEqual({ key: "pdScale", state: "wait", detail: "held", params: { n: 2, hold: "role-not-ready" } });
+    expect(last({ outcome: "error", error: "boom" })).toEqual({ key: "pdScale", state: "bad", detail: "error", params: { error: "boom" } });
+    expect(last({})).toEqual({ key: "pdScale", state: "wait", detail: "notEvaluated" });
   });
 
   const scaler = (conditions: { type: string; status: string; reason?: string; message?: string }[], cur = 1, want = 1) => ({
