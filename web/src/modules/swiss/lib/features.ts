@@ -7,7 +7,7 @@ import { isChartRange } from "@swiss/lib/upgrade";
 // a section on still puts it in the plan, and only skipSchemaValidation
 // deploys that.
 export const CHART_FEATURES: Record<string, Record<string, string>> = {
-  cache: { sglang: "0.9.1", vllm: "" },
+  cache: { sglang: "0.9.1", vllm: "0.9.0" },
 };
 
 // Why a chart cannot take a feature: it has none, or since is the first release
