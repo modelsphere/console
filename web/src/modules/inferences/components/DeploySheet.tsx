@@ -131,7 +131,12 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const block = llmsvcBlock(llm, entry.data?.schema);
   const method = installMethod(picked, llm, entry.data?.schema);
 
-  const initial = useMemo<Form>(() => (upgrade ? (current.data ? formFromPlan(current.data) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(target.model) }), [upgrade, current.data, target]);
+  // Seeded once. A later read of the plan (window focus, swissd's PD autoscaler) or a new target
+  // object from a polling parent must not reset what is being typed.
+  const [seedPlan, setSeedPlan] = useState<Plan>();
+  if (current.data && !seedPlan) setSeedPlan(current.data);
+  const deployModel = upgrade ? "" : target.model;
+  const initial = useMemo<Form>(() => (upgrade ? (seedPlan ? formFromPlan(seedPlan) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }), [upgrade, seedPlan, deployModel]);
   const [form, setForm] = useState<Form>(initial);
   const catalogRoute = upgrade && current.data ? initial.route || initial.serviceId || target.release : undefined;
   const routeOptions = useQuery({
