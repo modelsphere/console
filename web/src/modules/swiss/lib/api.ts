@@ -298,6 +298,9 @@ export interface SiteProfile {
     sloTokenKey?: string;
     serverHeaders?: Record<string, string>;
   };
+  // swissd's PD slice autoscaler. Unset sync is 60s; unset defer is 600s, and
+  // 0 defers indefinitely, so it is not the same as unset.
+  pdScale?: { syncPeriodSeconds?: number; deferTimeoutSeconds?: number };
   route?: {
     // modelRoute.enabled for every deploy here, above the catalog. Unset is off.
     enabled?: boolean;

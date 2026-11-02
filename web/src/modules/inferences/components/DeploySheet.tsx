@@ -131,7 +131,12 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const block = llmsvcBlock(llm, entry.data?.schema);
   const method = installMethod(picked, llm, entry.data?.schema);
 
-  const initial = useMemo<Form>(() => (upgrade ? (current.data ? formFromPlan(current.data) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(target.model) }), [upgrade, current.data, target]);
+  // Seeded once. A later read of the plan (window focus, swissd's PD autoscaler) or a new target
+  // object from a polling parent must not reset what is being typed.
+  const [seedPlan, setSeedPlan] = useState<Plan>();
+  if (current.data && !seedPlan) setSeedPlan(current.data);
+  const deployModel = upgrade ? "" : target.model;
+  const initial = useMemo<Form>(() => (upgrade ? (seedPlan ? formFromPlan(seedPlan) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }), [upgrade, seedPlan, deployModel]);
   const [form, setForm] = useState<Form>(initial);
   const catalogRoute = upgrade && current.data ? initial.route || initial.serviceId || target.release : undefined;
   const routeOptions = useQuery({
@@ -187,6 +192,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
           upgrade
             ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported }
             : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported },
+          profile.data?.profile,
         ), form, routeOptions.data, deployApi.plan, catalogName);
       } catch (error) {
         if (error instanceof AdaptivePlanChangedError) throw new Error(t("deploy.fields.adaptiveChanged"));
@@ -230,7 +236,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   };
 
   const readOnly = cluster.data && !cluster.data.allowDeploy;
-  const loading = cluster.isPending || (upgrade ? current.isPending : profile.isPending) || entry.isPending;
+  // An upgrade waits for the profile too: it decides Monitor (planRequest).
+  const loading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
   const error = cluster.error ?? current.error ?? entry.error;
   const keepOption = (label: string) => ({ value: KEEP, label });
 

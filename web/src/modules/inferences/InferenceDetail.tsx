@@ -38,10 +38,11 @@ export function InferenceDetail() {
   const [sloSetup, setSloSetup] = useState(() => (location.state as { sloSetup?: boolean } | null)?.sloSetup === true);
 
   // Query keys match swiss's pages, so the two views share one cache.
+  // Polling pauses while the upgrade sheet covers the page.
   const status = useQuery({
     queryKey: ["status", namespace, release],
     queryFn: () => api.status(namespace, release),
-    refetchInterval: 15_000,
+    refetchInterval: upgrading ? false : 15_000,
     enabled: !!namespace,
   });
   // A release swiss did not deploy has no plan beside it: untracked, not an error.
@@ -52,7 +53,7 @@ export function InferenceDetail() {
     enabled: !!namespace,
   });
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
-  const objects = useReleaseObjects(namespace, release);
+  const objects = useReleaseObjects(namespace, release, !upgrading);
   const revisions = useQuery({
     queryKey: ["revisions", namespace, release],
     queryFn: () => api.revisions(namespace, release),
