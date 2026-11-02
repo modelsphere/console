@@ -9,10 +9,11 @@ describe("featureUnsupported", () => {
   it("names the first release for an older chart", () => {
     expect(featureUnsupported("cache", "sglang", "0.9.0")).toEqual({ chart: "sglang", since: "0.9.1" });
     expect(featureUnsupported("cache", "sglang", "0.8.30")).toEqual({ chart: "sglang", since: "0.9.1" });
+    expect(featureUnsupported("cache", "vllm", "0.8.30")).toEqual({ chart: "vllm", since: "0.9.0" });
   });
 
   it("is a chart without it for an empty entry, an unlisted chart or an unknown feature", () => {
-    expect(featureUnsupported("cache", "vllm", "0.8.22")).toEqual({ chart: "vllm" });
+    expect(featureUnsupported("cache", "vllm", "0.8.22")).toEqual({ chart: "vllm", since: "0.9.0" });
     expect(featureUnsupported("cache", "tgi", "1.0.0")).toEqual({ chart: "tgi" });
     expect(featureUnsupported("lora", "sglang", "0.9.26")).toEqual({ chart: "sglang" });
   });
