@@ -1,7 +1,7 @@
 import { errorEn, errorZh, validationEn, validationZh } from "./error-locales";
 import type { i18n as I18n } from "i18next";
 export const en = {
- existing: {"mode": "Use existing services", "advanced": "Advanced: deploy new experiment arms", "loading": "Loading experiment configuration…", "description": "Compare two ready services without changing their model deployments.", "showUnavailable": "Show unavailable services", "recheck": "Check again", "deployServices": "Deploy model services", "baseline": "Control service", "candidate": "Candidate service", "ready": "Ready and available", "insufficient": "Two compatible services are required. Show unavailable services for reasons, then adjust them in Model Services and check again.", "productionWeight": "Production weight", "canaryWeight": "Whole experiment weight", "retentionTitle": "Service use and retention", "retention": "Arm configuration is locked during the experiment. Stopping retains all model services and their GPU allocation; stop before upgrading, scaling or uninstalling an arm.", "metrics": "Metrics are measured at the existing service entry. The added forwarding layer’s full latency is excluded. Model, GPU, replica, CART and SLO differences can affect results.", "acknowledge": "These two services are dedicated to this experiment, and accept the same production API, model aliases and authentication without changing requests. Assignment does not block other entry points.", "create": "Create experiment"},
+ existing: {"textTitle": "Text requests and model mapping", "textEnable": "Enable text model mapping and shared authentication", "textHint": "Text Chat/Completions JSON and SSE only. Map every production API alias to an actual model in each arm. Tools, images, structured output, session affinity and common token budgets are not enabled. Responses retain the actual model name.", "textAuth": "Shared authentication Secret", "textAcknowledge": "These services are dedicated to this experiment and accept the same text request format and caller token. I have reviewed the frozen mappings. Production forwarding is unchanged; assignment does not block bypass traffic.", "namespaceHint": "Production targets can be selected across namespaces. Control and candidate services must be in the experiment namespace.", "mode": "Use existing services", "advanced": "Advanced: deploy new experiment arms", "loading": "Loading experiment configuration…", "description": "Compare two ready services without changing their model deployments.", "showUnavailable": "Show unavailable services", "recheck": "Check again", "deployServices": "Deploy model services", "baseline": "Control service", "candidate": "Candidate service", "ready": "Ready and available", "insufficient": "Two compatible services are required. Show unavailable services for reasons, then adjust them in Model Services and check again.", "productionWeight": "Production weight", "canaryWeight": "Whole experiment weight", "retentionTitle": "Service use and retention", "retention": "Arm configuration is locked during the experiment. Stopping retains all model services and their GPU allocation; stop before upgrading, scaling or uninstalling an arm.", "metrics": "Metrics are measured at the existing service entry. The added forwarding layer’s full latency is excluded. Model, GPU, replica, CART and SLO differences can affect results.", "acknowledge": "These two services are dedicated to this experiment, and accept the same production API, model aliases and authentication without changing requests. Assignment does not block other entry points.", "create": "Create experiment"},
   trafficUpdate: {
     title: "Adjust live traffic", hint: "Change production versus the whole Canary group. Arms keep running and metrics stay in this experiment. Weights are relative; they need not sum to 100.",
     submit: "Apply weights", submitting: "Submitting…", invalid: "Enter integer weights from 0 to 1,000,000 with a nonzero sum.",
@@ -35,12 +35,12 @@ export const en = {
     submit: "Create",
     identity: "Identity",
     name: "Name",
-    namespace: "Namespace",
+    namespace: "Experiment namespace",
     targetHint:
       "Production may be a HelmRelease or LLMService. Each experiment group deploys a frozen LLMService.",
     kind: "Kind",
     targetName: "Release name",
-    targetNs: "Release namespace",
+    targetNs: "Production target namespace",
     pickTarget: "Production candidates",
     pickTargetHint:
       "Choose a production release. Release details, Gateway and route are filled automatically and are read-only. Choose experiment arms on the next step.",
@@ -187,7 +187,7 @@ export const en = {
 };
 
 export const zh = {
- existing: {"mode": "使用已有服务", "advanced": "高级：部署新实验组", "loading": "正在加载实验配置…", "description": "选择两个就绪服务进行比较，全程保留原模型部署。", "showUnavailable": "显示不可选服务", "recheck": "重新检查", "deployServices": "前往部署模型服务", "baseline": "对照服务", "candidate": "候选服务", "ready": "就绪且可选", "insufficient": "需要两个兼容服务。可显示不可选服务查看原因，在模型服务中调整后重新检查。", "productionWeight": "生产权重", "canaryWeight": "整个实验组权重", "retentionTitle": "占用与资源保留", "retention": "实验期间锁定实验组配置。停止后保留全部模型服务，GPU 继续占用；升级、伸缩、卸载实验组前请先停止实验。", "metrics": "指标采用已有服务入口口径，不包含新增转发层的全部延迟。模型、GPU、副本、CART 与 SLO 差异均可能影响结果。", "acknowledge": "确认两个服务专用于本实验，能用相同的 API、模型别名与鉴权处理未经改写的生产请求。占用不会关闭其他访问入口。", "create": "创建实验"},
+ existing: {"textTitle": "文本请求与模型映射", "textEnable": "启用文本模型映射与统一鉴权", "textHint": "支持纯文本 Chat/Completions JSON 与 SSE。将每个生产 API 别名映射到各组的实际模型。工具、图片、结构化输出、会话固定和共同 token 预算尚未开放。响应保留实际模型名。", "textAuth": "统一鉴权 Secret", "textAcknowledge": "确认两个服务专用于本实验，支持相同文本请求格式和调用者 Token，并已核对冻结的模型映射。生产转发不变；占用不会关闭旁路入口。", "namespaceHint": "生产目标可跨命名空间选择。对照组和候选组服务必须位于实验命名空间中。", "mode": "使用已有服务", "advanced": "高级：部署新实验组", "loading": "正在加载实验配置…", "description": "选择两个就绪服务进行比较，全程保留原模型部署。", "showUnavailable": "显示不可选服务", "recheck": "重新检查", "deployServices": "前往部署模型服务", "baseline": "对照服务", "candidate": "候选服务", "ready": "就绪且可选", "insufficient": "需要两个兼容服务。可显示不可选服务查看原因，在模型服务中调整后重新检查。", "productionWeight": "生产权重", "canaryWeight": "整个实验组权重", "retentionTitle": "占用与资源保留", "retention": "实验期间锁定实验组配置。停止后保留全部模型服务，GPU 继续占用；升级、伸缩、卸载实验组前请先停止实验。", "metrics": "指标采用已有服务入口口径，不包含新增转发层的全部延迟。模型、GPU、副本、CART 与 SLO 差异均可能影响结果。", "acknowledge": "确认两个服务专用于本实验，能用相同的 API、模型别名与鉴权处理未经改写的生产请求。占用不会关闭其他访问入口。", "create": "创建实验"},
   trafficUpdate: {
     title: "调整在线流量", hint: "调整生产与整个北极星组的流量比例。实验组保持运行，指标继续归属同一实验。权重为相对值，无需合计为 100。",
     submit: "应用权重", submitting: "正在提交…", invalid: "请输入 0 至 1,000,000 的整数权重，且总和不能为零。",
@@ -221,12 +221,12 @@ export const zh = {
     submit: "创建",
     identity: "生产目标与实验名称",
     name: "名称",
-    namespace: "命名空间",
+    namespace: "实验命名空间",
     targetHint:
       "先选择生产 release，再确认实验名称。生产目标支持 HelmRelease 或 LLMService，每个实验组通过独立的 LLMService 部署冻结配置。",
     kind: "Kind",
     targetName: "Release 名",
-    targetNs: "Release 命名空间",
+    targetNs: "生产目标命名空间",
     pickTarget: "生产候选",
     pickTargetHint:
       "先选择生产 release。实验名称会默认设为 releaseName-canary，可按需修改；Release 信息、Gateway 和路由会自动填入且只读。实验组在下一步选择。",

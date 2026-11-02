@@ -107,7 +107,7 @@ export function CanaryCreate() {
  const config=useQuery({queryKey:["canary",api.mode,"config"],queryFn:()=>api.config()});
  if(config.error)return <ErrorNotice error={config.error}/>;
  if(!config.data)return <p className="p-4">{t("existing.loading")}</p>;
- return <>{config.data.existingArms&&<div className="mx-auto max-w-5xl p-4"><FieldSelect value={source} options={[{value:"existing",label:t("existing.mode")},{value:"provisioned",label:t("existing.advanced")}]} onValueChange={v=>setSource(String(v))}/></div>}{config.data.existingArms&&source==="existing"?<ExistingCanaryCreate namespaces={config.data.namespaces}/>:<ProvisionedCanaryCreate/>}</>;
+ return <>{config.data.existingArms&&<div className="mx-auto max-w-5xl p-4"><FieldSelect value={source} options={[{value:"existing",label:t("existing.mode")},{value:"provisioned",label:t("existing.advanced")}]} onValueChange={v=>setSource(String(v))}/></div>}{config.data.existingArms&&source==="existing"?<ExistingCanaryCreate namespaces={config.data.namespaces} textAuthSecret={config.data.textAuthSecret??""}/>:<ProvisionedCanaryCreate/>}</>;
 }
 function ProvisionedCanaryCreate() {
   const { t } = useTranslation("canary");
@@ -406,18 +406,10 @@ function ProvisionedCanaryCreate() {
                   }}
                   options={targets.map((d) => ({
                     value: `${d.namespace}/${d.name}`,
-                    label: d.name,
+                    label: `${d.namespace}/${d.name}`,
                     description: `${d.namespace} · ${d.model ?? ""} · ${d.variant ?? ""}@${d.version ?? ""} · ${d.gateway ? `${d.gateway.namespace}/${d.gateway.name}` : "—"} · /${d.route ?? ""} · ${d.openrestyService ?? ""}`,
                   }))}
                   placeholder={t("create.pickTarget")}
-                />
-              </FloatingField>
-              <FloatingField label={t("create.name")}>
-                <FieldInput
-                  value={draft.name}
-                  disabled={!selectedTarget}
-                  placeholder={t("create.selectTargetFirst")}
-                  onChange={(e) => patch({ name: e.target.value })}
                 />
               </FloatingField>
               {config.data?.namespaces.length === 1 ? (
@@ -430,7 +422,7 @@ function ProvisionedCanaryCreate() {
                   <FieldSelect
                     value={config.data ? draft.namespace : undefined}
                     disabled={
-                      !config.data || config.data.namespaces.length === 0
+                      !selectedTarget || !config.data || config.data.namespaces.length === 0
                     }
                     options={(config.data?.namespaces ?? []).map(
                       (namespace) => ({
@@ -444,6 +436,14 @@ function ProvisionedCanaryCreate() {
                   />
                 </FloatingField>
               )}
+              <FloatingField label={t("create.name")}>
+                <FieldInput
+                  value={draft.name}
+                  disabled={!selectedTarget}
+                  placeholder={t("create.selectTargetFirst")}
+                  onChange={(e) => patch({ name: e.target.value })}
+                />
+              </FloatingField>
               <EnvironmentField
                 label={t("create.kind")}
                 hint={t("create.targetFixedHint")}

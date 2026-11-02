@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { productionTargets } from "../fixtures/deployments";
 import { emptyDraft, emitManifests } from "./emit";
-import { applyProductionTarget } from "./target";
+import { applyProductionTarget, defaultCanaryName } from "./target";
 import { validateCanary, wizardStepComplete } from "./validate";
 
 const qwen = productionTargets.find((target) => target.name === "qwen-prod");
@@ -135,5 +135,14 @@ describe("gateway required fields", () => {
     ).toEqual(
       expect.arrayContaining(["spec.gateway.name", "spec.gateway.namespace"]),
     );
+  });
+});
+
+
+describe("defaultCanaryName", () => {
+  it("generates names for existing services and follows target changes until edited", () => {
+    expect(defaultCanaryName("", "", "canary-llmsvc-mock")).toBe("canary-llmsvc-mock-canary");
+    expect(defaultCanaryName("canary-llmsvc-mock-canary", "canary-llmsvc-mock", "baseline-qwen3-8b")).toBe("baseline-qwen3-8b-canary");
+    expect(defaultCanaryName("my-canary", "canary-llmsvc-mock", "baseline-qwen3-8b")).toBe("my-canary");
   });
 });

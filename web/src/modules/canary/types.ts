@@ -59,6 +59,7 @@ export interface Condition {
 }
 
 export interface LLMCanarySpec {
+ requestContract?:TextContract;
  armSource?: "existing"|"provisioned";
   targetRef: TargetRef;
   arms: ArmSpec[];
@@ -457,6 +458,8 @@ export interface ValuationView {
 }
 
 export interface ServiceIdentity { namespace?:string;name:string;uid:string }
-export interface ServiceSnapshot { service:ServiceIdentity;capacity?:JsonObject;chart?:JsonObject;entry?:ServiceIdentity;prefix?:string;evidence?:JsonObject;configDigest?:string }
+export interface ServiceSnapshot { apiModels?:string[]; service:ServiceIdentity;capacity?:JsonObject;chart?:JsonObject;entry?:ServiceIdentity;prefix?:string;evidence?:JsonObject;configDigest?:string }
 export interface ArmCandidate {serviceRef:ServiceIdentity;model?:JsonObject;selectable:boolean;reasons:string[];snapshot:ServiceSnapshot;assignedTo?:JsonObject}
-export type ExistingDraft = Omit<CanaryDraft,"arms"> & {armSource:"existing";arms:{name:string;serviceRef:ServiceIdentity;pricingKey?:string;gpuCount?:number}[]};
+export type ExistingDraft = Omit<CanaryDraft,"arms"> & {armSource:"existing";requestContract?:TextContract;arms:{name:string;serviceRef:ServiceIdentity;pricingKey?:string;gpuCount?:number}[]};
+
+export interface TextContract {version:"openai-text-v1";authSecret:string;models:Record<string,Record<string,string>>}

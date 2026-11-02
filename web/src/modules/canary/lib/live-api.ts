@@ -21,7 +21,8 @@ import type {
 
 export interface CanaryClient {
   mode: "live" | "fixture";
-  config(): Promise<{ namespaces: string[];existingArms?:boolean }>;
+  config(): Promise<{ namespaces: string[];existingArms?:boolean;textAuthSecret?:string }>;
+ modelAliases?(target:{namespace:string;name:string;uid:string}):Promise<{models:string[]}>;
  armCandidates?(namespace:string):Promise<ArmCandidate[]>;
   pricing: {
     get(): Promise<PricingTable>;
@@ -200,8 +201,9 @@ export function createLiveApi(
   };
   return {
     mode: "live",
+    modelAliases:target=>request<{models:string[]}>(`/model-aliases?${new URLSearchParams(target)}`),
     armCandidates:(namespace:string)=>request<ArmCandidate[]>(`/arm-candidates?namespace=${encodeURIComponent(namespace)}`),
- config: () => request<{ namespaces: string[];existingArms?:boolean }>("/config"),
+ config: () => request<{ namespaces: string[];existingArms?:boolean;textAuthSecret?:string }>("/config"),
     pricing: {
       get: () => request<PricingTable>("/pricing"),
       save: (table) => request<PricingTable>("/pricing", "PATCH", table),

@@ -1,5 +1,9 @@
 import type { CanaryDraft, ProductionTarget } from "../types";
 
+export function defaultCanaryName(name: string, previousTarget: string, target: string): string {
+  return !name || name === `${previousTarget}-canary` ? `${target}-canary` : name;
+}
+
 /** Environment-owned fields always follow the selected production target. */
 export function applyProductionTarget(
   draft: CanaryDraft,
@@ -7,13 +11,7 @@ export function applyProductionTarget(
 ): CanaryDraft {
   const routeKey = target.route?.replace(/^\//, "");
   const path = routeKey ? `/${routeKey}` : "";
-  const previousDefaultName = draft.targetRef.name
-    ? `${draft.targetRef.name}-canary`
-    : "";
-  const name =
-    !draft.name || draft.name === previousDefaultName
-      ? `${target.name}-canary`
-      : draft.name;
+  const name = defaultCanaryName(draft.name, draft.targetRef.name, target.name);
   return {
     ...draft,
     name,
