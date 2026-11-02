@@ -20,7 +20,7 @@ describe("Monitor", () => {
 
   it("turns Monitor off and drops its inputs when the profile names no monitor ConfigMap", () => {
     const form = { ...SWISS_EMPTY, monitor: true, monitorModel: "unpublished-model", monitorGpuType: "unpublished-gpu" };
-    for (const profile of [undefined, site(), site("  ")]) {
+    for (const profile of [site(), site("  ")]) {
       const request = planRequest(form, { model: "model" }, profile);
       expect((request.overrides?.modelRoute as Record<string, unknown>).monitor).toEqual({ enabled: false });
       expect(request.overrides?.serviceMonitor).toEqual({ enabled: true });
@@ -38,7 +38,13 @@ describe("Monitor", () => {
     const form = formFromPlan(plan);
     expect(form).toMatchObject({ serviceMonitor: false });
     expect((planRequest(form, { model: "model" }, site("models/monitor")).overrides?.modelRoute as Record<string, unknown>).monitor).toEqual({ enabled: true, model: "old", gpuType: "old" });
-    expect((planRequest(form, { model: "model" }).overrides?.modelRoute as Record<string, unknown>).monitor).toEqual({ enabled: false });
+    expect((planRequest(form, { model: "model" }, site()).overrides?.modelRoute as Record<string, unknown>).monitor).toEqual({ enabled: false });
+  });
+
+  it("keeps an upgrade's Monitor as planned when the profile is unknown", () => {
+    const plan = { release: { name: "model", namespace: "models" }, layers: { form: { modelRoute: { monitor: { enabled: true, model: "old", gpuType: "old" } } } } } as unknown as Plan;
+    expect((planRequest(formFromPlan(plan), { model: "model" }).overrides?.modelRoute as Record<string, unknown>).monitor).toEqual({ enabled: true, model: "old", gpuType: "old" });
+    expect((planRequest(EMPTY, { model: "model" }).overrides?.modelRoute as Record<string, unknown>).monitor).toEqual({ enabled: false });
   });
 
   it("has no Monitor controls in deploy settings but keeps ServiceMonitor", () => {

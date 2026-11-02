@@ -236,7 +236,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   };
 
   const readOnly = cluster.data && !cluster.data.allowDeploy;
-  const loading = cluster.isPending || (upgrade ? current.isPending : profile.isPending) || entry.isPending;
+  // An upgrade waits for the profile too: it decides Monitor (planRequest).
+  const loading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
   const error = cluster.error ?? current.error ?? entry.error;
   const keepOption = (label: string) => ({ value: KEEP, label });
 
