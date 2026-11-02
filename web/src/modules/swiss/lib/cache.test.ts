@@ -36,7 +36,7 @@ describe("cacheCard", () => {
   it("carries the site's switch beside why the chart cannot take it", () => {
     const card = cacheCard(site({ enabled: true }, 8), { requires: { gpus: 8 } }, { name: "vllm", version: "0.8.22" });
     expect(card.siteOn).toBe(true);
-    expect(card.unsupported).toEqual({ chart: "vllm" });
+    expect(card.unsupported).toEqual({ chart: "vllm", since: "0.9.0" });
     expect(cacheCard(site(), undefined, { name: "sglang", version: ">=0.7.1" })).toMatchObject({ siteOn: false, unsupported: undefined });
   });
 });
