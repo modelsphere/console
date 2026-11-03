@@ -100,14 +100,14 @@
     "slo": "Edit SLO"
   },
   "disabled": {
-    "canaryManaged": "Managed by a Canary experiment; manage configuration and cleanup from Canary",
     "readOnly": "This swissd is read-only: turn on both server.allowDeploy and rbac.allowDeploy",
     "untracked": "A release with no plan beside it cannot be upgraded here",
     "current": "This is already the current revision",
     "sloOff": "SLO was not turned on at deploy; turn it on in an upgrade",
     "sloPending": "SLO shows once the deploy has applied",
     "uninstalling": "This release is uninstalling; wait until its pods are gone",
-    "canaryAssigned": "Stop the experiment before changing this arm"
+    "serviceManaged": "Managed by another resource; change configuration or release it from its owner",
+    "serviceAssigned": "Service configuration is reserved; release the assignment from its owner first"
   },
   "state": {
     "applied": "Applied",
@@ -1019,14 +1019,10 @@
     "init": "init",
     "restarts": "{n} restarts"
   },
-  "canaryOwner": {
-    "managed": "Experiment arm",
-    "description": "This service is managed by an experiment. Manage configuration and cleanup from the experiment page.",
-    "anomaly": "Ownership metadata is inconsistent. Ask an administrator to investigate.",
-    "unavailable": "Experiment record unavailable or access denied. This service remains protected.",
-    "loading": "Looking up experiment…",
-    "view": "View experiment",
-    "assigned": "Assigned to experiment",
-    "assignmentDescription": "This service is temporarily assigned. Arm configuration is locked until the experiment is stopped and cleanup completes; the model service remains running afterwards."
+  "serviceOwner": {
+    "managed": "Managed service",
+    "assigned": "Assigned service",
+    "description": "Configuration and resource release are controlled by the owner.",
+    "anomaly": "Ownership metadata is inconsistent. Ask an administrator to investigate."
   }
 }

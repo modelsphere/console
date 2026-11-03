@@ -697,3 +697,17 @@ requests carry the same headers Global's apiserver sets.
 | P7 | Container management modules, moved over from Rise Global. |
 
 Each phase is independently committable and verifiable.
+
+## Optional build-time extensions
+
+The public frontend registry `web/src/extensions/registry.ts` is empty by default. Distributors can register reviewed modules and service owner decorations in a separate build tree without changing the public source distribution.
+
+| Interface | Behavior |
+|---|---|
+| `ConsoleExtensions.modules` | Existing `ConsoleModule` routes, menus, frames, UI permissions and backend capabilities |
+| `ConsoleExtensions.serviceOwners` | Optional owner UI selected by exact API version and kind; receives owner UID, verification and display flags |
+| Empty registry | No optional routes or code imports; generic owner display and service write protection remain active |
+
+The host keeps login, authenticated fetch, i18n, theme, QueryClient and route guards. Backend capabilities are keyed by backend name; registration does not grant backend permissions. No remote script loader or runtime configuration key is introduced. Extension sources are scanned by the existing Tailwind build and use the host lockfile and React dependencies.
+
+Public builds must remain independent of any private package or checkout. Private build source, images and artifacts belong in private storage; they must not be copied into the public working tree. Removing an extension does not remove service-side ownership or assignment protection.

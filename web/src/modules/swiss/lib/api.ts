@@ -65,9 +65,9 @@ export interface Site {
   url: string;
 }
 
-export interface CanaryOwner {
+export interface ServiceOwner {
   apiVersion: string;
-  kind: "LLMCanary";
+  kind: string;
   namespace: string;
   name: string;
   uid: string;
@@ -99,8 +99,8 @@ export interface Deployment {
   route?: string;
   backend?: ApplyWith;
   uid?:string;
- assignedTo?:CanaryAssignment;
- managedBy?: CanaryOwner;
+ assignedTo?:ServiceAssignment;
+ managedBy?: ServiceOwner;
   // An LLMService swiss did not write.
   external?: boolean;
 }
@@ -692,8 +692,8 @@ export interface ReleaseStatus {
   // Set when swiss manages the release; it never changes after install.
   backend?: ApplyWith;
   uid?:string;
- assignedTo?:CanaryAssignment;
- managedBy?: CanaryOwner;
+ assignedTo?:ServiceAssignment;
+ managedBy?: ServiceOwner;
   // Present on the llmsvc backend. phase is "uninstalling" while the LLMService
   // has a deletionTimestamp. Absent on helm and on an older swissd.
   llmservice?: { phase?: string };
@@ -1073,4 +1073,4 @@ export interface SLOEdit {
   otps?: SLOSection;
 }
 
-export interface CanaryAssignment extends Omit<CanaryOwner,"verified"> {role:"production"|"arm";arm?:string;verified:boolean}
+export interface ServiceAssignment extends Omit<ServiceOwner,"verified"> {role:"production"|"arm";arm?:string;verified:boolean}

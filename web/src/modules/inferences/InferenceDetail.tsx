@@ -15,7 +15,7 @@ import { modelLine, parseTab, releaseState, sloBlocked, visibleTabs, type Tab } 
 import { statusOf } from "@/modules/inferences/components/StatusDot";
 import { DeploySheet } from "@/modules/inferences/components/DeploySheet";
 import { UninstallDialog } from "@/modules/inferences/components/UninstallDialog";
-import { CanaryOwnership } from "@/modules/inferences/components/CanaryOwnership";
+import { ServiceOwnership } from "@/modules/inferences/components/ServiceOwnership";
 import { SLOSheet } from "@/modules/inferences/components/SLOSheet";
 import { Overview } from "@/modules/inferences/tabs/Overview";
 import { Instances } from "@/modules/inferences/tabs/Instances";
@@ -105,7 +105,7 @@ export function InferenceDetail() {
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
   const removing = isUninstalling(s);
   const assignmentLocked=!!s.assignedTo && (!s.assignedTo.verified || s.assignedTo.role==="arm");
-  const blockedWrite = s.assignedTo && (!s.assignedTo.verified || s.assignedTo.role==="arm") ? t("disabled.canaryAssigned") : s.managedBy ? t("disabled.canaryManaged") : readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const blockedWrite = s.assignedTo && (!s.assignedTo.verified || s.assignedTo.role==="arm") ? t("disabled.serviceAssigned") : s.managedBy ? t("disabled.serviceManaged") : readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
@@ -158,7 +158,7 @@ export function InferenceDetail() {
           ]}
           metaColumns={4}
         />
-        {s.managedBy && <CanaryOwnership owner={s.managedBy} />}{s.assignedTo && <CanaryOwnership owner={{...s.assignedTo,verified:s.assignedTo.verified}} assigned />}
+        {s.managedBy && <ServiceOwnership owner={s.managedBy} />}{s.assignedTo && <ServiceOwnership owner={{...s.assignedTo,verified:s.assignedTo.verified}} assigned />}
         <PanelTabs items={visible.map((key) => ({ value: key, label: t(`tabs.${key}`), count: counts[key] }))} />
 
         <TabsContent value="overview">

@@ -89,14 +89,14 @@
     "slo": "编辑 SLO"
   },
   "disabled": {
-    "canaryManaged": "该服务由实验管理，请在 Canary 页面管理配置和资源释放",
     "readOnly": "这个 swissd 是只读的：需要同时打开 server.allowDeploy 和 rbac.allowDeploy",
     "untracked": "没有纳管计划的 release 不能在这里升级",
     "current": "这已经是当前版本",
     "sloOff": "部署时没有开启 SLO，可在升级时打开",
     "sloPending": "部署完成后才能查看 SLO",
     "uninstalling": "这个服务正在卸载，等 Pod 消失后再操作",
-    "canaryAssigned": "请先停止占用此服务的实验"
+    "serviceManaged": "该服务由其他资源管理，请从所属资源修改配置或释放服务",
+    "serviceAssigned": "服务配置被占用，请先从所属资源解除占用"
   },
   "state": {
     "applied": "已应用",
@@ -1008,14 +1008,10 @@
     "init": "初始化容器",
     "restarts": "重启 {n} 次"
   },
-  "canaryOwner": {
-    "managed": "实验组",
-    "description": "此服务由实验管理。配置变更和资源释放请到实验页面操作。",
-    "anomaly": "归属信息不一致，请联系管理员核实。",
-    "unavailable": "无法关联实验记录或无权查看，服务仍受实验归属保护。",
-    "loading": "正在关联实验…",
-    "view": "查看实验",
-    "assigned": "被实验占用",
-    "assignmentDescription": "此服务被临时占用，实验组配置在停止且清理完成前不可修改。停止后模型服务继续运行。"
+  "serviceOwner": {
+    "managed": "托管服务",
+    "assigned": "服务被占用",
+    "description": "配置与资源释放由所属资源管理。",
+    "anomaly": "归属信息不一致，请联系管理员核实。"
   }
 }

@@ -18,7 +18,7 @@ import { api, type Deployment } from "@swiss/lib/api";
 import { isUninstalling } from "@swiss/lib/phase";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, modelLine, rowState } from "@/modules/inferences/lib";
-import { CanaryOwnership } from "@/modules/inferences/components/CanaryOwnership";
+import { ServiceOwnership } from "@/modules/inferences/components/ServiceOwnership";
 import { StatusDot } from "@/modules/inferences/components/StatusDot";
 import { DeploySheet, type DeployTarget } from "@/modules/inferences/components/DeploySheet";
 import { UninstallDialog, type UninstallTarget } from "@/modules/inferences/components/UninstallDialog";
@@ -62,7 +62,7 @@ export function InferenceList() {
             {d.release}
           </Link>
           <div className="truncate text-xs text-muted-foreground" title={modelLine(d) || undefined}>{modelLine(d) || t("list.untracked")}</div>
-          {d.managedBy && <CanaryOwnership owner={d.managedBy} compact />}{d.assignedTo && <CanaryOwnership owner={{...d.assignedTo,verified:d.assignedTo.verified}} compact assigned />}
+          {d.managedBy && <ServiceOwnership owner={d.managedBy} compact />}{d.assignedTo && <ServiceOwnership owner={{...d.assignedTo,verified:d.assignedTo.verified}} compact assigned />}
         </div>
       ),
     },
@@ -101,7 +101,7 @@ export function InferenceList() {
   ];
 
   const writeBlocked = (d: Deployment, untracked = false): boolean | string =>
-    d.assignedTo && (!d.assignedTo.verified || d.assignedTo.role==="arm") ? t("disabled.canaryAssigned") : d.managedBy ? t("disabled.canaryManaged") : readOnly ? t("disabled.readOnly") : isUninstalling(d) ? t("disabled.uninstalling") : untracked && !d.model ? t("disabled.untracked") : false;
+    d.assignedTo && (!d.assignedTo.verified || d.assignedTo.role==="arm") ? t("disabled.serviceAssigned") : d.managedBy ? t("disabled.serviceManaged") : readOnly ? t("disabled.readOnly") : isUninstalling(d) ? t("disabled.uninstalling") : untracked && !d.model ? t("disabled.untracked") : false;
 
   const rowActions: ResourceRowAction<Row>[] = [
     { key: "detail", label: t("actions.detail"), onClick: open },
