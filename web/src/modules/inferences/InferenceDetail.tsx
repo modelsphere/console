@@ -106,6 +106,8 @@ export function InferenceDetail() {
   const removing = isUninstalling(s);
   const assignmentLocked=!!s.assignedTo && (!s.assignedTo.verified || s.assignedTo.role==="arm");
   const blockedWrite = s.assignedTo && (!s.assignedTo.verified || s.assignedTo.role==="arm") ? t("disabled.serviceAssigned") : s.managedBy ? t("disabled.serviceManaged") : readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const adaptiveOnly = !!s.assignedTo?.verified && s.assignedTo.role === "arm" && !s.managedBy;
+  const upgradeBlocked = adaptiveOnly ? readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false : blockedWrite;
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
@@ -139,7 +141,7 @@ export function InferenceDetail() {
             {
               key: "upgrade",
               label: t("actions.upgrade"),
-              disabled: blockedWrite || (!plan.data ? t("disabled.untracked") : false),
+              disabled: upgradeBlocked || (!plan.data ? t("disabled.untracked") : false),
               onClick: () => setUpgrading(true),
             },
             {
@@ -195,7 +197,7 @@ export function InferenceDetail() {
       </Tabs>
 
       <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !assignmentLocked && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
-      <DeploySheet target={upgrading && !s.managedBy && !assignmentLocked && !removing ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
+      <DeploySheet target={upgrading && !s.managedBy && (!assignmentLocked || adaptiveOnly) && !removing ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
         target={uninstalling && !s.managedBy && !assignmentLocked && !removing ? { namespace, release } : null}
         onClose={() => setUninstalling(false)}

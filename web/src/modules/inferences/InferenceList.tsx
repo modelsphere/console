@@ -100,12 +100,12 @@ export function InferenceList() {
     },
   ];
 
-  const writeBlocked = (d: Deployment, untracked = false): boolean | string =>
-    d.assignedTo && (!d.assignedTo.verified || d.assignedTo.role==="arm") ? t("disabled.serviceAssigned") : d.managedBy ? t("disabled.serviceManaged") : readOnly ? t("disabled.readOnly") : isUninstalling(d) ? t("disabled.uninstalling") : untracked && !d.model ? t("disabled.untracked") : false;
+  const writeBlocked = (d: Deployment, untracked = false, adaptive = false): boolean | string =>
+    d.assignedTo && (!d.assignedTo.verified || d.assignedTo.role==="arm" && !adaptive) ? t("disabled.serviceAssigned") : d.managedBy ? t("disabled.serviceManaged") : readOnly ? t("disabled.readOnly") : isUninstalling(d) ? t("disabled.uninstalling") : untracked && !d.model ? t("disabled.untracked") : false;
 
   const rowActions: ResourceRowAction<Row>[] = [
     { key: "detail", label: t("actions.detail"), onClick: open },
-    { key: "upgrade", label: t("actions.upgrade"), onClick: (d) => setUpgrading({ kind: "upgrade", namespace: d.namespace, release: d.release }), disabled: (d) => writeBlocked(d, true) },
+    { key: "upgrade", label: t("actions.upgrade"), onClick: (d) => setUpgrading({ kind: "upgrade", namespace: d.namespace, release: d.release }), disabled: (d) => writeBlocked(d, true, true) },
     { key: "versions", label: t("actions.versions"), onClick: (d) => navigate(p(detailPath(d.release, d.namespace, "versions"))) },
     {
       key: "uninstall",

@@ -597,6 +597,7 @@ export interface ApplyResult {
 }
 
 export interface PlanRequest {
+  adaptiveOnly?: boolean;
   // The configured catalog to compose from. An upgrade naming none stays on its
   // own; naming another moves it there, if the model there is the same one.
   catalog?: string;

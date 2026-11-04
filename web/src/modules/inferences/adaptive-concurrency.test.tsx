@@ -109,3 +109,20 @@ describe("unified adaptive concurrency settings", () => {
     expect(compose).toHaveBeenCalledTimes(1);
   });
 });
+
+ describe("assigned experiment arm upgrade", () => {
+ it("disables every section except adaptive concurrency", () => {
+ const html = renderToStaticMarkup(<DeployForm form={form} adaptiveOnly upgrade onChange={() => {}} submitted={false} target={<input aria-label="version" />} defaults={{}} gpuOptions={[]} expanded={{ basic: true, resources: true, routing: true, advanced: true }} onExpand={() => {}} idPrefix="assigned-" routeOptions={options} />);
+ expect(html.match(/<fieldset disabled=""/g)).toHaveLength(5);
+ const adaptive = html.indexOf('aria-label="自适应并发"');
+ expect(adaptive).toBeGreaterThan(0);
+ expect(html.lastIndexOf("</fieldset>", adaptive)).toBeGreaterThan(html.lastIndexOf("<fieldset", adaptive));
+ expect(html).toContain("textarea");
+ const switches = html.match(/<[^>]*role="switch"[^>]*>/g) ?? [];
+ expect(switches.length).toBeGreaterThan(3);
+ for (const control of switches) {
+  if (control.includes('aria-label="自适应并发"')) expect(control).not.toMatch(/aria-disabled="true"|\sdata-disabled=""/);
+  else expect(control).toMatch(/aria-disabled="true"|\sdata-disabled=""/);
+ }
+ });
+ });

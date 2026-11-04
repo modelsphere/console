@@ -650,6 +650,7 @@
       "adaptiveCc": "Adaptive concurrency",
       "adaptiveCcHint": "AIMD on the effective TPS signal; on by default",
       "adaptiveOff": "Enable adaptive concurrency to add this setting.",
+      "assignedAdaptiveOnly": "This service is assigned to an experiment. Only Routing → Adaptive concurrency can be changed. Stop the experiment before changing other settings.",
       "adaptiveChanged": "The model source changed or adaptive settings could not be cleared. Compose the plan again before applying.",
       "adaptiveCcMinFrac": "Adaptive floor fraction",
       "adaptiveCcMinFracHint": "Of the static maximum, 0 < value ≤ 1; empty uses the engine default. Unused when the absolute floor is set",

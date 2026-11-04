@@ -639,6 +639,7 @@
       "adaptiveCc": "自适应并发",
       "adaptiveCcHint": "按有效 TPS 做 AIMD 调整，默认开启",
       "adaptiveOff": "请先开启自适应并发，再添加此参数。",
+      "assignedAdaptiveOnly": "此服务被实验占用，升级仅允许修改「路由 → 自适应并发」。修改其他配置前请先停止实验。",
       "adaptiveChanged": "模型来源发生变化，或自适应参数未能清除，请重新生成计划后再应用。",
       "adaptiveCcMinFrac": "自适应下限比例",
       "adaptiveCcMinFracHint": "占静态并发上限的比例，0 < 值 ≤ 1，留空使用引擎默认值；设置了绝对下限时不使用",
