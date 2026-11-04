@@ -31,6 +31,7 @@ func main() {
 		addr       = flag.String("addr", os.Getenv("CONSOLE_ADDR"), "listen address (overrides config)")
 		logLevel   = flag.String("log-level", envOr("CONSOLE_LOG_LEVEL", "info"), "debug|info|warn|error")
 		webDir     = flag.String("web-dir", os.Getenv("CONSOLE_WEB_DIR"), "serve the UI from this directory instead of the embedded build")
+		pluginsDir = flag.String("plugins-dir", os.Getenv("CONSOLE_PLUGINS_DIR"), "serve installed plugins from this directory (optional)")
 		showVer    = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
@@ -39,13 +40,13 @@ func main() {
 		fmt.Println(version.Version)
 		return
 	}
-	if err := run(*configPath, *addr, *logLevel, *webDir); err != nil {
+	if err := run(*configPath, *addr, *logLevel, *webDir, *pluginsDir); err != nil {
 		fmt.Fprintln(os.Stderr, "console: "+err.Error())
 		os.Exit(1)
 	}
 }
 
-func run(configPath, addr, logLevel, webDir string) error {
+func run(configPath, addr, logLevel, webDir, pluginsDir string) error {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLevel(logLevel)}))
 
 	path := config.Find(configPath)
@@ -77,6 +78,9 @@ func run(configPath, addr, logLevel, webDir string) error {
 	defer stop()
 
 	srv := server.New(cfg, kube, log, version.Version)
+	if err := srv.SetPluginsDir(pluginsDir); err != nil {
+		return err
+	}
 
 	// Identity kernel: users and roles live as CRDs, tokens are HS256, both
 	// wire-compatible with Rise Global.

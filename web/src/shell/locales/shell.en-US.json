@@ -1,4 +1,7 @@
 {
+  "plugins": {
+    "failed": "Some plugins failed to load. Expand for details."
+  },
   "menu": {
     "overview": "Overview"
   },

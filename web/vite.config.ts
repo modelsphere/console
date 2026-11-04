@@ -49,7 +49,7 @@ export default defineConfig(({ mode }) => {
   const proxy: Record<string, string | ProxyOptions> = swiss
     ? // swissd's own login: its session cookie is host-only and plain-http here, so it rides the proxy.
       { "/api": via(remote) }
-    : { "/api": via(consoleTarget), "/oauth": via(consoleTarget) };
+    : { "/api": via(consoleTarget), "/oauth": via(consoleTarget), "/plugins": via(consoleTarget) };
   return {
     root: swiss ? path.join(swissDir, "standalone") : undefined,
     plugins: [react(), tailwindcss(), ...(swiss ? [] : [keepDistEmbeddable()])],

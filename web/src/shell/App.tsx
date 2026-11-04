@@ -6,6 +6,7 @@ import { Layout } from "@/shell/Layout";
 import { ModuleProvider, joinPath, validateModules, type ConsoleModule } from "@/shell/module";
 import { Login } from "@/shell/pages/Login";
 import { Home } from "@/shell/pages/Home";
+import { useT } from "@/shell/i18n";
 import { ChangePassword } from "@/shell/pages/ChangePassword";
 
 const queryClient = new QueryClient();
@@ -29,13 +30,22 @@ function RequireAuth({ modules }: { modules: ConsoleModule[] }) {
   );
 }
 
-export function App({ modules }: { modules: ConsoleModule[] }) {
+export function App({ modules, pluginErrors = [] }: { modules: ConsoleModule[]; pluginErrors?: string[] }) {
+  const t = useT("shell");
   validateModules(modules);
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <PermissionsProvider>
           <BrowserRouter>
+            {pluginErrors.length > 0 && (
+              <details role="alert" className="fixed bottom-4 right-4 z-50 max-w-md rounded-lg border border-red-300 bg-white p-4 text-sm text-red-700 shadow-lg">
+                <summary className="cursor-pointer">{t("plugins.failed")}</summary>
+                <ul className="mt-2 list-inside list-disc break-words">
+                  {pluginErrors.map((error, index) => <li key={index}>{error}</li>)}
+                </ul>
+              </details>
+            )}
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route element={<RequireAuth modules={modules} />}>
