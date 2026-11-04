@@ -95,7 +95,7 @@ unchanged. Moving either one moves both.
 
 ## Modules
 
-The console is a shell plus compile-time modules. A module is a feature area
+The console is a shell plus built-in and installed runtime modules. A module is a feature area
 (iam, inferences, playground, router, docs, later container management); the shell owns everything
 around it.
 
@@ -132,9 +132,9 @@ Rules:
 - `validateModules` rejects duplicate ids/basePaths, shell-reserved paths and ids (`common`, `shell`: they are i18n namespaces) and pages declared twice at startup.
 - Text goes through `useT()` (see "i18n"); the declaration's `title` and menu labels stay Chinese.
 
-Deliberately not built: runtime loading, micro-frontends, cross-module slots. The
-earlier Cordis design (branch `docs/console-plugin-design`) is parked; revisit it
-when one of those is actually needed.
+Runtime plugins reuse this declaration through `window.ConsolePluginHost` (version 1), which shares the shell's React, router, query library and shell exports. `--plugins-dir` / `CONSOLE_PLUGINS_DIR` selects a trusted package directory. `/plugins/index.json` discovers packages on every refresh; the browser loads their JS/CSS and validates registrations before constructing routes, navigation and overview cards. Built-ins remain compiled into `web/src/modules/index.ts`; external packages need no shell rebuild. Nothing from an uninstalled package enters the module list.
+
+See [the installation and authoring guide](development/plugins.md) and [the minimal design proposal](installed-plugins-proposal.md). Plugin management UI, dependency resolution and cross-module slots remain out of scope.
 
 ### i18n
 

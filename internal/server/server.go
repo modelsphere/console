@@ -25,11 +25,12 @@ import (
 )
 
 type Server struct {
-	cfg     *config.Config
-	kube    *cluster.Kube
-	log     *slog.Logger
-	version string
-	web     fs.FS
+	cfg        *config.Config
+	kube       *cluster.Kube
+	log        *slog.Logger
+	version    string
+	web        fs.FS
+	pluginsDir string
 
 	authn  *iam.Authenticator
 	signer *iam.Signer
@@ -92,6 +93,11 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
+	mux.HandleFunc("GET /plugins/index.json", s.handlePluginIndex)
+	mux.HandleFunc("GET /plugins/{id}", http.NotFound)
+	mux.HandleFunc("GET /plugins/{id}/{asset...}", s.handlePluginAsset)
+	mux.HandleFunc("/plugins", http.NotFound)
+	mux.HandleFunc("/plugins/", http.NotFound)
 
 	if s.authn != nil {
 		mux.HandleFunc("POST /oauth/token", s.handleToken)
@@ -130,7 +136,7 @@ func (s *Server) Handler() http.Handler {
 		// is an ambiguous pair that ServeMux refuses. spa enforces GET/HEAD.
 		mux.HandleFunc("/", s.spa)
 	}
-	return s.recover(s.logRequests(s.authenticate(s.requirePasswordReset(mux))))
+	return s.recover(s.logRequests(s.authenticate(s.requirePasswordReset(pluginPaths(mux)))))
 }
 
 func (s *Server) Run(ctx context.Context) error {

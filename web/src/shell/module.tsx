@@ -6,7 +6,7 @@ import { pageKey } from "@/shell/i18n";
 // pages; the shell owns everything around them: login, layout, sidebar, route
 // guards, the query client and the session on every request.
 //
-// Plugging a module in or out is one line in src/modules/index.ts.
+// Built-ins register in src/modules/index.ts; installed plugins use ConsolePluginHost.
 export interface ModuleOverviewProps {
   session?: ReactNode;
 }
@@ -61,7 +61,7 @@ export function useModulePath(): (path: string) => string {
   return (path) => joinPath(module.basePath, path);
 }
 
-const RESERVED = new Set(["/login", "/change-password", "/api", "/oauth"]);
+const RESERVED = new Set(["/login", "/change-password", "/api", "/oauth", "/plugins", "/assets"]);
 // A module's id is its i18n namespace; these belong to the shell.
 const RESERVED_IDS = new Set(["common", "shell", "ui"]);
 
