@@ -16,6 +16,10 @@ data:
         issuer: {{ .Values.auth.issuer | quote }}
         tokenTTL: {{ .Values.auth.tokenTTL | quote }}
         # jwtSecret is injected from the Secret via env, not rendered here.
+    {{- with .Values.plugins }}
+    plugins:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
     backends:
       {{- range .Values.backends }}
       - name: {{ .name | quote }}

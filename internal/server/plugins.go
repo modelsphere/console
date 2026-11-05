@@ -10,12 +10,15 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/modelsphere/console/internal/config"
 )
 
 type pluginManifest struct {
-	ID     string   `json:"id"`
-	Entry  string   `json:"entry"`
-	Styles []string `json:"styles,omitempty"`
+	ID     string             `json:"id"`
+	Entry  string             `json:"entry"`
+	Styles []string           `json:"styles,omitempty"`
+	Menu   *config.PluginMenu `json:"menu,omitempty"`
 }
 
 var pluginID = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
@@ -102,7 +105,7 @@ func (s *Server) installedPlugins() ([]pluginManifest, error) {
 
 func (s *Server) handlePluginIndex(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	plugins, err := s.installedPlugins()
+	plugins, err := s.pluginIndex()
 	if err != nil {
 		s.log.Error("load installed plugins", "dir", s.pluginsDir, "error", err)
 		writeError(w, http.StatusInternalServerError, "could not load installed plugins")
@@ -113,6 +116,12 @@ func (s *Server) handlePluginIndex(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handlePluginAsset(w http.ResponseWriter, r *http.Request) {
 	id, asset := r.PathValue("id"), r.PathValue("asset")
+	for _, plugin := range s.cfg.Plugins {
+		if plugin.ID == id {
+			s.servePluginService(w, r, plugin, asset)
+			return
+		}
+	}
 	if s.pluginsDir == "" || !pluginID.MatchString(id) || !validPluginPath(asset) {
 		http.NotFound(w, r)
 		return
