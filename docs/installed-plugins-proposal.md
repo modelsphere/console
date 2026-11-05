@@ -6,6 +6,8 @@ Console represents menus, routes and overview cards through `ConsoleModule`, but
 
 ## Proposal
 
+The configured image-service and Global SDK loading path is specified in [Global SDK frontend plugins](plans/2026-11-05-global-sdk-design.md). The filesystem and `ConsolePluginHost` contract below remains available for existing local packages.
+
 ```text
 copy <id>/plugin.json + JS/CSS to plugins directory
   -> GET /plugins/index.json discovers installed packages

@@ -18,7 +18,7 @@ class Asset {
   remove = vi.fn();
 }
 
-function browser(installed: { id: string; entry: string; styles?: string[] }[], execute: (asset: Asset) => void) {
+function browser(installed: { id: string; entry: string; styles?: string[]; menu?: {title: string; label: string; path: string; component: string} }[], execute: (asset: Asset) => void) {
   const assets: Asset[] = [];
   vi.stubGlobal("window", globalThis);
   vi.stubGlobal("HTMLScriptElement", Asset);
@@ -36,12 +36,43 @@ afterEach(() => {
 });
 
 describe("installed plugins", () => {
+  it("loads the Global SDK registration sequence with configured navigation and dynamic routes", async () => {
+    const Component = () => null;
+    browser([{ id: "example", entry: "/plugins/example/index.umd.js", menu: { title: "Tools", label: "Configured label", path: "/example", component: "Example" } }], (asset) => {
+      const sdk = window.__GLOBAL_SDK__;
+      expect(sdk).toBe(window.__RISE_SDK__);
+      sdk.registerPlugin({ name: "example", version: "1.0.0", menus: [] });
+      sdk.registerPluginComponent("example", "Example", Component);
+      sdk.registerPluginRoutes("example", { "items/[id]": Component });
+      asset.onload?.();
+    });
+    const result = await loadPlugins([builtin]);
+    expect(result.errors).toEqual([]);
+    expect(result.modules[1]).toMatchObject({ id: "example", title: "Tools", basePath: "/example" });
+    expect(result.modules[1].pages.map((page) => page.path)).toEqual(["", "items/:id"]);
+    expect(navGroups(result.modules, () => true).at(-1)?.items[0].label).toBe("Configured label");
+    expect(navGroups(result.modules, () => false).at(-1)?.basePath).toBe("/example");
+  });
   it("keeps uninstalled modules out of navigation without changing built-ins", async () => {
     const assets = browser([], () => {});
     const result = await loadPlugins([builtin]);
     expect(result).toEqual({ modules: [builtin], errors: [] });
     expect(assets).toHaveLength(0);
     expect(navGroups(result.modules, () => true).some((group) => group.basePath === "/example")).toBe(false);
+  });
+
+  it("loads remounted SDK routes without adding page permission gates", async () => {
+    browser([{ id: "example", entry: "/plugins/example/index.umd.js", menu: { title: "Tools", label: "Example", path: "/tools", component: "Example" } }], (asset) => {
+      const sdk = window.__GLOBAL_SDK__;
+      sdk.registerPlugin({ name: "example", version: "1.0.0", menus: [{ name: "edit", path: "/example/items/[id]", authKey: "example.write" }] });
+      sdk.registerPluginComponent("example", "Example", () => null);
+      sdk.registerPluginRoutes("example", { "items/[id]": () => null });
+      asset.onload?.();
+    });
+    const result = await loadPlugins([builtin]);
+    expect(result.errors).toEqual([]);
+    expect(result.modules[1].pages.map((page) => page.path)).toEqual(["", "items/:id"]);
+    expect(result.modules[1].pages.every((page) => page.permission === undefined)).toBe(true);
   });
 
   it("loads CSS before registration and shares the host hooks and shell", async () => {

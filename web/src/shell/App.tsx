@@ -8,6 +8,7 @@ import { Login } from "@/shell/pages/Login";
 import { Home } from "@/shell/pages/Home";
 import { useT } from "@/shell/i18n";
 import { ChangePassword } from "@/shell/pages/ChangePassword";
+import { GlobalSDKSession } from "@/shell/global-sdk/host";
 
 const queryClient = new QueryClient();
 
@@ -37,6 +38,7 @@ export function App({ modules, pluginErrors = [] }: { modules: ConsoleModule[]; 
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <PermissionsProvider>
+          <GlobalSDKSession />
           <BrowserRouter>
             {pluginErrors.length > 0 && (
               <details role="alert" className="fixed bottom-4 right-4 z-50 max-w-md rounded-lg border border-red-300 bg-white p-4 text-sm text-red-700 shadow-lg">
