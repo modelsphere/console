@@ -41,7 +41,8 @@ import { detailPath, sloEnabled } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, defaultServiceId, gpuOptions, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
-import { AdaptivePlanChangedError, composeAdaptivePlan } from "../adaptive-concurrency";
+import { serviceRelationship } from "../service-relationship";
+import { AdaptivePlanChangedError, composeAdaptivePlan, composeReferencedPlan, isAdaptiveOption } from "../adaptive-concurrency";
 import { readRouteOptions } from "@/modules/inferences/api";
 
 export type DeployTarget =
@@ -181,12 +182,23 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
 
   const release = upgrade ? target.release : form.serviceId || defaultServiceId(target.model);
   const namespace = upgrade ? target.namespace : form.namespace || cluster.data?.namespace || "";
-  const live = useQuery({ queryKey: ["status", namespace, release], queryFn: () => api.status(namespace, release), enabled: step === "review" && !!release && !!namespace });
+  const live = useQuery({ queryKey: ["status", namespace, release], queryFn: () => api.status(namespace, release), enabled: (upgrade || step === "review") && !!release && !!namespace });
 
-  const change = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
+  const adaptiveOnly = upgrade && serviceRelationship(live.data ?? {}).adaptiveOnly;
+  const assignmentBlocked = serviceRelationship(live.data ?? {}).owned || serviceRelationship(live.data ?? {}).assignmentLocked && !adaptiveOnly;
+  const change = (patch: Partial<Form>) => setForm((f) => adaptiveOnly ? {
+    ...f,
+    adaptiveCc: patch.adaptiveCc ?? f.adaptiveCc,
+    adaptiveCcMinFrac: patch.adaptiveCcMinFrac ?? f.adaptiveCcMinFrac,
+    nginxExtras: patch.nginxExtras ? [...f.nginxExtras.filter(row => !isAdaptiveOption(row.key, routeOptions.data)), ...patch.nginxExtras.filter(row => row.key.startsWith("adaptive_cc_"))] : f.nginxExtras,
+  } : { ...f, ...patch });
   const compose = useMutation({
     mutationFn: async () => {
       try {
+        if (adaptiveOnly) {
+          if (!current.data) throw new AdaptivePlanChangedError();
+          return await composeReferencedPlan(current.data, form, routeOptions.data, deployApi.plan);
+        }
         return await composeAdaptivePlan(planRequest(
           { ...form, serviceId: form.serviceId || (upgrade ? form.serviceId : defaultServiceId(target.model)) },
           upgrade
@@ -235,10 +247,10 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     compose.mutate();
   };
 
-  const readOnly = cluster.data && !cluster.data.allowDeploy;
+  const readOnly = !cluster.data?.allowDeploy || assignmentBlocked || (upgrade && (live.isPending || !!live.error));
   // An upgrade waits for the profile too: it decides Monitor (planRequest).
-  const loading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
-  const error = cluster.error ?? current.error ?? entry.error;
+  const loading = cluster.isPending || (upgrade && current.isPending) || (!adaptiveOnly && (profile.isPending || entry.isPending));
+  const error = cluster.error ?? current.error ?? (adaptiveOnly ? null : entry.error);
   const keepOption = (label: string) => ({ value: KEEP, label });
 
   const targetFields = (
@@ -400,6 +412,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
             <AlertDescription>{t("deploy.review.readOnly")}</AlertDescription>
           </Alert>
         )}
+        {adaptiveOnly && <Alert><AlertDescription>{t("deploy.fields.assignedAdaptiveOnly")}</AlertDescription></Alert>}
         {routeOptions.error && (
           <Alert variant="warning"><TriangleAlert /><AlertDescription>{t("deploy.routeOptions.error", { error: routeOptions.error.message })}</AlertDescription></Alert>
         )}
@@ -419,6 +432,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               form={form}
               onChange={change}
               upgrade={upgrade}
+              adaptiveOnly={adaptiveOnly}
               submitted={submitted}
               target={targetFields}
               cluster={cluster.data}
@@ -442,7 +456,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               diff={diff}
               diffing={dryRun.isPending}
               diffError={dryRun.error?.message}
-              state={state}
+              state={adaptiveOnly ? { ...state, canForce: false } : state}
               note={note}
               onNote={setNote}
               force={force}
