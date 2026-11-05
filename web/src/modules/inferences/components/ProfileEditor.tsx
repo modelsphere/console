@@ -41,7 +41,8 @@ export function useProfileEditor(profile: SiteProfile, yaml: string, onSaved: (r
       setRefused(Object.fromEntries(Object.entries(notKept).map(([name, err]) => [name, err.message])));
       setSavedAnyway(r !== null);
       if (!r) return;
-      for (const key of [["profile"], ["cluster"], ["catalog"], ["secrets"]]) qc.invalidateQueries({ queryKey: key });
+      // nodes too: swissd reads them by the GPU table just saved.
+      for (const key of [["profile"], ["cluster"], ["catalog"], ["secrets"], ["nodes"]]) qc.invalidateQueries({ queryKey: key });
       setTokens((s) => Object.fromEntries(Object.entries(s).filter(([name]) => name in notKept)));
       // A token refused after the profile saved keeps the editor open on it. markSetUp waits
       // too, as it is what moves the gate off the setup page.

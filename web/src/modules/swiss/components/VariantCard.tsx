@@ -1,5 +1,5 @@
 import { ChartColumn, ExternalLink } from "lucide-react";
-import type { ModelVariant, Node } from "@swiss/lib/api";
+import type { GPUSpec, ModelVariant, Node } from "@swiss/lib/api";
 import { type Kind, httpLink, UPLIFT_HELP } from "@swiss/lib/catalog";
 import { gpuCount, matchesVendor, vendorLabel } from "@swiss/lib/gpu";
 import { Badge } from "@swiss/components/ui/badge";
@@ -20,6 +20,7 @@ export function VariantCard({
   report,
   workloads,
   nodes,
+  gpus,
   tags,
   selected,
   disabled,
@@ -33,6 +34,7 @@ export function VariantCard({
   report?: string;
   workloads?: { name: string; uplift: number }[];
   nodes?: Node[];
+  gpus?: GPUSpec[];
   // Extra badges beside the id, e.g. "deployed".
   tags?: React.ReactNode;
   selected?: boolean;
@@ -40,7 +42,7 @@ export function VariantCard({
   disabled?: string;
   action?: React.ReactNode;
 }) {
-  const fit = fitness(v, nodes);
+  const fit = fitness(v, nodes, gpus);
   const link = httpLink(v.link);
   return (
     <Card
@@ -139,13 +141,13 @@ export function VariantCard({
 
 type CardVariant = Pick<ModelVariant, "id" | "engine" | "default" | "description" | "link" | "chart" | "requires" | "deprecated">;
 
-function fitness(v: CardVariant, nodes?: Node[]): { ok: boolean; text: string } | null {
+function fitness(v: CardVariant, nodes?: Node[], gpus?: GPUSpec[]): { ok: boolean; text: string } | null {
   if (!nodes) return null;
   const matching = nodes.filter(
     (n) =>
       n.Schedulable &&
       n.GPUs >= v.requires.gpus &&
-      matchesVendor(v.requires.vendor, n) &&
+      matchesVendor(v.requires.vendor, n, gpus) &&
       (!v.requires.gpuProduct?.length || v.requires.gpuProduct.includes(n.GPUProduct)),
   );
   const needed = v.requires.nodes ?? 1;

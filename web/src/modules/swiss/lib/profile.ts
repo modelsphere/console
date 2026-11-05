@@ -1,4 +1,4 @@
-import type { SiteProfile } from "@swiss/lib/api";
+import type { GPUSpec, SiteProfile } from "@swiss/lib/api";
 
 export type CatalogError = "required" | "format" | "duplicate";
 
@@ -24,66 +24,130 @@ export function catalogErrors(catalogs: SiteProfile["catalogs"] = []): { name?: 
   });
 }
 
-// nodes.gpuProductAliases is product -> node label selectors. It is edited as
-// one row per selector: a map keyed by what is being typed loses the row the
-// moment a product name is briefly empty or matches another.
-export interface AliasRow {
-  product: string;
-  selector: string;
+// nodes.gpus as the forms hold it while typed: a product's label values as the
+// comma-separated text in its box.
+export interface GPURow {
+  vendor: string;
+  resource: string;
+  labelKey: string;
+  products: { product: string; values: string }[];
 }
 
-export type AliasError = "required" | "format" | "conflict";
-
-export function aliasRows(aliases?: Record<string, string[]>): AliasRow[] {
-  return Object.entries(aliases ?? {}).flatMap(([product, sels]) => sels.map((selector) => ({ product, selector })));
+export type GPUError = "required" | "duplicate" | "conflict";
+export interface GPURowErrors {
+  vendor?: GPUError;
+  resource?: GPUError;
+  labelKey?: GPUError;
+  products: { product?: GPUError; values?: GPUError }[];
 }
 
-// Back to the stored shape. A row with neither field is one just added and is
-// left out. Any other row is kept as typed, so a half-filled one is refused at
-// save rather than silently dropped.
-export function aliasMap(rows: AliasRow[]): Record<string, string[]> | undefined {
-  const out: Record<string, string[]> = {};
-  for (const r of rows) {
-    const product = r.product.trim();
-    const selector = r.selector.trim();
-    if (!product && !selector) continue;
-    (out[product] ??= []).push(selector);
-  }
-  return Object.keys(out).length ? out : undefined;
+export const emptyGPURow = (): GPURow => ({ vendor: "", resource: "", labelKey: "", products: [] });
+
+export function gpuRows(gpus?: GPUSpec[]): GPURow[] {
+  return (gpus ?? []).map((g) => ({
+    vendor: g.vendor ?? "",
+    resource: g.resource ?? "",
+    labelKey: g.labelKey ?? "",
+    products: (g.products ?? []).map((p) => ({ product: p.product ?? "", values: (p.values ?? []).join(", ") })),
+  }));
 }
 
-// A selector is key=value pairs joined by commas, every one required.
-function parseSelector(sel: string): Record<string, string> | undefined {
-  const labels: Record<string, string> = {};
-  for (const pair of sel.split(",")) {
-    const at = pair.indexOf("=");
-    const k = pair.slice(0, at).trim();
-    const v = pair.slice(at + 1).trim();
-    if (at < 0 || !k || !v || (k in labels && labels[k] !== v)) return undefined;
-    labels[k] = v;
-  }
-  return labels;
+const splitValues = (s: string) => s.split(",").map((v) => v.trim()).filter(Boolean);
+const blankProduct = (p: GPURow["products"][number]) => !p.product.trim() && !splitValues(p.values).length;
+const blankRow = (r: GPURow) => !r.vendor.trim() && !r.resource.trim() && !r.labelKey.trim() && r.products.every(blankProduct);
+
+// Back to the stored list, never undefined: [] is a site without GPUs. Rows
+// left blank are ones just added; anything else is kept as typed, so a
+// half-filled row is refused at save rather than silently dropped.
+export function gpuTable(rows: GPURow[]): GPUSpec[] {
+  return rows.filter((r) => !blankRow(r)).map((r) => {
+    const products = r.products.filter((p) => !blankProduct(p)).map((p) => {
+      const values = splitValues(p.values);
+      return values.length ? { product: p.product.trim(), values } : { product: p.product.trim() };
+    });
+    return { vendor: r.vendor.trim(), resource: r.resource.trim(), labelKey: r.labelKey.trim(), ...(products.length ? { products } : {}) };
+  });
 }
 
-// swissd's rules for aliases. A node matching two products takes the one with
-// more pairs, so two selectors of one size that a single node could satisfy
-// are refused: both rows are flagged.
-export function aliasErrors(rows: AliasRow[]): { product?: AliasError; selector?: AliasError }[] {
-  const parsed = rows.map((r) => (r.selector.trim() ? parseSelector(r.selector) : undefined));
-  const overlap = (a: Record<string, string>, b: Record<string, string>) =>
-    Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, v]) => !(k in b) || b[k] === v);
-  return rows.map((r, i) => {
-    const product = r.product.trim();
-    const selector = r.selector.trim();
-    const e: { product?: AliasError; selector?: AliasError } = {};
-    if (!product && !selector) return e;
-    if (!product) e.product = "required";
-    const mine = parsed[i];
-    if (!selector) e.selector = "required";
-    else if (!mine) e.selector = "format";
-    else if (rows.some((o, j) => parsed[j] && o.product.trim() !== product && overlap(mine, parsed[j]!))) e.selector = "conflict";
+// swissd's rules: vendor, resource and labelKey required, a resource listed
+// once, and under it a product listed once and a label value naming one product.
+export function gpuErrors(rows: GPURow[]): GPURowErrors[] {
+  const resources = new Set<string>();
+  return rows.map((r) => {
+    const e: GPURowErrors = { products: r.products.map(() => ({})) };
+    if (blankRow(r)) return e;
+    const resource = r.resource.trim();
+    if (!r.vendor.trim()) e.vendor = "required";
+    if (!resource) e.resource = "required";
+    else if (resources.has(resource)) e.resource = "duplicate";
+    resources.add(resource);
+    if (!r.labelKey.trim()) e.labelKey = "required";
+    const products = new Set<string>();
+    const names = new Map<string, string>();
+    r.products.forEach((p, i) => {
+      if (blankProduct(p)) return;
+      const product = p.product.trim();
+      const pe = e.products[i];
+      if (!product) pe.product = "required";
+      else if (products.has(product)) pe.product = "duplicate";
+      products.add(product);
+      const claim = (name: string, field: "product" | "values") => {
+        const other = names.get(name);
+        if (other !== undefined && other !== product) pe[field] ??= "conflict";
+        names.set(name, product);
+      };
+      if (product) claim(product, "product");
+      for (const v of splitValues(p.values)) claim(v, "values");
+    });
     return e;
   });
+}
+
+export const hasGPUErrors = (errs: GPURowErrors[]) =>
+  errs.some((e) => e.vendor || e.resource || e.labelKey || e.products.some((p) => p.product || p.values));
+
+// One entry as the dialog edits it, checked against the entries beside it. A
+// blank entry is not one just added here: it is missing everything.
+export function gpuEntryErrors(row: GPURow, others: GPUSpec[]): GPURowErrors {
+  const e = gpuErrors([...gpuRows(others), row]).at(-1)!;
+  return blankRow(row) ? { ...e, vendor: "required", resource: "required", labelKey: "required" } : e;
+}
+
+// The first entry of a vendor is its default resource.
+export const isVendorDefault = (rows: { vendor: string }[], i: number) =>
+  !!rows[i].vendor.trim() && rows.findIndex((r) => r.vendor.trim() === rows[i].vendor.trim()) === i;
+
+export interface Placed<T> {
+  entry: T;
+  // The entry's place in the stored list.
+  index: number;
+}
+
+// Entries in a remembered order of resources, so a table keeps its rows where
+// they were when it opened; one not in it goes last.
+export function inOrder<T extends { resource: string }>(rows: T[], order: string[]): Placed<T>[] {
+  const at = (r: string) => (order.includes(r) ? order.indexOf(r) : order.length);
+  return rows.map((entry, index) => ({ entry, index })).sort((a, b) => at(a.entry.resource) - at(b.entry.resource) || a.index - b.index);
+}
+
+// Entries by vendor, vendors in the order they first appear, each keeping its
+// entries' order.
+export function vendorGroups<T extends { vendor: string }>(rows: Placed<T>[]): { vendor: string; entries: Placed<T>[] }[] {
+  const groups = new Map<string, Placed<T>[]>();
+  for (const r of rows) {
+    const v = r.entry.vendor.trim();
+    groups.set(v, [...(groups.get(v) ?? []), r]);
+  }
+  return [...groups].map(([vendor, entries]) => ({ vendor, entries }));
+}
+
+// Moves row i ahead of its vendor's current default.
+export function makeVendorDefault<T extends { vendor: string }>(rows: T[], i: number): T[] {
+  const first = rows.findIndex((r) => r.vendor.trim() === rows[i].vendor.trim());
+  if (first < 0 || first >= i) return rows;
+  const next = rows.filter((_, j) => j !== i);
+  next.splice(first, 0, rows[i]);
+  return next;
 }
 
 // defaults.features, the switches a deploy starts from unless the variant sets

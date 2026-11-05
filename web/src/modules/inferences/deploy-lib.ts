@@ -4,13 +4,6 @@ import type { Form } from "@swiss/components/DeploySettings";
 
 // Ported from swiss's DeploySettings, where they are not exported.
 
-export function gpuOptions(supported?: string[], present?: string[]): string[] {
-  const has = new Set(present?.filter(Boolean) ?? []);
-  if (!supported?.length) return [...has].sort();
-  const both = supported.filter((p) => has.has(p));
-  return (both.length ? both : supported).slice().sort();
-}
-
 // openresty ignores anything outside (0, 1] and falls back to 0.4.
 export function fracOutOfRange(raw: string): boolean {
   const s = raw.trim();

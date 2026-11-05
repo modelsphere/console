@@ -4,6 +4,8 @@ import { DeployForm } from "./DeployForm";
 import { EMPTY, planRequest, type Form } from "@swiss/components/DeploySettings";
 import type { CacheCard } from "@swiss/lib/cache";
 import type { RouteOptions } from "@/modules/inferences/routeOptions";
+import en from "@/modules/inferences/locales/en-US.json";
+import zh from "@/modules/inferences/locales/zh-CN.json";
 
 const catalog: RouteOptions = {
   route: "model",
@@ -169,5 +171,51 @@ describe("image override", () => {
   it("offers nothing to pick between without a mirror", () => {
     const html = render({ ...EMPTY, serviceId: "model", image: image.catalog }, { catalog: image.catalog, site: image.catalog });
     expect(html).not.toContain("目录原始镜像");
+  });
+});
+
+describe("GPU products", () => {
+  it("says a product the variant does not list deploys as forced", () => {
+    const props = {
+      form: { ...EMPTY, gpuProducts: ["NVIDIA-H20"] }, onChange: () => {}, submitted: false, target: null, defaults: {},
+      gpuOptions: ["NVIDIA-H100-80GB-HBM3", "NVIDIA-H20"], gpuListed: ["NVIDIA-H100-80GB-HBM3"],
+      expanded: { basic: false, resources: true, routing: false, advanced: false }, onExpand: () => {}, idPrefix: "test-",
+    };
+    const notice = (html: string) => [en, zh].some((l) => html.includes(l.deploy.fields.gpuForced.replace("{products}", "NVIDIA-H20")));
+    expect(notice(renderToStaticMarkup(<DeployForm {...props} />))).toBe(true);
+    expect(notice(renderToStaticMarkup(<DeployForm {...props} form={{ ...EMPTY, gpuProducts: ["NVIDIA-H100-80GB-HBM3"] }} />))).toBe(false);
+  });
+});
+
+describe("GPU resource", () => {
+  const props = {
+    form: EMPTY, onChange: () => {}, submitted: false, target: null, defaults: {}, gpuOptions: [],
+    expanded: { basic: false, resources: true, routing: false, advanced: false }, onExpand: () => {}, idPrefix: "test-",
+  };
+  it("is a choice, auto first, where the vendor has several", () => {
+    const html = renderToStaticMarkup(<DeployForm {...props} gpuResources={["huawei.com/Ascend910", "volcano.sh/Ascend910B4-1"]} />);
+    expect([en, zh].some((l) => html.includes(l.deploy.fields.gpuResourceAuto.replace("{resource}", "huawei.com/Ascend910")))).toBe(true);
+  });
+  it("is read-only where it has one, and absent without GPUs", () => {
+    expect(renderToStaticMarkup(<DeployForm {...props} gpuResources={["huawei.com/Ascend910"]} />)).toMatch(/value="huawei.com\/Ascend910"[^>]*readOnly|readOnly[^>]*value="huawei.com\/Ascend910"/i);
+    expect(renderToStaticMarkup(<DeployForm {...props} />)).not.toContain("huawei.com/Ascend910");
+  });
+});
+
+describe("GPU capacity", () => {
+  const props = {
+    form: EMPTY, onChange: () => {}, submitted: false, target: null, defaults: {}, gpuOptions: [],
+    expanded: { basic: false, resources: true, routing: false, advanced: false }, onExpand: () => {}, idPrefix: "test-",
+  };
+  const hint = { perPod: 8, needNodes: 1, refreshing: false, onRefresh: () => {} };
+  const has = (html: string, key: "gpuCapacityNone" | "gpuCapacityUsageUnknown") => [en, zh].some((l) => html.includes(l.deploy.fields[key]));
+  it("says when no node has the resource and product", () => {
+    expect(has(renderToStaticMarkup(<DeployForm {...props} capacity={{ ...hint, value: { nodes: 0, gpus: 0, free: { gpus: 0, nodes: 0 } } }} />), "gpuCapacityNone")).toBe(true);
+  });
+  it("counts nodes and GPUs, and says when free is unknown", () => {
+    const html = renderToStaticMarkup(<DeployForm {...props} capacity={{ ...hint, value: { nodes: 3, gpus: 24 } }} />);
+    expect(has(html, "gpuCapacityNone")).toBe(false);
+    expect(has(html, "gpuCapacityUsageUnknown")).toBe(true);
+    expect(html).toContain("24");
   });
 });

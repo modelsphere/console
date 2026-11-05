@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader } from "@swiss/components/ui/card";
 import { HoverHint } from "@swiss/components/ui/hint";
 import { Input } from "@swiss/components/ui/input";
 import { Switch } from "@swiss/components/ui/switch";
-import { aliasErrors, aliasMap, aliasRows, catalogErrors, FEATURES, featureOn, withFeature, type AliasRow, type FeatureKey } from "@swiss/lib/profile";
+import { catalogErrors, FEATURES, featureOn, withFeature, type FeatureKey } from "@swiss/lib/profile";
+import { GpuTable } from "@swiss/components/GpuResources";
 import { cn } from "@swiss/lib/utils";
 
 const FEATURE_LABELS: Record<FeatureKey, { label: string; hint: string }> = {
@@ -75,11 +76,21 @@ export function ProfileForm({
         </Row>
         <Row
           top
-          label="GPU product aliases"
-          hint="For nodes a vendor install does not label with the catalog's GPU product name. Each row names a catalog product and a node label selector, every key=value of which must match. A node matching two products takes the one with more pairs. The GPU view then reports the catalog's name, and a deploy restricted to that product may land on the node."
+          label="GPU resources"
+          hint="The extended resources this cluster's nodes advertise, each with the node label telling its products apart. A vendor's first entry is what its pods request when no node carries the product asked for. Under a resource, a product lists the label values that also name it; its own name always does."
         >
-          <GpuAliases value={value.nodes?.gpuProductAliases} onChange={(gpuProductAliases) => setIn("nodes", { gpuProductAliases })} />
+          <GpuTable gpus={value.nodes?.gpus} onChange={(gpus) => setIn("nodes", { gpus })} />
         </Row>
+        {value.nodes?.gpuProductAliases && (
+          <Row label="GPU product aliases" hint="Ignored by swissd since GPU resources: name each product under its resource above.">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {Object.keys(value.nodes.gpuProductAliases).join(", ")} — ignored
+              <Button type="button" size="sm" variant="ghost" className="ms-auto" onClick={() => setIn("nodes", { gpuProductAliases: undefined })}>
+                Remove
+              </Button>
+            </div>
+          </Row>
+        )}
       </Section>
 
       <Section icon={Library} title="Catalog, charts and images" hint="Where the models come from, and the registries the catalog deliberately does not name.">
@@ -327,60 +338,6 @@ function Catalogs({
             {c.default ? "default" : "set default"}
           </button>
           <Remove label={`remove ${c.name || "catalog"}`} onClick={() => onChange(value.filter((_, j) => j !== i))} />
-        </div>
-      ))}
-    </List>
-  );
-}
-
-// GpuAliases names catalog GPU products by node labels. swissd refuses a row
-// missing either half, a selector that is not key=value pairs, and two products
-// one node could match with as many pairs -- flagged here so the save is not
-// the first to say.
-function GpuAliases({
-  value,
-  onChange,
-}: {
-  value?: Record<string, string[]>;
-  onChange: (v: Record<string, string[]> | undefined) => void;
-}) {
-  // Rows live here while typed; see aliasRows.
-  const [rows, setRows] = useState<AliasRow[]>(() => aliasRows(value));
-  const errs = aliasErrors(rows);
-  const push = (next: AliasRow[]) => {
-    setRows(next);
-    onChange(aliasMap(next));
-  };
-  const patch = (i: number, p: Partial<AliasRow>) => push(rows.map((r, j) => (i === j ? { ...r, ...p } : r)));
-
-  return (
-    <List
-      onAdd={() => setRows([...rows, { product: "", selector: "" }])}
-      addLabel="Add alias"
-      problem={
-        errs.some((e) => e.product || e.selector) &&
-        "Every alias needs a product and key=value labels, comma separated, and no node may match two products with as many labels; swissd will refuse the profile otherwise."
-      }
-    >
-      {rows.map((r, i) => (
-        <div key={i} className="grid items-center gap-2 sm:grid-cols-[12rem_minmax(0,1fr)_auto]">
-          <Input
-            className={cn(errs[i].product && BAD)}
-            aria-invalid={!!errs[i].product}
-            value={r.product}
-            onChange={(e) => patch(i, { product: e.target.value })}
-            placeholder="catalog GPU product"
-            aria-label="GPU product"
-          />
-          <Input
-            className={cn("font-mono text-xs", errs[i].selector && BAD)}
-            aria-invalid={!!errs[i].selector}
-            value={r.selector}
-            onChange={(e) => patch(i, { selector: e.target.value })}
-            placeholder="accelerator=huawei-Ascend910"
-            aria-label="node labels"
-          />
-          <Remove label={`remove ${r.product || "alias"}`} onClick={() => push(rows.filter((_, j) => j !== i))} />
         </div>
       ))}
     </List>

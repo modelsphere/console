@@ -34,7 +34,7 @@ import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVe
 import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { VariantCard } from "@swiss/components/VariantCard";
 import { Dialog } from "@swiss/components/ui/dialog";
-import { gpuCount, unlistedProducts, vendorProducts } from "@swiss/lib/gpu";
+import { deployCapacity, gpuCount, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { Button } from "@swiss/components/ui/button";
 import { comparison, formatUplift, reportLink, sharedVersion, variantKind, workloadSummary } from "@swiss/lib/catalog";
 import { isUninstalling } from "@swiss/lib/phase";
@@ -459,7 +459,13 @@ export function Upgrade() {
         onChange={update}
         cluster={cluster.data}
         supportedGPUs={keptPin?.requires.gpuProduct}
-        clusterGPUs={vendorProducts(nodes.data?.nodes, keptPin?.requires.vendor)}
+        clusterGPUs={pickableProducts(nodes.data?.nodes, keptPin?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
+        gpuResources={keptPin?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, keptPin.requires.vendor) : undefined}
+        capacity={
+          keptPin?.requires.gpus
+            ? { ...deployCapacity(keptPin.requires, form, nodes.data?.nodes, profile.data?.profile?.nodes?.gpus), refreshing: nodes.isFetching, onRefresh: () => nodes.refetch() }
+            : undefined
+        }
         localPathDefault={entry.data?.localPath}
         localPathPlaceholder={entry.data?.pathTemplate}
         image={imageOf(entry.data?.variant, entry.data?.imageRepository)}

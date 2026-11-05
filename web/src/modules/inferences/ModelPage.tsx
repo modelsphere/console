@@ -24,7 +24,7 @@ import {
 } from "@modelsphere/ui";
 import { MoreHorizontal, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
-import { api, type ModelVariant, type Node } from "@swiss/lib/api";
+import { api, type GPUSpec, type ModelVariant, type Node } from "@swiss/lib/api";
 import { comparison, formatUplift, httpLink, reportLink, sharedVersion, variantKind, workloadSummary, type Kind } from "@swiss/lib/catalog";
 import { gpuModels, vendorLabel } from "@swiss/lib/gpu";
 import { useCatalogChoice } from "@swiss/components/CatalogChoice";
@@ -54,6 +54,7 @@ export function ModelPage() {
   });
   const index = useQuery({ queryKey: ["catalog", choice.selected], queryFn: () => api.catalog(choice.selected), enabled: !!choice.selected });
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes, retry: false });
+  const gpus = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false }).data?.profile?.nodes?.gpus;
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
   const [deploying, setDeploying] = useState<DeployTarget | null>(null);
   const onDeploy = cluster.data?.allowDeploy ? (x: { model: string; catalog: string; variant?: string }) => setDeploying({ kind: "deploy", ...x }) : undefined;
@@ -188,6 +189,7 @@ export function ModelPage() {
                 uplift={cmp && cmp.optimized === v.id ? cmp : null}
                 report={cmp && cmp.optimized === v.id ? reportLink(site, name, cmp.report) : undefined}
                 nodes={nodes.data?.nodes}
+                gpus={gpus}
                 onDeploy={onDeploy ? () => onDeploy({ model: name, catalog: choice.selected, variant: v.id }) : undefined}
                 onEdit={writable ? () => setEditing({ kind: "edit", catalog: choice.selected, model: name, id: v.id }) : undefined}
                 onDelete={writable ? () => setDeleting({ catalog: choice.selected, model: name, id: v.id }) : undefined}
@@ -228,6 +230,7 @@ function VariantCard({
   uplift,
   report,
   nodes,
+  gpus,
   onDeploy,
   onEdit,
   onDelete,
@@ -239,13 +242,14 @@ function VariantCard({
   uplift: ReturnType<typeof comparison>;
   report?: string;
   nodes?: Node[];
+  gpus?: GPUSpec[];
   onDeploy?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
 }) {
   const t = useT();
   const r = v.requires;
-  const fit = fitness(v, nodes);
+  const fit = fitness(v, nodes, gpus);
   const docs = httpLink(v.link);
   return (
     <SectionCard

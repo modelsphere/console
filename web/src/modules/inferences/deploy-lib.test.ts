@@ -1,20 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { DiffResult, Plan } from "@swiss/lib/api";
-import { SECTIONS, chartChoice, defaultServiceId, extraValue, fracOutOfRange, gpuOptions, initialValue, pipelineState, serviceIdError, whatMoves } from "@/modules/inferences/deploy-lib";
+import { SECTIONS, chartChoice, defaultServiceId, extraValue, fracOutOfRange, initialValue, pipelineState, serviceIdError, whatMoves } from "@/modules/inferences/deploy-lib";
 
 const diff = (over: Partial<DiffResult>): DiffResult => ({ planHash: "h", changed: true, output: "", revision: 3, exists: true, ...over });
 
 describe("deploy sections", () => {
   it("keeps SLO and monitoring controls in routing instead of a separate section", () => {
     expect(SECTIONS).toEqual(["basic", "resources", "routing", "advanced"]);
-  });
-});
-
-describe("gpuOptions", () => {
-  it("offers the supported products the cluster has, else all supported", () => {
-    expect(gpuOptions(["H100", "A100"], ["A100", "L40"])).toEqual(["A100"]);
-    expect(gpuOptions(["H100"], ["L40"])).toEqual(["H100"]);
-    expect(gpuOptions(undefined, ["L40", "", "A100"])).toEqual(["A100", "L40"]);
   });
 });
 

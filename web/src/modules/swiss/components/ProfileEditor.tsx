@@ -43,6 +43,8 @@ export function ProfileEditor({
       qc.setQueryData(["profile"], saved);
       markSetUp(qc);
       qc.invalidateQueries({ queryKey: ["cluster"] });
+      // swissd reads nodes by the GPU table just saved.
+      qc.invalidateQueries({ queryKey: ["nodes"] });
       // Whichever half was not edited is now stale. A save that came back
       // without a profile did not parse, which the server refuses -- so this is
       // only ever the parsed result of what was just written.

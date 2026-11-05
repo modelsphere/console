@@ -10,6 +10,7 @@ import { HoverHint } from "@swiss/components/ui/hint";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { Code } from "@swiss/components/ui/code";
 import { toYaml } from "@swiss/lib/yaml";
+import { GpuTable } from "@swiss/components/GpuResources";
 
 export function SiteProfile() {
   const [editing, setEditing] = useState(false);
@@ -84,9 +85,9 @@ export function SiteProfile() {
           >
             <Row label="Namespace" value={p.namespace} fallback="the chart's default" />
             <Row label="GPUs per node" value={p.nodes?.gpusPerNode} />
-            {Object.entries(p.nodes?.gpuProductAliases ?? {}).map(([product, sels]) => (
-              <Row key={product} label={`${product} (GPU alias)`} value={sels.join(" or ")} mono />
-            ))}
+            {Object.keys(p.nodes?.gpuProductAliases ?? {}).length > 0 && (
+              <Row label="GPU aliases (ignored)" value={Object.keys(p.nodes!.gpuProductAliases!).join(", ")} />
+            )}
             <Row
               label="Scheduler"
               value={p.schedule?.schedulerName}
@@ -98,6 +99,15 @@ export function SiteProfile() {
               fallback="the chart's default"
             />
           </Section>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">GPU resources</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <GpuTable gpus={p.nodes?.gpus} />
+            </CardContent>
+          </Card>
 
           <Section
             title="Catalogs"

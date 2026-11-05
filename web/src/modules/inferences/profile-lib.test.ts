@@ -33,20 +33,21 @@ describe("profileErrors with catalogs", () => {
 });
 
 describe("nodes", () => {
+  const gpus = [{ vendor: "nvidia", resource: "nvidia.com/gpu", labelKey: "nvidia.com/gpu.product" }];
   const aliases = { "Ascend-910B3": ["accelerator=huawei-Ascend910"] };
 
-  it("keeps the aliases when GPUs per node is edited, and the reverse", () => {
-    expect(withNodes({ gpusPerNode: 8, gpuProductAliases: aliases }, { gpusPerNode: 16 })).toEqual({ gpusPerNode: 16, gpuProductAliases: aliases });
-    expect(withNodes({ gpusPerNode: 8, gpuProductAliases: aliases }, { gpusPerNode: undefined })).toMatchObject({ gpuProductAliases: aliases });
-    expect(withNodes({ gpusPerNode: 8 }, { gpuProductAliases: aliases })).toEqual({ gpusPerNode: 8, gpuProductAliases: aliases });
+  it("keeps the GPU table when GPUs per node is cleared, and an empty table as one", () => {
+    expect(withNodes({ gpusPerNode: 8, gpus }, { gpusPerNode: undefined })).toEqual({ gpusPerNode: undefined, gpus });
+    expect(withNodes({ gpusPerNode: 8, gpus }, { gpus: [] })).toEqual({ gpusPerNode: 8, gpus: [] });
+    expect(withNodes({ gpus, gpuProductAliases: aliases }, { gpuProductAliases: undefined })).toEqual({ gpus, gpuProductAliases: undefined });
     expect(withNodes({ gpusPerNode: 8 }, { gpusPerNode: undefined })).toBeUndefined();
   });
 
-  it("blocks the save on a bad alias", () => {
+  it("blocks the save on a bad GPU entry, and ignores aliases", () => {
     const p: SiteProfile = { name: "c", model: { pathTemplate: "/m" } };
-    expect(profileErrors({ ...p, nodes: { gpuProductAliases: aliases } })).toEqual([]);
-    expect(profileErrors({ ...p, nodes: { gpuProductAliases: { A: ["accelerator"] } } })).toEqual(["gpuAliases"]);
-    expect(profileErrors({ ...p, nodes: { gpuProductAliases: { A: ["a=1"], B: ["b=1"] } } })).toEqual(["gpuAliases"]);
+    expect(profileErrors({ ...p, nodes: { gpus, gpuProductAliases: { A: ["accelerator"] } } })).toEqual([]);
+    expect(profileErrors({ ...p, nodes: { gpus: [...gpus, { vendor: "ascend", resource: "nvidia.com/gpu", labelKey: "x" }] } })).toEqual(["gpus"]);
+    expect(profileErrors({ ...p, nodes: { gpus: [{ vendor: "ascend", resource: "r", labelKey: "" }] } })).toEqual(["gpus"]);
   });
 });
 
