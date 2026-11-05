@@ -1014,5 +1014,10 @@
     "assigned": "服务被占用",
     "description": "配置与资源释放由所属资源管理。",
     "anomaly": "归属信息不一致，请联系管理员核实。"
+  },
+  "serviceRelationship": {
+    "standalone": "独立服务",
+    "referenced": "被实验引用",
+    "owned": "实验所属服务"
   }
 }

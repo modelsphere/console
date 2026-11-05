@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EMPTY, planRequest } from "@swiss/components/DeploySettings";
 import type { Plan, PlanRequest } from "@swiss/lib/api";
-import { AdaptivePlanChangedError, composeAdaptivePlan, isAdaptiveOption, toggleAdaptive, withAdaptiveConcurrency } from "./adaptive-concurrency";
+import { AdaptivePlanChangedError, composeAdaptivePlan, composeReferencedPlan, isAdaptiveOption, toggleAdaptive, withAdaptiveConcurrency } from "./adaptive-concurrency";
 import { DeployForm } from "./components/DeployForm";
 import type { RouteDirective, RouteOptions } from "./routeOptions";
 
@@ -126,3 +126,23 @@ describe("unified adaptive concurrency settings", () => {
  }
  });
  });
+
+
+describe("referenced service UI protection", () => {
+ it("uses general live-plan composition and clears old dependent options", async () => {
+  const live = { ...validated, layers: { form: { modelRoute: { nginx: { values: { adaptive_cc: "true", adaptive_cc_ttl: "60", default_max: "42" } } } } } };
+  const updated = { ...live, layers: { form: { modelRoute: { nginx: { values: { adaptive_cc: "false", adaptive_cc_ttl: null, default_max: "42" } } } } } };
+  const compose = vi.fn().mockResolvedValue(updated);
+  expect(await composeReferencedPlan(live, { ...form, adaptiveCc: false }, options, compose)).toBe(updated);
+  expect(compose).toHaveBeenCalledWith({ reuseSource: true, fromRelease: live.release.name, namespace: live.release.namespace, overrides: { modelRoute: { nginx: { values: { adaptive_cc: "false", adaptive_cc_ttl: null } } } } });
+ });
+ it("allows the adaptive form layer to be created without other changes", async () => {
+  const live = { ...validated, layers: {} };
+  const updated = { ...live, layers: { form: { modelRoute: { nginx: { values: { adaptive_cc: "true" } } } } } };
+  expect(await composeReferencedPlan(live, { ...form, adaptiveCc: true }, options, vi.fn().mockResolvedValue(updated))).toBe(updated);
+ });
+ it("blocks a returned plan that changes source or ordinary values", async () => {
+  const changed = { ...validated, chart: { ...validated.chart, version: "unexpected" } };
+  await expect(composeReferencedPlan(validated, form, options, vi.fn().mockResolvedValue(changed))).rejects.toBeInstanceOf(AdaptivePlanChangedError);
+ });
+});

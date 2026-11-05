@@ -1025,5 +1025,10 @@
     "assigned": "Assigned service",
     "description": "Configuration and resource release are controlled by the owner.",
     "anomaly": "Ownership metadata is inconsistent. Ask an administrator to investigate."
+  },
+  "serviceRelationship": {
+    "standalone": "Standalone",
+    "referenced": "Referenced by experiment",
+    "owned": "Owned by experiment"
   }
 }

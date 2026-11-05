@@ -65,6 +65,8 @@ export interface Site {
   url: string;
 }
 
+export type CanaryState = "standalone" | "referenced" | "owned";
+
 export interface ServiceOwner {
   apiVersion: string;
   kind: string;
@@ -98,6 +100,7 @@ export interface Deployment {
   // names no route.
   route?: string;
   backend?: ApplyWith;
+  canaryState?: CanaryState;
   uid?:string;
  assignedTo?:ServiceAssignment;
  managedBy?: ServiceOwner;
@@ -597,7 +600,7 @@ export interface ApplyResult {
 }
 
 export interface PlanRequest {
-  adaptiveOnly?: boolean;
+  reuseSource?: boolean;
   // The configured catalog to compose from. An upgrade naming none stays on its
   // own; naming another moves it there, if the model there is the same one.
   catalog?: string;
@@ -692,6 +695,7 @@ export interface ReleaseStatus {
   planStatus?: PlanStatus;
   // Set when swiss manages the release; it never changes after install.
   backend?: ApplyWith;
+  canaryState?: CanaryState;
   uid?:string;
  assignedTo?:ServiceAssignment;
  managedBy?: ServiceOwner;

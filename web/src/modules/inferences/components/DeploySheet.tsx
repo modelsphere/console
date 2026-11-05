@@ -41,7 +41,8 @@ import { detailPath, sloEnabled } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, defaultServiceId, gpuOptions, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
-import { AdaptivePlanChangedError, composeAdaptivePlan, isAdaptiveOption } from "../adaptive-concurrency";
+import { serviceRelationship } from "../service-relationship";
+import { AdaptivePlanChangedError, composeAdaptivePlan, composeReferencedPlan, isAdaptiveOption } from "../adaptive-concurrency";
 import { readRouteOptions } from "@/modules/inferences/api";
 
 export type DeployTarget =
@@ -183,8 +184,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const namespace = upgrade ? target.namespace : form.namespace || cluster.data?.namespace || "";
   const live = useQuery({ queryKey: ["status", namespace, release], queryFn: () => api.status(namespace, release), enabled: (upgrade || step === "review") && !!release && !!namespace });
 
-  const adaptiveOnly = upgrade && !!live.data?.assignedTo?.verified && live.data.assignedTo.role === "arm" && !live.data.managedBy;
-  const assignmentBlocked = !!live.data?.managedBy || !!live.data?.assignedTo && (!live.data.assignedTo.verified || live.data.assignedTo.role === "arm" && !adaptiveOnly);
+  const adaptiveOnly = upgrade && serviceRelationship(live.data ?? {}).adaptiveOnly;
+  const assignmentBlocked = serviceRelationship(live.data ?? {}).owned || serviceRelationship(live.data ?? {}).assignmentLocked && !adaptiveOnly;
   const change = (patch: Partial<Form>) => setForm((f) => adaptiveOnly ? {
     ...f,
     adaptiveCc: patch.adaptiveCc ?? f.adaptiveCc,
@@ -195,12 +196,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     mutationFn: async () => {
       try {
         if (adaptiveOnly) {
-          const values: Record<string, string> = { adaptive_cc: String(form.adaptiveCc) };
-          if (form.adaptiveCc) {
-            if (form.adaptiveCcMinFrac.trim()) values.adaptive_cc_min_frac = form.adaptiveCcMinFrac.trim();
-            for (const row of form.nginxExtras) if (row.key.startsWith("adaptive_cc_") && row.value.trim()) values[row.key] = row.value.trim();
-          }
-          return await deployApi.plan({ adaptiveOnly: true, fromRelease: release, namespace, overrides: { modelRoute: { nginx: { values } } } });
+          if (!current.data) throw new AdaptivePlanChangedError();
+          return await composeReferencedPlan(current.data, form, routeOptions.data, deployApi.plan);
         }
         return await composeAdaptivePlan(planRequest(
           { ...form, serviceId: form.serviceId || (upgrade ? form.serviceId : defaultServiceId(target.model)) },
@@ -252,8 +249,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
 
   const readOnly = !cluster.data?.allowDeploy || assignmentBlocked || (upgrade && (live.isPending || !!live.error));
   // An upgrade waits for the profile too: it decides Monitor (planRequest).
-  const loading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
-  const error = cluster.error ?? current.error ?? entry.error;
+  const loading = cluster.isPending || (upgrade && current.isPending) || (!adaptiveOnly && (profile.isPending || entry.isPending));
+  const error = cluster.error ?? current.error ?? (adaptiveOnly ? null : entry.error);
   const keepOption = (label: string) => ({ value: KEEP, label });
 
   const targetFields = (

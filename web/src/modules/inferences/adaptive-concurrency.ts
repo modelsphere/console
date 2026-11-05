@@ -63,11 +63,33 @@ export function sameAdaptiveBaseline(before: Plan, after: Plan, options?: RouteO
   const layers = (plan: Plan) => {
     const copy = structuredClone(plan.layers ?? {});
     const values = routeValues(copy.form ?? {});
-    for (const key of Object.keys(values)) if (isAdaptiveOption(key, options)) delete values[key];
+    for (const key of Object.keys(values)) if (key === "adaptive_cc" || isAdaptiveOption(key, options)) delete values[key];
+    const form = object(copy.form);
+    const route = object(form.modelRoute);
+    const nginx = object(route.nginx);
+    if (!Object.keys(values).length) delete nginx.values;
+    if (!Object.keys(nginx).length) delete route.nginx;
+    if (!Object.keys(route).length) delete form.modelRoute;
+    if (!Object.keys(form).length) delete copy.form;
     return canonical(copy);
   };
   return before.release.name === after.release.name && before.release.namespace === after.release.namespace
     && before.chart.name === after.chart.name && before.chart.version === after.chart.version && before.chart.repo === after.chart.repo && before.chart.path === after.chart.path
     && before.engine === after.engine && before.profile === after.profile && layers(before) === layers(after)
     && (["catalog", "catalogName", "model", "variant", "version", "hf", "digest"] as const).every((key) => before.source[key] === after.source[key]);
+}
+
+
+export async function composeReferencedPlan(live: Plan, form: Form, options: RouteOptions | null | undefined, compose: (request: PlanRequest) => Promise<Plan>): Promise<Plan> {
+ const previous = routeValues(live.layers?.form ?? {});
+ const values: Tree = {};
+ for (const key of Object.keys(previous)) if (key === "adaptive_cc" || isAdaptiveOption(key, options)) values[key] = null;
+ values.adaptive_cc = String(form.adaptiveCc);
+ if (form.adaptiveCc) {
+  if (form.adaptiveCcMinFrac.trim()) values.adaptive_cc_min_frac = form.adaptiveCcMinFrac.trim();
+  for (const row of form.nginxExtras) if (isAdaptiveOption(row.key, options) && row.value.trim()) values[row.key] = row.value.trim();
+ }
+ const proposed = await compose({ reuseSource: true, fromRelease: live.release.name, namespace: live.release.namespace, overrides: { modelRoute: { nginx: { values } } } });
+ if (!sameAdaptiveBaseline(live, proposed, options)) throw new AdaptivePlanChangedError();
+ return proposed;
 }
