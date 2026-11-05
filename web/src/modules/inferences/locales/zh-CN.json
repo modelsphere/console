@@ -613,6 +613,12 @@
       "length": "最多 53 个字符"
     },
     "review": {
+      "discardYaml": "放弃 YAML 修改",
+      "returnToReview": "返回预览",
+      "yamlChanged": "生成的配置与 YAML 不一致：存在自动扩缩容控制的字段，或基础配置已更新。请返回表单重新生成计划。",
+      "editYaml": "编辑 YAML",
+      "saveYaml": "保存并预览变更",
+      "yamlHint": "编辑当前部署配置。保存后会重新生成部署计划并预检。",
       "title": "预览变更",
       "plan": "部署计划",
       "moves": "将变化的内容",

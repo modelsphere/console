@@ -624,6 +624,12 @@
       "length": "At most 53 characters"
     },
     "review": {
+      "discardYaml": "Discard YAML changes",
+      "returnToReview": "Back to review",
+      "yamlChanged": "The composed configuration differs from this YAML. A value is controlled by autoscaling or the underlying configuration has changed. Return to the form and compose a fresh plan.",
+      "editYaml": "Edit YAML",
+      "saveYaml": "Save and preview changes",
+      "yamlHint": "Edit the deployment values. Saving recomposes the plan and runs a new dry run.",
       "title": "Review",
       "plan": "Plan",
       "moves": "What moves",
