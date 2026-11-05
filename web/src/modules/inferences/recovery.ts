@@ -1,4 +1,5 @@
 import type { Plan, PlanRequest } from "@swiss/lib/api";
+import { layersOf } from "@swiss/components/Provenance";
 
 export interface RecoverySettings {
   enabled: boolean;
@@ -25,7 +26,7 @@ export function mergeValues(...layers: (Tree | undefined)[]): Tree {
 }
 
 export function planValues(plan: Plan): Tree {
-  return mergeValues(...["defaults", "catalog", "site", "derived", "form", "edit"].map((key) => plan.layers[key]));
+  return mergeValues(...layersOf(plan).map((key) => plan.layers[key]));
 }
 
 export function recoverySettings(values: Tree = {}): RecoverySettings {
@@ -56,7 +57,7 @@ export function withRecovery(request: PlanRequest, settings: RecoverySettings): 
   return { ...request, overrides: { ...request.overrides, continuationGateway: gateway } };
 }
 
-export type RecoveryError = "chart" | "cart" | "route" | "model" | "timeout" | "engine";
+export type RecoveryError = "chart" | "cart" | "route" | "model" | "timeout" | "engine" | "overridden";
 
 function supportedChart(chart: Plan["chart"]): boolean {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(chart.version);
@@ -69,11 +70,28 @@ function supportedChart(chart: Plan["chart"]): boolean {
   return true;
 }
 
-export function recoveryError(plan: Plan): RecoveryError | undefined {
+export function recoveryInputError(settings: RecoverySettings): "model" | "timeout" | undefined {
+  if (!settings.enabled) return;
+  if (!settings.model.trim()) return "model";
+  if (settings.idleTimeout.trim() && (!Number.isFinite(Number(settings.idleTimeout)) || Number(settings.idleTimeout) <= 0)) return "timeout";
+}
+
+function matchesRecovery(actual: RecoverySettings, expected: RecoverySettings): boolean {
+  if (actual.enabled !== expected.enabled) return false;
+  if (!expected.enabled) return true;
+  return actual.model.trim() === expected.model.trim()
+    && actual.resumeEnabled === expected.resumeEnabled
+    && actual.bufferToolCalls === expected.bufferToolCalls
+    && (!expected.idleTimeout.trim() || Number(actual.idleTimeout) === Number(expected.idleTimeout));
+}
+
+export function recoveryError(plan: Plan, expected?: RecoverySettings): RecoveryError | undefined {
   const values = planValues(plan);
   const gateway = object(values.continuationGateway);
+  const actual = recoverySettings(values);
+  if (actual.configured && !supportedChart(plan.chart)) return "chart";
+  if (expected && !matchesRecovery(actual, expected)) return "overridden";
   if (gateway.enabled !== true) return;
-  if (!supportedChart(plan.chart)) return "chart";
   if (object(values.cart).enabled !== true) return "cart";
   if (object(values.modelRoute).enabled !== true) return "route";
   const config = object(gateway.config);

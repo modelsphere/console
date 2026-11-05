@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { Plan } from "@swiss/lib/api";
+import type { Plan, PlanRequest } from "@swiss/lib/api";
 import { EMPTY, planRequest } from "@swiss/components/DeploySettings";
+import { composeAdaptivePlan } from "./adaptive-concurrency";
 import { RecoveryFields } from "./components/RecoveryFields";
-import { mergeValues, planValues, recoveryError, recoverySettings, withRecovery } from "./recovery";
+import { mergeValues, planValues, recoveryError, recoveryInputError, recoverySettings, withRecovery } from "./recovery";
 
 const plan = (layers: Plan["layers"], chart = { name: "sglang", version: "0.8.11" }): Plan => ({
   apiVersion: "swiss.modelsphere.dev/v1alpha1", release: { name: "model", namespace: "models" },
@@ -84,4 +85,60 @@ describe("generation recovery deployment", () => {
     expect(on).toContain('value="glm-5.3"');
     expect(on).toContain("缓冲工具调用");
   });
+});
+
+describe("recovery review regressions", () => {
+  it("includes later plan layers when validating the final recovery configuration", () => {
+    expect(recoveryError(plan({ form: enabled, autoscale: { cart: { enabled: false } } }))).toBe("cart");
+  });
+
+  it("rejects advanced YAML that overrides the operator's recovery choice", () => {
+    const expected = { ...recoverySettings(enabled), enabled: false };
+    expect(recoveryError(plan({ form: enabled }), expected)).toBe("overridden");
+    expect(recoveryError(plan({ form: enabled }), { ...expected, enabled: true, model: "kimi-k3" })).toBe("overridden");
+  });
+
+  it("rejects disabled gateway values retained on a chart without that section", () => {
+    expect(recoveryError(plan({ form: { continuationGateway: { enabled: false } } }, { name: "sglang", version: "0.8.0" }))).toBe("chart");
+  });
+
+  it("keeps intentional detection-only mode valid", () => {
+    const settings = { ...recoverySettings(enabled), resumeEnabled: false };
+    const request = withRecovery({}, settings);
+    expect(recoveryError(plan({ form: { ...enabled, ...request.overrides } }), settings)).toBeUndefined();
+  });
+});
+
+
+describe("recovery inputs and advanced overrides", () => {
+  it("rejects invalid input before requesting a plan", () => {
+    expect(recoveryInputError({ ...recoverySettings(), enabled: true })).toBe("model");
+    for (const idleTimeout of ["0", "-1", "invalid", "Infinity"]) {
+      expect(recoveryInputError({ ...recoverySettings(enabled), idleTimeout })).toBe("timeout");
+    }
+    expect(recoveryInputError({ ...recoverySettings(enabled), idleTimeout: "" })).toBeUndefined();
+  });
+
+  it("checks model, timeout and both execution switches after advanced YAML", () => {
+    const expected = recoverySettings(enabled);
+    for (const config of [{ continuationModel: "kimi-k3" }, { stallIdleTimeoutSeconds: 60 }, { bufferToolCalls: false }, { continuationEnabled: false }]) {
+      expect(recoveryError(plan({ form: enabled, edit: { continuationGateway: { config } } }), expected)).toBe("overridden");
+    }
+    expect(recoveryError(plan({ form: enabled }), { ...expected, idleTimeout: "30.00" })).toBeUndefined();
+  });
+});
+
+
+it("preserves recovery through both adaptive upgrade compositions", async () => {
+  const form = { ...EMPTY, cart: true, modelRoute: true, adaptiveCc: false };
+  const settings = recoverySettings(enabled);
+  const request = withRecovery(planRequest(form, { model: "weights", fromRelease: "model" }), settings);
+  const first = plan({ form: mergeValues(request.overrides, { modelRoute: { nginx: { values: { adaptive_cc_min: "80" } } } }) });
+  const cleaned = plan({ form: request.overrides! });
+  const compose = vi.fn<(request: PlanRequest) => Promise<Plan>>().mockResolvedValueOnce(first).mockResolvedValueOnce(cleaned);
+  const result = await composeAdaptivePlan(request, form, null, compose);
+  expect(compose).toHaveBeenCalledTimes(2);
+  expect(compose.mock.calls[1][0].overrides?.continuationGateway).toEqual(request.overrides?.continuationGateway);
+  expect(compose.mock.calls[1][0].fromRelease).toBeUndefined();
+  expect(recoveryError(result, settings)).toBeUndefined();
 });
