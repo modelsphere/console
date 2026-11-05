@@ -28,6 +28,7 @@ export function Model() {
   // Node facts are a separate, non-blocking query: a variant list is still
   // worth showing when the fit check cannot be computed.
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes });
+  const gpus = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false }).data?.profile?.nodes?.gpus;
 
   if (choice.isPending) return <Loading what="catalogs" />;
   if (!selected) {
@@ -84,6 +85,7 @@ export function Model() {
               report={cmp?.optimized === v.id ? report : undefined}
               workloads={cmp?.optimized === v.id && cmp.workloads.length ? cmp.workloads : undefined}
               nodes={nodes.data?.nodes}
+              gpus={gpus}
               action={
                 <Link to={withCatalog(`/deploy/${encodeURIComponent(m.name)}?variant=${encodeURIComponent(v.id)}`, selected)}>
                   <Button size="sm">

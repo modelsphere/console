@@ -25,6 +25,7 @@ import { useModulePath } from "@/shell";
 import { api, type SiteProfile } from "@swiss/lib/api";
 import { toYaml } from "@swiss/lib/yaml";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
+import { GpuTable } from "@/modules/inferences/components/GpuResources";
 import { useT } from "@/modules/inferences/i18n";
 import { ProfileEditorBody, SaveButton, useProfileEditor } from "@/modules/inferences/components/ProfileEditor";
 import { catalogTokenKey, listSecrets } from "@/modules/inferences/catalog-write-api";
@@ -119,8 +120,11 @@ function ProfileView({ p }: { p: SiteProfile }) {
         { label: f("scheduler"), value: v(p.schedule?.schedulerName) },
         { label: f("priorityClass"), value: v(p.schedule?.priorityClassName) },
         { label: f("gpusPerNode"), value: v(p.nodes?.gpusPerNode) },
-        { label: f("gpuAliases"), value: aliases(p.nodes?.gpuProductAliases) },
+        ...(p.nodes?.gpuProductAliases ? [{ label: f("gpuAliasesIgnoredLabel"), value: aliases(p.nodes.gpuProductAliases) }] : []),
       ])}
+      <SectionCard title={f("gpus")}>
+        <GpuTable gpus={p.nodes?.gpus} />
+      </SectionCard>
       {card("catalog", [
         {
           label: f("catalogs"),

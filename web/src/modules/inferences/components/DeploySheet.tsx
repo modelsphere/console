@@ -32,13 +32,13 @@ import { EMPTY, formFromPlan, planRequest } from "../deployment-settings";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
 import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
-import { gpuShort } from "@swiss/lib/gpu";
+import { deployCapacity, gpuShort, pickableProducts, productChoices, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { isChartRange, movableCatalogs } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
-import { SECTIONS, chartChoice, defaultServiceId, gpuOptions, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
+import { SECTIONS, chartChoice, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
 import { AdaptivePlanChangedError, composeAdaptivePlan } from "../adaptive-concurrency";
@@ -183,6 +183,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const namespace = upgrade ? target.namespace : form.namespace || cluster.data?.namespace || "";
   const live = useQuery({ queryKey: ["status", namespace, release], queryFn: () => api.status(namespace, release), enabled: step === "review" && !!release && !!namespace });
 
+  // A product the variant does not list is one swissd takes only as forced.
+  const forceGpuProducts = unlistedProducts(v?.requires.gpuProduct, form.gpuProducts).length > 0;
   const change = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
   const compose = useMutation({
     mutationFn: async () => {
@@ -190,8 +192,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         return await composeAdaptivePlan(planRequest(
           { ...form, serviceId: form.serviceId || (upgrade ? form.serviceId : defaultServiceId(target.model)) },
           upgrade
-            ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported }
-            : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported },
+            ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts }
+            : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts },
           profile.data?.profile,
         ), form, routeOptions.data, deployApi.plan, catalogName);
       } catch (error) {
@@ -423,7 +425,14 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               target={targetFields}
               cluster={cluster.data}
               defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), cache }}
-              gpuOptions={gpuOptions(v?.requires.gpuProduct, nodes.data?.nodes.map((n) => n.GPUProduct))}
+              gpuOptions={productChoices(v?.requires.gpuProduct, pickableProducts(nodes.data?.nodes, v?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource), form.gpuProducts)}
+              gpuListed={v?.requires.gpuProduct}
+              gpuResources={v?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, v.requires.vendor) : undefined}
+              capacity={
+                v?.requires.gpus
+                  ? { ...deployCapacity(v.requires, form, nodes.data?.nodes, profile.data?.profile?.nodes?.gpus), refreshing: nodes.isFetching, onRefresh: () => nodes.refetch() }
+                  : undefined
+              }
               expanded={expanded}
               onExpand={(s, o) => setExpanded((e) => ({ ...e, [s]: o }))}
               routeOptions={routeOptions.isSuccess ? routeOptions.data : undefined}

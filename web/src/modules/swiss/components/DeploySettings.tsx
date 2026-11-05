@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { ChevronDown, Plus, TriangleAlert, X } from "lucide-react";
+import { ChevronDown, Plus, RefreshCw, TriangleAlert, X } from "lucide-react";
 import type { ApplyFlags, ClusterInfo, Plan, PlanRequest, ProfileResponse, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
-import { productChoices, unlistedProducts } from "@swiss/lib/gpu";
+import { productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
 import {
@@ -34,6 +34,8 @@ export interface Toleration {
 export interface Form {
   edits: string;
   gpuProducts: string[];
+  // The resource picked among the vendor's; empty lets swissd pick.
+  gpuResource: string;
   tolerations: Toleration[];
   priorityClassName: string;
   schedulerName: string;
@@ -91,6 +93,7 @@ export interface Form {
 export const EMPTY: Form = {
   edits: "",
   gpuProducts: [],
+  gpuResource: "",
   tolerations: [],
   priorityClassName: "",
   schedulerName: "",
@@ -181,6 +184,8 @@ export function DeploySettings({
   image,
   supportedGPUs,
   clusterGPUs,
+  gpuResources,
+  capacity,
   cache,
   // Upgrade locks the namespace: it names the helm release being upgraded, and
   // changing it does not move the release, it installs a second one.
@@ -210,6 +215,11 @@ export function DeploySettings({
   // first does not name is marked, and selecting it is a forced deploy.
   supportedGPUs?: string[];
   clusterGPUs?: string[];
+  // The resources the site lists for the variant's vendor, its default first;
+  // absent for a variant without GPUs or a profile this page cannot read.
+  gpuResources?: string[];
+  // What the picked resource and products can land on; absent without GPUs.
+  capacity?: CapacityProps;
   cache?: CacheCard;
 }) {
   const set =
@@ -685,6 +695,32 @@ export function DeploySettings({
               )}
             </Row>
           )}
+          {gpuResources && (
+            <Row
+              label="GPU resource"
+              note={gpuResources.length > 1 ? "the extended resource pods request; auto takes the one the products' nodes report" : "the only one the site lists for this vendor"}
+            >
+              {gpuResources.length > 1 ? (
+                <select
+                  className="h-9 w-full rounded-md border bg-background px-3 font-mono text-xs"
+                  value={form.gpuResource}
+                  onChange={(e) => onChange({ gpuResource: e.target.value })}
+                  aria-label="GPU resource"
+                >
+                  <option value="">auto · default {gpuResources[0]}</option>
+                  {[...new Set([...gpuResources, form.gpuResource].filter(Boolean))].map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              ) : gpuResources.length === 1 ? (
+                <span className="font-mono text-xs text-muted-foreground">{gpuResources[0]}</span>
+              ) : (
+                <span className="text-xs text-warning">the site profile lists no GPU resource for this vendor</span>
+              )}
+            </Row>
+          )}
           <Row label="GPU product" note="restricts scheduling to these products; any one will do">
             <Products
               selected={form.gpuProducts}
@@ -693,6 +729,11 @@ export function DeploySettings({
               listed={supportedGPUs}
             />
           </Row>
+          {capacity && (
+            <Row label="On this cluster" note="nodes with this resource and product, and what is free on them">
+              <CapacityLine {...capacity} />
+            </Row>
+          )}
           <Row label="Tolerations" note="lets this deploy land on tainted GPU nodes">
             <Tolerations
               rows={form.tolerations}
@@ -1146,8 +1187,60 @@ function Select({
 }
 
 // Products offers every card of the variant's vendor on this cluster, the ones
-// the catalog lists first and the rest after an "untested" mark: the catalog
+// the catalog lists first and the rest after an "unverified" mark: the catalog
 // does not know what is racked here.
+export interface CapacityProps {
+  // Absent until the nodes are read.
+  value?: GPUCapacity;
+  perPod: number;
+  needNodes: number;
+  refreshing: boolean;
+  onRefresh: () => void;
+}
+
+// Nodes and GPUs the picked resource and products can land on, total and free.
+// No node is a resource and product that do not meet: the pods would stay Pending.
+function CapacityLine({ value, perPod, needNodes, refreshing, onRefresh }: CapacityProps) {
+  const short = !!value?.free && value.free.nodes < needNodes;
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+  return (
+    <div className="flex w-full items-center gap-2 text-xs">
+      <span className={cn("flex-1", value && (value.nodes === 0 || short) ? "text-warning" : "text-muted-foreground")}>
+        {!value ? (
+          "nodes not read"
+        ) : value.nodes === 0 ? (
+          "no node has this resource and product: the pods would stay Pending"
+        ) : (
+          <>
+            this resource and product: {plural(value.nodes, "node")} / {value.gpus} GPUs
+            {" · "}
+            {value.free ? (
+              <span
+                className="cursor-help underline decoration-dotted underline-offset-2"
+                title={`Available: GPUs free on schedulable nodes, and the nodes among them with at least ${perPod} free, a pod's worth`}
+              >
+                available {plural(value.free.nodes, "node")} / {value.free.gpus} GPUs
+              </span>
+            ) : (
+              "free GPUs unknown: the cluster-wide pod list is not readable"
+            )}
+            {short && ` · needs ${plural(needNodes, "available node")}`}
+          </>
+        )}
+      </span>
+      <button
+        type="button"
+        aria-label="refresh nodes"
+        disabled={refreshing}
+        onClick={onRefresh}
+        className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+      >
+        <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+      </button>
+    </div>
+  );
+}
+
 function Products({
   selected,
   onChange,
@@ -1166,19 +1259,19 @@ function Products({
       </span>
     );
   }
-  const untested = (o: string) => unlistedProducts(listed, [o]).length > 0;
-  const supported = options.filter((o) => !untested(o));
-  const others = options.filter(untested);
+  const unverified = (o: string) => unlistedProducts(listed, [o]).length > 0;
+  const supported = options.filter((o) => !unverified(o));
+  const others = options.filter(unverified);
   const forced = unlistedProducts(listed, selected);
   const chip = (o: string) => {
     const active = selected.includes(o);
-    const off = untested(o);
+    const off = unverified(o);
     return (
       <button
         key={o}
         type="button"
         aria-pressed={active}
-        title={off ? "untested with this variant" : undefined}
+        title={off ? "unverified with this variant" : undefined}
         onClick={() => onChange(active ? selected.filter((p) => p !== o) : [...selected, o])}
         className={cn(
           "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors",
@@ -1201,7 +1294,7 @@ function Products({
         )}
         {others.length > 0 && (
           <span className="inline-flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] text-muted-foreground">untested</span>
+            <span className="text-[11px] text-muted-foreground">unverified</span>
             {others.map(chip)}
           </span>
         )}
@@ -1209,7 +1302,7 @@ function Products({
       {forced.length > 0 ? (
         <p className="flex items-center gap-1.5 text-xs text-warning">
           <TriangleAlert className="size-3.5 shrink-0" />
-          {forced.join(", ")} untested with this variant, deployed as forced
+          {forced.join(", ")} unverified with this variant, deployed as forced
         </p>
       ) : (
         selected.length === 0 && <p className="text-xs text-muted-foreground">none selected: any supported product</p>
@@ -1623,6 +1716,7 @@ export function planRequest(
     editsYAML: f.edits.trim() || undefined,
     gpuProducts: f.gpuProducts.length ? f.gpuProducts : undefined,
     forceGpuProducts: f.gpuProducts.length > 0 && opts.forceGpuProducts ? true : undefined,
+    gpuResource: f.gpuResource || undefined,
     variant: opts.variant || undefined,
     release: f.serviceId.trim() || undefined,
     namespace: f.namespace.trim() || undefined,
@@ -1680,6 +1774,8 @@ export function formFromPlan(plan: Plan): Form {
     // The product sits under the vendor's own label key, so find it by suffix
     // rather than guessing which vendor this variant was built for.
     gpuProducts: gpuProductsOf(o),
+    // The resource the release runs on, so an upgrade stays on it.
+    gpuResource: String(((plan.layers?.derived?.model ?? {}) as Record<string, unknown>).gpuResource ?? ""),
     tolerations: tolerationsOf(o),
     replicaCount: str("replicaCount"),
     route: str("modelRoute.nginx.route"),

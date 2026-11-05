@@ -115,3 +115,13 @@ describe("imageChoices", () => {
     expect(imageChoices({ catalog: "docker.io/a:1", site: "docker.io/a:1" })).toEqual([]);
   });
 });
+
+describe("GPU resource", () => {
+  it("is sent only when picked, and an upgrade starts on the resource the release runs on", () => {
+    expect(planRequest({ ...EMPTY, gpuResource: "volcano.sh/Ascend910B4-1" }, { model: "m" }).gpuResource).toBe("volcano.sh/Ascend910B4-1");
+    expect(planRequest(EMPTY, { model: "m" })).not.toHaveProperty("gpuResource", expect.anything());
+    const plan = (layers: Plan["layers"]) => ({ release: { name: "r", namespace: "n" }, layers }) as unknown as Plan;
+    expect(formFromPlan(plan({ derived: { model: { gpuResource: "volcano.sh/Ascend910B4-1" } } })).gpuResource).toBe("volcano.sh/Ascend910B4-1");
+    expect(formFromPlan(plan({})).gpuResource).toBe("");
+  });
+});
