@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Plan, SiteProfile } from "@swiss/lib/api";
 import { EMPTY as SWISS_EMPTY } from "@swiss/components/DeploySettings";
 import { EMPTY, formFromPlan, planRequest } from "./deployment-settings";
@@ -56,7 +57,11 @@ describe("Monitor", () => {
   });
 
   it("shows the monitor ConfigMap in the site profile beside the nginx route fields", () => {
-    const html = renderToStaticMarkup(<ProfileForm value={{ name: "site", model: { pathTemplate: "/models/{{name}}" }, route: { monitorConfigMap: "models/monitor", nginxConfigMap: "models/routes" } }} onChange={() => {}} submitted={false} />);
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <ProfileForm value={{ name: "site", model: { pathTemplate: "/models/{{name}}" }, route: { monitorConfigMap: "models/monitor", nginxConfigMap: "models/routes" } }} onChange={() => {}} submitted={false} />
+      </QueryClientProvider>,
+    );
     expect(html).toContain("models/monitor");
     expect(html).toContain("models/routes");
   });

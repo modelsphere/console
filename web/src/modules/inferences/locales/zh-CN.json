@@ -773,11 +773,41 @@
       "priorityClass": "优先级类",
       "gpusPerNode": "每节点 GPU 数",
       "gpusPerNodeHint": "一个满配 GPU 节点的卡数，用来推算 cache.maxSlotsPerNode",
-      "gpuAliases": "GPU 型号别名",
-      "gpuAliasesHint": "用于厂商安装未按模型库 GPU 型号名打标签的节点。每行填写一个模型库 GPU 型号和一个节点标签选择器，所有 key=value 都须匹配。同时匹配两个型号的节点取匹配对数更多的那个",
-      "gpuAliasProduct": "模型库 GPU 型号",
-      "gpuAliasSelector": "节点标签",
-      "gpuAliasAdd": "添加别名",
+      "gpus": "GPU 资源",
+      "gpusHint": "本集群节点上报的扩展资源，以及区分其下型号的节点标签。同一厂商的第一项，是没有节点带所需型号时 Pod 申请的资源。资源下的每个型号可列出也表示它的标签值；型号名本身总是匹配",
+      "gpusNone": "无：本站点没有 GPU 资源，GPU 规格会被拒绝部署。",
+      "gpuVendor": "厂商",
+      "gpuResource": "资源",
+      "gpuLabelKey": "型号标签",
+      "gpuLabelKeyHint": "值为型号名的节点标签，例如 nvidia.com/gpu.product",
+      "gpuProduct": "模型库 GPU 型号",
+      "gpuValues": "其他标签值",
+      "gpuValuesHint": "型号标签上也表示该型号的其他值，逗号分隔",
+      "gpuClusterProducts": "集群中的型号",
+      "gpuNoNodes": "没有节点上报",
+      "gpuNodesReadAt": "节点读取于 {time}，点击刷新重新读取",
+      "gpuScan": "扫描节点",
+      "gpuScanHint": "按当前编辑的条目读取所有节点。调用开销大，仅在点击时执行。",
+      "gpuScanIdle": "扫描可在保存前查看此条目在集群节点上识别出的型号。",
+      "gpuScanSummary": "{nodes} 个节点有此资源，共 {gpus} 张卡",
+      "gpuScanCount": "{nodes} 个节点 · {gpus} 张卡",
+      "gpuScanValues": "标签值 {values}",
+      "gpuScanNone": "没有节点可分配 {resource}",
+      "gpuScanUnlabelled": "{nodes} 个节点没有 {label} 标签值",
+      "gpuScanStale": "扫描后已修改，请重新扫描。",
+      "gpuUnlabelled": "{n} 个节点无型号标签",
+      "gpuShow": "详情",
+      "gpuNoDefinedProducts": "未定义：节点标签值即为型号名。",
+      "gpuProductAdd": "添加型号",
+      "gpuAdd": "添加 GPU 资源",
+      "gpuEdit": "编辑 GPU 资源",
+      "gpuDefault": "默认",
+      "gpuDefaultHint": "没有节点带所需型号时，{vendor} 的 Pod 申请此资源",
+      "gpuMakeDefault": "设为默认",
+      "gpuDefaultColumnHint": "每个厂商的默认资源：没有节点带所需型号时 Pod 申请的资源。有多个资源的厂商需选择其一。",
+      "gpuAliasesIgnored": "此配置仍有 GPU 型号别名，swissd 已不再使用。请在上方对应资源下填写型号。",
+      "gpuAliasesRemove": "移除别名",
+      "gpuAliasesIgnoredLabel": "GPU 型号别名（已忽略）",
       "chartDefault": "chart 默认值",
       "catalogs": "模型目录",
       "catalogsHint": "每项是 https 地址或绝对路径，以名字区分。配置多个时页面默认打开标记为默认的那个；这里的设置优先于 swissd 的配置文件。推荐 schema v2；v1 是只读的旧版索引，未设置 schema 时按 v1 读取",
@@ -873,15 +903,10 @@
           "duplicate": "相同 schema 下已有此地址"
         }
       },
-      "gpuAlias": {
-        "product": {
-          "required": "请填写型号"
-        },
-        "selector": {
-          "required": "请填写标签",
-          "format": "逗号分隔的 key=value",
-          "conflict": "节点可能同时匹配另一个型号，请再加一个标签"
-        }
+      "gpu": {
+        "required": "必填",
+        "duplicate": "重复填写",
+        "conflict": "该值已表示此资源下的另一个型号"
       }
     }
   },

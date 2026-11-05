@@ -276,6 +276,27 @@ export interface RouteAuth {
   headers?: Record<string, string>;
 }
 
+// One GPU resource the site's nodes advertise. A vendor's first entry is its
+// default resource.
+export interface GPUSpec {
+  vendor: string;
+  resource: string;
+  // The node label telling products apart under resource.
+  labelKey: string;
+  // Label values that also name a product; the product's own name always does.
+  products?: { product: string; values?: string[] }[];
+}
+
+// What one nodes.gpus entry, saved or not, reads on the cluster's nodes.
+export interface GPUScan {
+  resource: string;
+  nodes: number;
+  gpus: number;
+  // values: the label values that named the product.
+  products: { product: string; values?: string[]; nodes: number; gpus: number }[];
+  unlabelled: { nodes: number; gpus: number };
+}
+
 export interface SiteProfile {
   name: string;
   namespace?: string;
@@ -320,8 +341,9 @@ export interface SiteProfile {
   defaults?: { features?: { cart?: boolean; serviceMonitor?: boolean; sloRequirement?: boolean; scaler?: boolean } };
   nodes?: {
     gpusPerNode?: number;
-    // Catalog GPU product -> node label selectors ("key=value[,key=value]"),
-    // for nodes a vendor install does not label with the catalog's name.
+    // Required by swissd; [] is a site without GPUs.
+    gpus?: GPUSpec[];
+    // Ignored by swissd since nodes.gpus, though still served and saved.
     gpuProductAliases?: Record<string, string[]>;
   };
   sites?: Site[];
@@ -471,6 +493,8 @@ export const api = {
   chartVersions: (name: string, opts: { catalog?: string; version?: string; variant?: string }) =>
     get<ChartVersions>(`/api/catalog/${encodeURIComponent(name)}/chart-versions` + query(opts)),
   nodes: () => get<NodesResponse>("/api/nodes"),
+  // Lists every node: call it on request, never on a timer.
+  scanNodeGPUs: (g: GPUSpec) => post<GPUScan>("/api/nodes/gpus", g),
   profile: () => get<ProfileResponse>("/api/profile"),
   runs: (f: RunFilter = {}) => {
     const q = new URLSearchParams();

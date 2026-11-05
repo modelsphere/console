@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { productChoices, unlistedProducts, vendorProducts } from "@swiss/lib/gpu";
+import { productChoices, productClass, resourceProducts, unlistedProducts, vendorProducts } from "@swiss/lib/gpu";
 
 const nodes = [
   { GPUProduct: "NVIDIA-H100-80GB-HBM3", GPUResource: "nvidia.com/gpu" },
@@ -18,6 +18,35 @@ describe("vendorProducts", () => {
 
   it("keeps a node whose resource is unknown, as swissd does", () => {
     expect(vendorProducts([{ GPUProduct: "X" }], "ascend")).toEqual(["X"]);
+  });
+
+  it("reads a resource's vendor from the site profile's GPU table", () => {
+    const volcano = { GPUProduct: "Ascend-910B4", GPUResource: "volcano.sh/Ascend910B4-1" };
+    const gpus = [
+      { vendor: "nvidia", resource: "nvidia.com/gpu", labelKey: "nvidia.com/gpu.product" },
+      { vendor: "ascend", resource: "volcano.sh/Ascend910B4-1", labelKey: "volcano.sh/npu-name" },
+    ];
+    expect(vendorProducts([...nodes, volcano], "ascend")).toEqual(["Ascend-910B3"]);
+    expect(vendorProducts([...nodes, volcano], "ascend", gpus)).toEqual(["Ascend-910B3", "Ascend-910B4"]);
+    expect(vendorProducts([volcano], "nvidia", gpus)).toEqual([]);
+  });
+});
+
+describe("resourceProducts", () => {
+  it("is the canonical products nodes report under a resource, and the nodes reporting none", () => {
+    expect(resourceProducts(nodes, "nvidia.com/gpu")).toEqual({ products: ["NVIDIA-H100-80GB-HBM3", "NVIDIA-H20"], unlabelled: 0 });
+    expect(resourceProducts([...nodes, { GPUProduct: "", GPUResource: "huawei.com/Ascend910" }], "huawei.com/Ascend910")).toEqual({ products: ["Ascend-910B3"], unlabelled: 1 });
+    expect(resourceProducts(nodes, "amd.com/gpu")).toEqual({ products: [], unlabelled: 0 });
+    expect(resourceProducts(undefined, "nvidia.com/gpu")).toEqual({ products: [], unlabelled: 0 });
+  });
+});
+
+describe("productClass", () => {
+  it("gives the usual cards their own preset color, and anything else a stable one", () => {
+    const presets = ["NVIDIA-H100-80GB-HBM3", "NVIDIA-H200", "NVIDIA-H20", "NVIDIA-B300-SXM6-AC", "NVIDIA-GB300", "Ascend-910B3", "Ascend-910B4"].map(productClass);
+    expect(new Set(presets).size).toBe(presets.length);
+    expect(productClass("NVIDIA-H20")).toContain("cyan");
+    expect(productClass("Acme-X1")).toBe(productClass("Acme-X1"));
   });
 });
 

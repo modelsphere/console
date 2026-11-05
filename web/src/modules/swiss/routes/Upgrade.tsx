@@ -459,7 +459,7 @@ export function Upgrade() {
         onChange={update}
         cluster={cluster.data}
         supportedGPUs={keptPin?.requires.gpuProduct}
-        clusterGPUs={vendorProducts(nodes.data?.nodes, keptPin?.requires.vendor)}
+        clusterGPUs={vendorProducts(nodes.data?.nodes, keptPin?.requires.vendor, profile.data?.profile?.nodes?.gpus)}
         localPathDefault={entry.data?.localPath}
         localPathPlaceholder={entry.data?.pathTemplate}
         image={imageOf(entry.data?.variant, entry.data?.imageRepository)}

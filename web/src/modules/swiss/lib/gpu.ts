@@ -1,4 +1,4 @@
-import type { Requires } from "@swiss/lib/api";
+import type { GPUSpec, Requires } from "@swiss/lib/api";
 
 // Vendor decides the extended resource a pod requests and the node label its
 // product is published under, so it is part of what a variant runs on rather
@@ -10,6 +10,8 @@ const VENDORS: Record<string, string> = {
   hygon: "Hygon",
   amd: "AMD",
 };
+
+export const GPU_VENDORS = Object.keys(VENDORS);
 
 export function vendorLabel(vendor?: string): string {
   return VENDORS[vendor ?? "nvidia"] ?? (vendor ?? "");
@@ -53,18 +55,20 @@ export const VENDOR_RESOURCES: Record<string, string> = {
   amd: "amd.com/gpu",
 };
 
-// Vendor match is resource-name equality only. Product labels group SKUs under
-// a vendor; they are never compared to the extended resource name. Missing
-// GPUResource means we do not know — do not invent a fallback.
+// Vendor match is by the node's resource: the vendor the site profile's
+// nodes.gpus lists it under, else the well-known resource above when the
+// profile is not readable. Product labels are never compared to the resource.
+// Missing GPUResource means we do not know — do not invent a fallback.
 export function matchesVendor(
   vendor: string | undefined,
   node: { GPUResource?: string; GPUProduct?: string },
+  gpus?: GPUSpec[],
 ): boolean {
+  if (!node.GPUResource) return true;
+  const listed = gpus?.find((g) => g.resource === node.GPUResource);
+  if (listed) return listed.vendor === (vendor ?? "nvidia");
   const expected = VENDOR_RESOURCES[vendor ?? "nvidia"];
-  if (!node.GPUResource || !expected) {
-    return true;
-  }
-  return node.GPUResource === expected;
+  return !expected || node.GPUResource === expected;
 }
 
 // The products this cluster reports on a vendor's nodes: what a variant of that
@@ -73,10 +77,82 @@ export function matchesVendor(
 export function vendorProducts(
   nodes: { GPUProduct?: string; GPUResource?: string }[] | undefined,
   vendor: string | undefined,
+  gpus?: GPUSpec[],
 ): string[] {
   const out = new Set<string>();
-  for (const n of nodes ?? []) if (n.GPUProduct && matchesVendor(vendor, n)) out.add(n.GPUProduct);
+  for (const n of nodes ?? []) if (n.GPUProduct && matchesVendor(vendor, n, gpus)) out.add(n.GPUProduct);
   return [...out].sort();
+}
+
+// What the cluster's nodes carry under a resource, as swissd read them: the
+// canonical products, and how many nodes report the resource with no product.
+export function resourceProducts(
+  nodes: { GPUProduct?: string; GPUResource?: string }[] | undefined,
+  resource: string,
+): { products: string[]; unlabelled: number } {
+  const products = new Set<string>();
+  let unlabelled = 0;
+  for (const n of nodes ?? []) {
+    if (n.GPUResource !== resource) continue;
+    if (n.GPUProduct) products.add(n.GPUProduct);
+    else unlabelled++;
+  }
+  return { products: [...products].sort(), unlabelled };
+}
+
+// Product badge colors: a preset per card family seen on swiss sites, so a
+// product keeps its color on every page, and a hash for the rest. Written out
+// in full so Tailwind generates them.
+const PRODUCT_HUES = {
+  green: "border-green-500/30 bg-green-500/10 text-green-700",
+  emerald: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
+  teal: "border-teal-500/30 bg-teal-500/10 text-teal-700",
+  cyan: "border-cyan-500/30 bg-cyan-500/10 text-cyan-700",
+  sky: "border-sky-500/30 bg-sky-500/10 text-sky-700",
+  blue: "border-blue-500/30 bg-blue-500/10 text-blue-700",
+  indigo: "border-indigo-500/30 bg-indigo-500/10 text-indigo-700",
+  violet: "border-violet-500/30 bg-violet-500/10 text-violet-700",
+  purple: "border-purple-500/30 bg-purple-500/10 text-purple-700",
+  fuchsia: "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-700",
+  pink: "border-pink-500/30 bg-pink-500/10 text-pink-700",
+  rose: "border-rose-500/30 bg-rose-500/10 text-rose-700",
+  red: "border-red-500/30 bg-red-500/10 text-red-700",
+  orange: "border-orange-500/30 bg-orange-500/10 text-orange-700",
+  amber: "border-amber-500/30 bg-amber-500/10 text-amber-700",
+  lime: "border-lime-500/30 bg-lime-500/10 text-lime-700",
+} as const;
+
+// First match wins, so a name containing another comes first (H200 before H20).
+const PRODUCT_PRESETS: [RegExp, keyof typeof PRODUCT_HUES][] = [
+  [/H200/i, "emerald"],
+  [/H100/i, "green"],
+  [/H800/i, "teal"],
+  [/H20(?!\d)/i, "cyan"],
+  [/A100/i, "blue"],
+  [/A800/i, "sky"],
+  [/GB[23]00/i, "purple"],
+  [/B300/i, "indigo"],
+  [/B200/i, "violet"],
+  [/RTX|L40|L20|6000/i, "amber"],
+  [/910B3/i, "rose"],
+  [/910B4/i, "pink"],
+  [/910/i, "fuchsia"],
+  [/950/i, "orange"],
+  [/MI\d{3}/i, "red"],
+];
+
+// The vendor's default resource, and its row, in the GPU table.
+export const DEFAULT_GPU_CLASS = "gap-1 border-amber-400/70 bg-amber-400/20 text-amber-800";
+export const DEFAULT_GPU_ROW_CLASS = "bg-amber-400/5";
+export const SET_DEFAULT_GPU_CLASS = "h-6 gap-1 border-dashed px-2 text-xs font-normal text-muted-foreground hover:border-solid hover:border-amber-400/70 hover:bg-amber-400/10 hover:text-amber-800";
+
+export function productClass(product: string): string {
+  const preset = PRODUCT_PRESETS.find(([re]) => re.test(product));
+  if (preset) return PRODUCT_HUES[preset[1]];
+  const hues = Object.values(PRODUCT_HUES);
+  let h = 0;
+  for (const ch of product) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return hues[h % hues.length];
 }
 
 // The selected products a variant does not list. A variant naming none accepts

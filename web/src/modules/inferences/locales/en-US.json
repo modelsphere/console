@@ -784,11 +784,41 @@
       "priorityClass": "Priority class",
       "gpusPerNode": "GPUs per node",
       "gpusPerNodeHint": "A full GPU node, used to derive cache.maxSlotsPerNode",
-      "gpuAliases": "GPU product aliases",
-      "gpuAliasesHint": "For nodes a vendor install does not label with the catalog GPU product name. Each row names a catalog product and a node label selector; every key=value must match. A node matching two products takes the one with more pairs",
-      "gpuAliasProduct": "Catalog GPU product",
-      "gpuAliasSelector": "Node labels",
-      "gpuAliasAdd": "Add alias",
+      "gpus": "GPU resources",
+      "gpusHint": "The extended resources this cluster's nodes advertise, each with the node label telling its products apart. A vendor's first entry is what its pods request when no node carries the product asked for. Under a resource, a product lists the label values that also name it; its own name always does",
+      "gpusNone": "None: a site without GPU resources. A GPU variant is refused here.",
+      "gpuVendor": "Vendor",
+      "gpuResource": "Resource",
+      "gpuLabelKey": "Product label",
+      "gpuLabelKeyHint": "The node label whose value names the product, e.g. nvidia.com/gpu.product",
+      "gpuProduct": "Catalog GPU product",
+      "gpuValues": "Also named by",
+      "gpuValuesHint": "Other values of the product label that mean this product, comma separated",
+      "gpuClusterProducts": "On this cluster",
+      "gpuNoNodes": "No node reports it",
+      "gpuNodesReadAt": "Nodes read at {time}; refresh to read them again",
+      "gpuScan": "Scan nodes",
+      "gpuScanHint": "Reads every node by this entry as edited. A heavy call, so only on request.",
+      "gpuScanIdle": "Scan to see the products this entry finds on the cluster's nodes, before saving.",
+      "gpuScanSummary": "{nodes, plural, one {# node} other {# nodes}} with this resource, {gpus} GPUs",
+      "gpuScanCount": "{nodes, plural, one {# node} other {# nodes}} · {gpus} GPUs",
+      "gpuScanValues": "label {values}",
+      "gpuScanNone": "No node has {resource} allocatable",
+      "gpuScanUnlabelled": "{nodes, plural, one {# node has} other {# nodes have}} no {label} value",
+      "gpuScanStale": "Edited since the scan: scan again to see the change.",
+      "gpuUnlabelled": "{n, plural, one {# node} other {# nodes}} without a product label",
+      "gpuShow": "Details",
+      "gpuNoDefinedProducts": "None defined: a node's label value is its product name.",
+      "gpuProductAdd": "Add product",
+      "gpuAdd": "Add GPU resource",
+      "gpuEdit": "Edit GPU resource",
+      "gpuDefault": "Default",
+      "gpuDefaultHint": "What {vendor} pods request when no node carries the product asked for",
+      "gpuMakeDefault": "Set as default",
+      "gpuDefaultColumnHint": "Each vendor's default resource: what its pods request when no node carries the product asked for. A vendor with several resources picks one.",
+      "gpuAliasesIgnored": "This profile still has GPU product aliases, which swissd now ignores. Name each product under its resource above.",
+      "gpuAliasesRemove": "Remove aliases",
+      "gpuAliasesIgnoredLabel": "GPU product aliases (ignored)",
       "chartDefault": "the chart's default",
       "catalogs": "Catalogs",
       "catalogsHint": "Each an https base or an absolute path, under a name. With several, pages open in the default one. Set here they win over swissd's config file. Schema v2 is recommended; v1 is the read-only legacy index, and what a catalog with no schema set reads",
@@ -884,15 +914,10 @@
           "duplicate": "Already listed with this schema"
         }
       },
-      "gpuAlias": {
-        "product": {
-          "required": "Product is required"
-        },
-        "selector": {
-          "required": "Labels are required",
-          "format": "key=value pairs, comma separated",
-          "conflict": "A node could match another product as well; add a label"
-        }
+      "gpu": {
+        "required": "Required",
+        "duplicate": "Listed twice",
+        "conflict": "Already names another product under this resource"
       }
     }
   },

@@ -4,7 +4,8 @@ import { Plus, X } from "lucide-react";
 import type { RouteAuth, SiteProfile } from "@swiss/lib/api";
 import { useT } from "@/modules/inferences/i18n";
 import { fromRows, markDefault, toRows, withNodes, type Row } from "@/modules/inferences/profile-lib";
-import { aliasErrors, aliasMap, aliasRows, catalogErrors, FEATURES, featureOn, withFeature, type AliasError, type AliasRow, type CatalogError } from "@swiss/lib/profile";
+import { GpuTable } from "@/modules/inferences/components/GpuResources";
+import { catalogErrors, FEATURES, featureOn, withFeature, type CatalogError } from "@swiss/lib/profile";
 
 // The copied swiss types predate writable.
 type CatalogRepo = NonNullable<SiteProfile["catalogs"]>[number] & { writable?: boolean };
@@ -75,7 +76,17 @@ export function ProfileForm({
             {input(f("priorityClass"), p.schedule?.priorityClassName, (v) => set({ schedule: { ...p.schedule, priorityClassName: str(v) } }), { placeholder: f("chartDefault") })}
           </div>
           {input(f("gpusPerNode"), p.nodes?.gpusPerNode, (v) => set({ nodes: withNodes(p.nodes, { gpusPerNode: v.replace(/\D/g, "") ? Number(v.replace(/\D/g, "")) : undefined }) }), { hint: f("gpusPerNodeHint") })}
-          <GpuAliases value={p.nodes?.gpuProductAliases} submitted={submitted} onChange={(a) => set({ nodes: withNodes(p.nodes, { gpuProductAliases: a }) })} />
+          <Group label={f("gpus")} hint={f("gpusHint")}>
+            <GpuTable gpus={p.nodes?.gpus} onChange={(gpus) => set({ nodes: withNodes(p.nodes, { gpus }) })} />
+          </Group>
+          {p.nodes?.gpuProductAliases && (
+            <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+              {f("gpuAliasesIgnored")}
+              <Button variant="ghost" size="sm" className="ms-auto" onClick={() => set({ nodes: withNodes(p.nodes, { gpuProductAliases: undefined }) })}>
+                {f("gpuAliasesRemove")}
+              </Button>
+            </div>
+          )}
         </>,
       )}
 
@@ -271,44 +282,6 @@ function CatalogRow({
         </div>
       )}
     </div>
-  );
-}
-
-function GpuAliases({ value, submitted, onChange }: { value?: Record<string, string[]>; submitted: boolean; onChange: (v?: Record<string, string[]>) => void }) {
-  const t = useT();
-  const f = (k: string) => t(`profile.fields.${k}`);
-  // Rows live here while typed; see aliasRows.
-  const [rows, setRows] = useState<AliasRow[]>(() => aliasRows(value));
-  const errs = aliasErrors(rows);
-  const err = (field: "product" | "selector", e?: AliasError) => (submitted && e ? t(`profile.errors.gpuAlias.${field}.${e}`) : undefined);
-  const update = (next: AliasRow[]) => {
-    setRows(next);
-    onChange(aliasMap(next));
-  };
-  const edit = (i: number, patch: Partial<AliasRow>) => update(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  return (
-    <Group label={f("gpuAliases")} hint={f("gpuAliasesHint")}>
-      {/* An error line hangs below its field, so rows showing one need the room. */}
-      <div className={`flex flex-col gap-6 ${submitted && errs.some((e) => e.product || e.selector) ? "sm:gap-5" : "sm:gap-3"}`}>
-        {rows.map((r, i) => (
-          // Narrow, the remove button sits beside the product and the labels take the next line.
-          <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto]">
-            <FloatingField label={f("gpuAliasProduct")} required error={err("product", errs[i].product)}>
-              <FieldInput value={r.product} onChange={(e) => edit(i, { product: e.target.value })} placeholder="Ascend-910B3" />
-            </FloatingField>
-            <span className="sm:order-last">
-              <Remove onClick={() => update(rows.filter((_, j) => j !== i))} />
-            </span>
-            <div className="col-span-2 sm:col-span-1">
-              <FloatingField label={f("gpuAliasSelector")} required error={err("selector", errs[i].selector)}>
-                <FieldInput value={r.selector} onChange={(e) => edit(i, { selector: e.target.value })} placeholder="accelerator=huawei-Ascend910" className="font-mono text-xs" />
-              </FloatingField>
-            </div>
-          </div>
-        ))}
-      </div>
-      <Add label={f("gpuAliasAdd")} onClick={() => setRows([...rows, { product: "", selector: "" }])} />
-    </Group>
   );
 }
 

@@ -266,7 +266,7 @@ export function Deploy() {
         localPathPlaceholder={model.data.pathTemplate}
         image={imageOf(variant, model.data.imageRepository)}
         supportedGPUs={variant?.requires.gpuProduct}
-        clusterGPUs={vendorProducts(nodes.data?.nodes, variant?.requires.vendor)}
+        clusterGPUs={vendorProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus)}
         cache={cache}
       />
 
