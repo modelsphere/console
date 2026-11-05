@@ -1,4 +1,4 @@
-import type { GPUSpec, Requires } from "@swiss/lib/api";
+import type { GPUScan, GPUScanRequest, GPUSpec, Node, Requires } from "@swiss/lib/api";
 
 // Vendor decides the extended resource a pod requests and the node label its
 // product is published under, so it is part of what a variant runs on rather
@@ -146,6 +146,12 @@ export const DEFAULT_GPU_CLASS = "gap-1 border-amber-400/70 bg-amber-400/20 text
 export const DEFAULT_GPU_ROW_CLASS = "bg-amber-400/5";
 export const SET_DEFAULT_GPU_CLASS = "h-6 gap-1 border-dashed px-2 text-xs font-normal text-muted-foreground hover:border-solid hover:border-amber-400/70 hover:bg-amber-400/10 hover:text-amber-800";
 
+// A scanned product's names worth showing: none when its only name is itself.
+export const scanNames = (p: GPUScan["products"][number]) => (p.names.length === 1 && p.names[0].name === p.product ? [] : p.names);
+
+// What a scan sends of an entry.
+export const scanRequest = ({ resource, labelKey, products }: GPUSpec): GPUScanRequest => ({ resource, labelKey, products });
+
 export function productClass(product: string): string {
   const preset = PRODUCT_PRESETS.find(([re]) => re.test(product));
   if (preset) return PRODUCT_HUES[preset[1]];
@@ -153,6 +159,62 @@ export function productClass(product: string): string {
   let h = 0;
   for (const ch of product) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return hues[h % hues.length];
+}
+
+// The resources the site lists for a vendor, its default first.
+export const vendorResources = (gpus: GPUSpec[], vendor?: string) => gpus.filter((g) => g.vendor === (vendor ?? "nvidia")).map((g) => g.resource);
+
+// The products a deploy may pick from: those under the resource it picked,
+// else every one of its vendor's.
+export function pickableProducts(
+  nodes: { GPUProduct?: string; GPUResource?: string }[] | undefined,
+  vendor: string | undefined,
+  gpus: GPUSpec[] | undefined,
+  resource?: string,
+): string[] {
+  return resource ? resourceProducts(nodes, resource).products : vendorProducts(nodes, vendor, gpus);
+}
+
+export interface GPUCapacity {
+  nodes: number;
+  gpus: number;
+  // Of the nodes that take pods: GPUs free, and nodes with room for one pod.
+  // Absent when this cluster's usage could not be read.
+  free?: { gpus: number; nodes: number };
+}
+
+// What a deploy's resource and products can land on. No resource is any of
+// the vendor's; no products is any product.
+export function gpuCapacity(
+  nodes: Node[] | undefined,
+  pick: { vendor?: string; resource?: string; products?: string[]; perPod: number },
+  gpus?: GPUSpec[],
+): GPUCapacity | undefined {
+  if (!nodes) return undefined;
+  const hit = nodes.filter(
+    (n) =>
+      n.GPUs > 0 &&
+      (pick.resource ? n.GPUResource === pick.resource : matchesVendor(pick.vendor, n, gpus)) &&
+      (!pick.products?.length || pick.products.includes(n.GPUProduct)),
+  );
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const out: GPUCapacity = { nodes: hit.length, gpus: sum(hit.map((n) => n.GPUs)) };
+  if (hit.every((n) => n.gpusFree !== undefined)) {
+    const open = hit.filter((n) => n.Schedulable && n.Ready);
+    out.free = { gpus: sum(open.map((n) => n.gpusFree ?? 0)), nodes: open.filter((n) => (n.gpusFree ?? 0) >= pick.perPod).length };
+  }
+  return out;
+}
+
+// A deploy form's capacity: what its resource and products, else the variant's
+// products, can land on, and the room one pod needs on how many nodes.
+export function deployCapacity(r: Requires, pick: { gpuResource: string; gpuProducts: string[] }, nodes: Node[] | undefined, gpus: GPUSpec[] | undefined) {
+  const products = pick.gpuProducts.length ? pick.gpuProducts : r.gpuProduct;
+  return {
+    value: gpuCapacity(nodes, { vendor: r.vendor, resource: pick.gpuResource || undefined, products, perPod: r.gpus }, gpus),
+    perPod: r.gpus,
+    needNodes: r.nodes ?? 1,
+  };
 }
 
 // The selected products a variant does not list. A variant naming none accepts

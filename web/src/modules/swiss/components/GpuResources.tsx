@@ -1,8 +1,8 @@
 import { useId, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Info, Pencil, Plus, RefreshCw, Star, TriangleAlert, X } from "lucide-react";
-import { api, type GPUSpec, type Node } from "@swiss/lib/api";
-import { DEFAULT_GPU_CLASS, DEFAULT_GPU_ROW_CLASS, GPU_VENDORS, productClass, resourceProducts, SET_DEFAULT_GPU_CLASS } from "@swiss/lib/gpu";
+import { api, type GPUScanRequest, type GPUSpec, type Node } from "@swiss/lib/api";
+import { DEFAULT_GPU_CLASS, DEFAULT_GPU_ROW_CLASS, GPU_VENDORS, productClass, resourceProducts, scanNames, scanRequest, SET_DEFAULT_GPU_CLASS } from "@swiss/lib/gpu";
 import { emptyGPURow, gpuEntryErrors, gpuRows, gpuTable, hasGPUErrors, inOrder, isVendorDefault, makeVendorDefault, vendorGroups, type GPURow } from "@swiss/lib/profile";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
@@ -301,15 +301,15 @@ function GpuDialog({ value, others, onClose, onSave }: { value?: GPUSpec; others
         <Button type="button" size="sm" variant="ghost" onClick={() => edit({ products: [...row.products, { product: "", values: "" }] })} className="text-primary hover:text-primary">
           <Plus className="size-4" /> Add product
         </Button>
-        <NodeScan spec={gpuTable([row])[0]} />
+        <NodeScan request={gpuTable([row]).map(scanRequest)[0]} />
       </div>
     </Dialog>
   );
 }
 
 // What the entry as edited reads on the nodes. Lists every node, so only on request.
-function NodeScan({ spec }: { spec?: GPUSpec }) {
-  const scan = useMutation({ mutationFn: (g: GPUSpec) => api.scanNodeGPUs(g).then((r) => ({ r, g })) });
+function NodeScan({ request }: { request?: GPUScanRequest }) {
+  const scan = useMutation({ mutationFn: (g: GPUScanRequest) => api.scanNodeGPUs(g).then((r) => ({ r, g })) });
   const done = scan.data;
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
   return (
@@ -322,8 +322,8 @@ function NodeScan({ spec }: { spec?: GPUSpec }) {
           variant="outline"
           className="ms-auto"
           title="Reads every node by this entry as edited. A heavy call, so only on request."
-          disabled={!spec?.resource || scan.isPending}
-          onClick={() => spec && scan.mutate(spec)}
+          disabled={!request?.resource || scan.isPending}
+          onClick={() => request && scan.mutate(request)}
         >
           <RefreshCw className={cn("size-3.5", scan.isPending && "animate-spin")} /> Scan nodes
         </Button>
@@ -341,13 +341,17 @@ function NodeScan({ spec }: { spec?: GPUSpec }) {
           </p>
           {done.r.products.map((p) => (
             <div key={p.product} className="flex flex-wrap items-center gap-2 text-xs">
-              <Badge variant="outline" className={cn("font-mono font-normal", productClass(p.product))}>
+              <Badge variant="outline" className={cn("font-mono font-normal", p.nodes ? productClass(p.product) : "text-muted-foreground")}>
                 {p.product}
               </Badge>
               <span className="text-muted-foreground">
                 {plural(p.nodes, "node")} · {p.gpus} GPUs
               </span>
-              {p.values?.some((v) => v !== p.product) && <span className="font-mono text-muted-foreground">label {p.values.filter((v) => v !== p.product).join(", ")}</span>}
+              {scanNames(p).map((n) => (
+                <span key={n.name} className={cn("font-mono", n.nodes ? "text-foreground" : "text-muted-foreground")}>
+                  {n.name}: {plural(n.nodes, "node")}
+                </span>
+              ))}
             </div>
           ))}
           {done.r.unlabelled.nodes > 0 && (
@@ -357,7 +361,7 @@ function NodeScan({ spec }: { spec?: GPUSpec }) {
           )}
         </>
       )}
-      {done && JSON.stringify(done.g) !== JSON.stringify(spec) && <p className="text-xs text-warning">Edited since the scan: scan again to see the change.</p>}
+      {done && JSON.stringify(done.g) !== JSON.stringify(request) && <p className="text-xs text-warning">Edited since the scan: scan again to see the change.</p>}
     </div>
   );
 }

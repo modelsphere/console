@@ -22,9 +22,10 @@ import {
   ToggleGroupItem,
   cn,
 } from "@modelsphere/ui";
-import { Plus, X } from "lucide-react";
+import { Plus, RefreshCw, X } from "lucide-react";
 import type { ClusterInfo } from "@swiss/lib/api";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
+import { unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { effective, imageChoices, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
@@ -43,6 +44,13 @@ export interface DeployFormProps {
   cluster?: ClusterInfo;
   defaults: { serviceId?: string; localPath?: string; localPathTemplate?: string; image?: { catalog: string; site: string }; cache?: CacheCard };
   gpuOptions: string[];
+  // The variant's own products, verified with it; any other option is unverified.
+  gpuListed?: string[];
+  // The resources the site lists for the variant's vendor, its default first;
+  // absent for a variant without GPUs or a profile this page cannot read.
+  gpuResources?: string[];
+  // What the picked resource and products can land on; absent without GPUs.
+  capacity?: CapacityProps;
   expanded: Record<Section, boolean>;
   onExpand: (s: Section, open: boolean) => void;
   idPrefix: string;
@@ -50,10 +58,11 @@ export interface DeployFormProps {
   catalogRoute?: string;
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, expanded, onExpand, idPrefix, routeOptions, catalogRoute }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute }: DeployFormProps) {
   const t = useT();
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
+  const forced = unlistedProducts(gpuListed, form.gpuProducts);
   const images = defaults.image ? imageChoices(defaults.image) : [];
   const byKey = new Map(routeDirectives(routeOptions).map((d) => [d.key, d]));
   const showRuntime = !!upgrade && routeOptions?.route === (catalogRoute ?? (form.route || form.serviceId));
@@ -119,9 +128,11 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
       {section(
         "resources",
         <>
-          <FloatingField label={f("gpuProducts")} hint={f("gpuProductsHint")}>
-            <FieldSelect multiple values={form.gpuProducts} onValuesChange={(v) => onChange({ gpuProducts: v })} options={gpuOptions.map((o) => ({ value: o, label: o }))} placeholder={gpuOptions.length ? undefined : f("gpuProductsEmpty")} disabled={!gpuOptions.length} />
+          {gpuResources && <GpuResource resources={gpuResources} value={form.gpuResource} onChange={(gpuResource) => onChange({ gpuResource })} />}
+          <FloatingField label={f("gpuProducts")} hint={f("gpuProductsHint")} notice={forced.length > 0 ? t("deploy.fields.gpuForced", { products: forced.join(", ") }) : undefined}>
+            <FieldSelect multiple values={form.gpuProducts} onValuesChange={(v) => onChange({ gpuProducts: v })} options={gpuOptions.map((o) => ({ value: o, label: o, badge: unlistedProducts(gpuListed, [o]).length ? <Badge variant="warning">{f("gpuUnverified")}</Badge> : <Badge variant="success">{f("gpuVerified")}</Badge> }))} placeholder={gpuOptions.length ? undefined : f("gpuProductsEmpty")} disabled={!gpuOptions.length} />
           </FloatingField>
+          {capacity && <CapacityHint {...capacity} />}
           <Tolerations rows={form.tolerations} onChange={(v) => onChange({ tolerations: v })} />
           <div className="grid grid-cols-2 gap-3">
             <FloatingField value={shown(form.priorityClassName, cluster?.priorityClassName)} label={f("priorityClass")}>
@@ -266,6 +277,75 @@ function CacheFields({ form, onChange, defaults }: { form: Form; onChange: (patc
         <FieldInput value={form.cacheMaxSlots} onChange={digits("cacheMaxSlots")} inputMode="numeric" placeholder={slots} />
       </FloatingField>
     </div>
+  );
+}
+
+export interface CapacityProps {
+  // Absent until the nodes are read.
+  value?: GPUCapacity;
+  perPod: number;
+  needNodes: number;
+  refreshing: boolean;
+  onRefresh: () => void;
+}
+
+// Nodes and GPUs the picked resource and products can land on, total and free.
+// No node is a resource and product that do not meet: the pods would stay Pending.
+function CapacityHint({ value, perPod, needNodes, refreshing, onRefresh }: CapacityProps) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+  const short = !!value?.free && value.free.nodes < needNodes;
+  return (
+    <div className="flex items-start gap-2 text-xs">
+      <span className={cn("flex-1 pt-1", value && (value.nodes === 0 || short) ? "text-warning" : "text-muted-foreground")}>
+        {!value ? (
+          f("gpuCapacityUnread")
+        ) : value.nodes === 0 ? (
+          f("gpuCapacityNone")
+        ) : (
+          <>
+            {t("deploy.fields.gpuCapacity", { nodes: value.nodes, gpus: value.gpus })}
+            {" · "}
+            {value.free ? (
+              <span className="cursor-help underline decoration-dotted underline-offset-2" title={t("deploy.fields.gpuCapacityFreeHint", { perPod })}>
+                {t("deploy.fields.gpuCapacityFree", { gpus: value.free.gpus, nodes: value.free.nodes })}
+              </span>
+            ) : (
+              f("gpuCapacityUsageUnknown")
+            )}
+            {short && <> · {t("deploy.fields.gpuCapacityShort", { need: needNodes })}</>}
+          </>
+        )}
+      </span>
+      <Button variant="ghost" size="icon" className="size-6" aria-label={t("common:actions.refresh")} disabled={refreshing} onClick={onRefresh}>
+        <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+      </Button>
+    </div>
+  );
+}
+
+// The vendor's resource to request: a choice only where the site lists several.
+function GpuResource({ resources, value, onChange }: { resources: string[]; value: string; onChange: (v: string) => void }) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+  if (resources.length < 2) {
+    return (
+      <FloatingField label={f("gpuResource")} hint={resources.length ? f("gpuResourceOnly") : undefined} notice={resources.length ? undefined : f("gpuResourceNone")}>
+        <FieldInput value={resources[0] ?? ""} readOnly className="font-mono text-xs text-muted-foreground" />
+      </FloatingField>
+    );
+  }
+  // The select reads "" as nothing chosen, so auto has a value of its own.
+  const AUTO = "auto";
+  const options = [...new Set([...resources, value].filter(Boolean))];
+  return (
+    <FloatingField label={f("gpuResource")} hint={f("gpuResourceHint")}>
+      <FieldSelect
+        value={value || AUTO}
+        onValueChange={(v) => v && onChange(v === AUTO ? "" : v)}
+        options={[{ value: AUTO, label: t("deploy.fields.gpuResourceAuto", { resource: resources[0] }) }, ...options.map((r) => ({ value: r, label: r }))]}
+      />
+    </FloatingField>
   );
 }
 

@@ -287,13 +287,18 @@ export interface GPUSpec {
   products?: { product: string; values?: string[] }[];
 }
 
+// Only resource is needed: without labelKey every node with it reads as
+// unlabelled, and vendor plays no part in reading nodes.
+export type GPUScanRequest = Pick<GPUSpec, "resource"> & Partial<Pick<GPUSpec, "labelKey" | "products">>;
+
 // What one nodes.gpus entry, saved or not, reads on the cluster's nodes.
 export interface GPUScan {
   resource: string;
   nodes: number;
   gpus: number;
-  // values: the label values that named the product.
-  products: { product: string; values?: string[]; nodes: number; gpus: number }[];
+  // The entry's own products first, even with no node; names: every label
+  // value naming the product -- itself, then its values -- with its nodes.
+  products: { product: string; nodes: number; gpus: number; names: { name: string; nodes: number; gpus: number }[] }[];
   unlabelled: { nodes: number; gpus: number };
 }
 
@@ -494,7 +499,7 @@ export const api = {
     get<ChartVersions>(`/api/catalog/${encodeURIComponent(name)}/chart-versions` + query(opts)),
   nodes: () => get<NodesResponse>("/api/nodes"),
   // Lists every node: call it on request, never on a timer.
-  scanNodeGPUs: (g: GPUSpec) => post<GPUScan>("/api/nodes/gpus", g),
+  scanNodeGPUs: (g: GPUScanRequest) => post<GPUScan>("/api/nodes/gpus", g),
   profile: () => get<ProfileResponse>("/api/profile"),
   runs: (f: RunFilter = {}) => {
     const q = new URLSearchParams();
@@ -623,6 +628,8 @@ export interface PlanRequest {
   // Accepts gpuProducts the variant does not list, provided each is on this
   // cluster under the variant's vendor. The plan then carries a warning.
   forceGpuProducts?: boolean;
+  // The resource picked among the vendor's; empty lets swissd pick.
+  gpuResource?: string;
   overrides?: Record<string, unknown>;
   overridesYAML?: string;
   editsYAML?: string;

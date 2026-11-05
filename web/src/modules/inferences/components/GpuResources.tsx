@@ -20,8 +20,8 @@ import {
   cn,
 } from "@modelsphere/ui";
 import { Info, Pencil, Plus, RefreshCw, Star, X } from "lucide-react";
-import { api, type GPUSpec, type Node } from "@swiss/lib/api";
-import { DEFAULT_GPU_CLASS, DEFAULT_GPU_ROW_CLASS, GPU_VENDORS, productClass, resourceProducts, SET_DEFAULT_GPU_CLASS } from "@swiss/lib/gpu";
+import { api, type GPUScanRequest, type GPUSpec, type Node } from "@swiss/lib/api";
+import { DEFAULT_GPU_CLASS, DEFAULT_GPU_ROW_CLASS, GPU_VENDORS, productClass, resourceProducts, scanNames, scanRequest, SET_DEFAULT_GPU_CLASS } from "@swiss/lib/gpu";
 import { emptyGPURow, gpuEntryErrors, gpuRows, gpuTable, hasGPUErrors, inOrder, isVendorDefault, makeVendorDefault, vendorGroups, type GPUError, type GPURow } from "@swiss/lib/profile";
 import { useT } from "@/modules/inferences/i18n";
 
@@ -270,7 +270,7 @@ function GpuDialog({ value, others, onClose, onSave }: { value?: GPUSpec; others
             <Plus className="size-3.5" /> {f("gpuProductAdd")}
           </Button>
         </div>
-        <NodeScan spec={gpuTable([row])[0]} />
+        <NodeScan request={gpuTable([row]).map(scanRequest)[0]} />
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             {t("common:actions.cancel")}
@@ -283,16 +283,16 @@ function GpuDialog({ value, others, onClose, onSave }: { value?: GPUSpec; others
 }
 
 // What the entry as edited reads on the nodes. Lists every node, so only on request.
-function NodeScan({ spec }: { spec?: GPUSpec }) {
+function NodeScan({ request }: { request?: GPUScanRequest }) {
   const t = useT();
   const f = (k: string) => t(`profile.fields.${k}`);
-  const scan = useMutation({ mutationFn: (g: GPUSpec) => api.scanNodeGPUs(g).then((r) => ({ r, g })) });
+  const scan = useMutation({ mutationFn: (g: GPUScanRequest) => api.scanNodeGPUs(g).then((r) => ({ r, g })) });
   const done = scan.data;
   return (
     <div className="flex flex-col gap-2 rounded-md border bg-surface-page p-3">
       <div className="flex items-center gap-2 text-sm">
         {f("gpuClusterProducts")}
-        <Button variant="outline" size="sm" className="ms-auto" title={f("gpuScanHint")} disabled={!spec?.resource || scan.isPending} onClick={() => spec && scan.mutate(spec)}>
+        <Button variant="outline" size="sm" className="ms-auto" title={f("gpuScanHint")} disabled={!request?.resource || scan.isPending} onClick={() => request && scan.mutate(request)}>
           <RefreshCw className={cn("size-3.5", scan.isPending && "animate-spin")} /> {f("gpuScan")}
         </Button>
       </div>
@@ -307,19 +307,21 @@ function NodeScan({ spec }: { spec?: GPUSpec }) {
           <p className="text-xs text-muted-foreground">{t("profile.fields.gpuScanSummary", { nodes: done.r.nodes, gpus: done.r.gpus })}</p>
           {done.r.products.map((p) => (
             <div key={p.product} className="flex flex-wrap items-center gap-2 text-xs">
-              <Badge variant="outline" className={cn("font-mono font-normal", productClass(p.product))}>
+              <Badge variant="outline" className={cn("font-mono font-normal", p.nodes ? productClass(p.product) : "text-muted-foreground")}>
                 {p.product}
               </Badge>
               <span className="text-muted-foreground">{t("profile.fields.gpuScanCount", { nodes: p.nodes, gpus: p.gpus })}</span>
-              {p.values?.some((v) => v !== p.product) && (
-                <span className="font-mono text-muted-foreground">{t("profile.fields.gpuScanValues", { values: p.values.filter((v) => v !== p.product).join(", ") })}</span>
-              )}
+              {scanNames(p).map((n) => (
+                <span key={n.name} className={cn("font-mono", n.nodes ? "text-foreground" : "text-muted-foreground")}>
+                  {t("profile.fields.gpuScanName", { name: n.name, nodes: n.nodes })}
+                </span>
+              ))}
             </div>
           ))}
           {done.r.unlabelled.nodes > 0 && <p className="text-xs text-warning">{t("profile.fields.gpuScanUnlabelled", { nodes: done.r.unlabelled.nodes, label: done.g.labelKey || "-" })}</p>}
         </>
       )}
-      {done && JSON.stringify(done.g) !== JSON.stringify(spec) && <p className="text-xs text-warning">{f("gpuScanStale")}</p>}
+      {done && JSON.stringify(done.g) !== JSON.stringify(request) && <p className="text-xs text-warning">{f("gpuScanStale")}</p>}
     </div>
   );
 }

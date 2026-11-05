@@ -12,7 +12,7 @@ import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog }
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { isChartRange } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
-import { unlistedProducts, vendorProducts } from "@swiss/lib/gpu";
+import { deployCapacity, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { InstallMethodChoice } from "@swiss/components/InstallMethod";
 
@@ -266,7 +266,13 @@ export function Deploy() {
         localPathPlaceholder={model.data.pathTemplate}
         image={imageOf(variant, model.data.imageRepository)}
         supportedGPUs={variant?.requires.gpuProduct}
-        clusterGPUs={vendorProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus)}
+        clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
+        gpuResources={variant?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, variant.requires.vendor) : undefined}
+        capacity={
+          variant?.requires.gpus
+            ? { ...deployCapacity(variant.requires, form, nodes.data?.nodes, profile.data?.profile?.nodes?.gpus), refreshing: nodes.isFetching, onRefresh: () => nodes.refetch() }
+            : undefined
+        }
         cache={cache}
       />
 
