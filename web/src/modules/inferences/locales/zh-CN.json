@@ -200,6 +200,7 @@
       "held": "{n} 个 slice，暂缓：{hold}",
       "heldBare": "{n} 个 slice，暂缓",
       "scaling": "{cur} → {want} 个 slice",
+      "scalingEngines": "每个 slice {cur} → {want}",
       "steady": "{n} 个 slice，稳定"
     }
   },

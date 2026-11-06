@@ -1,4 +1,14 @@
-import type { Condition } from "@swiss/lib/api";
+import type { AutoscaleEngines, AutoscaleState, Condition } from "@swiss/lib/api";
+
+// "2P1D": prefill and decode engines per slice.
+export const engines = (e: AutoscaleEngines) => `${e.prefill}P${e.decode}D`;
+
+// The engines a PD pass moves each slice to, when it moves them.
+export function enginesMove(st: AutoscaleState): { cur: string; want: string } | undefined {
+  const { current, want } = st.pd ?? {};
+  if (!current || !want || (current.prefill === want.prefill && current.decode === want.decode)) return undefined;
+  return { cur: engines(current), want: engines(want) };
+}
 
 const of = (conditions: Condition[] | undefined, type: string) => conditions?.find((c) => c.type === type);
 
@@ -18,7 +28,7 @@ export function scalerHold(conditions?: Condition[]): string | undefined {
   return able?.status === "True" && able.reason && HOLD_REASONS.has(able.reason) ? able.reason : undefined;
 }
 
-// ScalingLimited is informational; DecisionAvailable only mirrors ScalingActive when that is present.
+// DecisionAvailable only mirrors ScalingActive when that is present.
 export function scalerNeutral(conditions?: Condition[]): string[] {
-  return of(conditions, "ScalingActive") ? ["ScalingLimited", "DecisionAvailable"] : ["ScalingLimited"];
+  return of(conditions, "ScalingActive") ? ["DecisionAvailable"] : [];
 }

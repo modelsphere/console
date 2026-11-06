@@ -18,7 +18,7 @@ import { HoverHint } from "@swiss/components/ui/hint";
 import { Button } from "@swiss/components/ui/button";
 import { Card } from "@swiss/components/ui/card";
 import { ErrorState } from "@swiss/components/States";
-import { scalerFailing, scalerHold, scalerNeutral } from "@swiss/lib/scaler";
+import { engines, enginesMove, scalerFailing, scalerHold, scalerNeutral } from "@swiss/lib/scaler";
 import { cn, timeAgo } from "@swiss/lib/utils";
 
 // Unpolled, it loads once per visit and then moves only when the page's own
@@ -368,6 +368,7 @@ function ScalerPanel({
             conditions={status?.conditions}
             neutral={scalerNeutral(status?.conditions)}
             warn={hold ? ["AbleToScale"] : undefined}
+            inverted={["ScalingLimited"]}
           />
         </>
       )}
@@ -495,9 +496,11 @@ function AutoscaleBadge({ st }: { st: AutoscaleState }) {
   }
 }
 
+// Engines are shown only for a pdengine decision, the one that sets shape.pd.
 function PDAutoscale({ st }: { st: AutoscaleState }) {
   const moving = st.want !== undefined && st.want !== st.current;
-  const clamped = st.want !== undefined && st.decision !== undefined && st.want !== st.decision;
+  const move = enginesMove(st);
+  const enginesHint = "Prefill and decode engines per slice";
   return (
     <div className="mt-auto space-y-2 border-t pt-3">
       <div className="text-xs font-medium">PD autoscaling</div>
@@ -508,11 +511,23 @@ function PDAutoscale({ st }: { st: AutoscaleState }) {
             {moving && <> → {st.want}</>}
           </span>
         </Fact>
+        {st.pd?.current && (
+          <Fact label="Engines">
+            <span className="tabular-nums" title={enginesHint}>
+              {move ? `${move.cur} → ${move.want}` : engines(st.pd.current)}
+            </span>
+          </Fact>
+        )}
         <Fact label="Decision">
           {st.decision !== undefined ? (
             <span className="tabular-nums">
               {st.decision}
-              {clamped && <span className="text-muted-foreground"> · clamped to {st.want}</span>}
+              {st.pd?.decision && (
+                <span className="text-muted-foreground" title={enginesHint}>
+                  {" "}
+                  · {engines(st.pd.decision)}
+                </span>
+              )}
             </span>
           ) : (
             <span className="text-muted-foreground">{st.noDecision ? "none from decision-gen" : "—"}</span>
@@ -770,16 +785,20 @@ function Stale({
   );
 }
 
+// inverted lists the types whose True is the problem, as ScalingLimited's is.
 export function Conditions({
   conditions,
   neutral = [],
   warn = [],
+  inverted = [],
 }: {
   conditions?: Condition[];
   neutral?: string[];
   warn?: string[];
+  inverted?: string[];
 }) {
   if (!conditions?.length) return null;
+  const is = (c: Condition, healthy: boolean) => c.status === (healthy !== inverted.includes(c.type) ? "True" : "False");
   return (
     <ul className="mt-auto space-y-1.5 border-t pt-3">
       {conditions.map((c) => (
@@ -792,9 +811,9 @@ export function Conditions({
                   ? "bg-warning"
                   : neutral.includes(c.type)
                     ? "bg-muted-foreground"
-                    : c.status === "True"
+                    : is(c, true)
                       ? "bg-success"
-                      : c.status === "False"
+                      : is(c, false)
                         ? "bg-warning"
                         : "bg-muted-foreground",
               )}

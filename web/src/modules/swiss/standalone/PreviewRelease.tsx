@@ -151,7 +151,16 @@ const CASES: Record<string, { status: ReleaseStatus; objects: ObjectResult[]; au
       scaler(2, 2, true),
       { ...slo, live: undefined, error: "swissd may not read LLMSLORequirement in models: upgrade the swiss chart, which grants it" },
     ],
-    autoscale: { enabled: true, current: 2, decision: 4, outcome: "held", hold: "release failed", lastEvaluated: ago(1) },
+    // A pdengine decision: the slices stay, the engines per slice move.
+    autoscale: {
+      enabled: true,
+      current: 2,
+      decision: 2,
+      outcome: "held",
+      hold: "release failed",
+      lastEvaluated: ago(1),
+      pd: { current: { prefill: 2, decode: 1 }, decision: { prefill: 3, decode: 1 } },
+    },
   },
   bare: { status: status(1, 1, "applied"), objects: [] },
 };
