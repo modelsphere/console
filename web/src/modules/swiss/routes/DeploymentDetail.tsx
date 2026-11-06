@@ -34,7 +34,7 @@ import { Field, Input } from "@swiss/components/ui/input";
 import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { Provenance } from "@swiss/components/Provenance";
 import { ReleaseObjects, pick, useAutoscaling, useReleaseObjects } from "@swiss/components/ReleaseObjects";
-import { scalerFailing, scalerHold } from "@swiss/lib/scaler";
+import { enginesMove, scalerFailing, scalerHold } from "@swiss/lib/scaler";
 import { AccessPoint } from "@swiss/components/Endpoint";
 import { ReleaseStatus } from "@swiss/components/ReleaseStatus";
 import { SLODialog } from "@swiss/components/SLOCard";
@@ -370,6 +370,8 @@ export function pdScaleStep(st: AutoscaleState): Step {
       return { label, state: "wait", detail: st.hold ? `${slices(st.current)}, held: ${st.hold}` : `${slices(st.current)}, held` };
   }
   if (st.want !== undefined && st.want !== st.current) return { label, state: "wait", detail: `${st.current} → ${slices(st.want)}` };
+  const move = enginesMove(st);
+  if (move) return { label, state: "wait", detail: `${move.cur} → ${move.want} per slice` };
   return { label, state: "ok", detail: `${slices(st.current)}, steady` };
 }
 

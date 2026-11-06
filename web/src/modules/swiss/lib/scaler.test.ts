@@ -42,10 +42,10 @@ describe("scalerHold", () => {
 });
 
 describe("scalerNeutral", () => {
-  it("always includes ScalingLimited, and DecisionAvailable only next to ScalingActive", () => {
-    expect(scalerNeutral([c("DecisionAvailable", "True", "DecisionReceived")])).toEqual(["ScalingLimited"]);
-    expect(scalerNeutral([c("ScalingActive", "True", "DecisionReceived")])).toEqual(["ScalingLimited", "DecisionAvailable"]);
-    expect(scalerNeutral(undefined)).toEqual(["ScalingLimited"]);
+  it("mutes DecisionAvailable only next to ScalingActive", () => {
+    expect(scalerNeutral([c("DecisionAvailable", "True", "DecisionReceived")])).toEqual([]);
+    expect(scalerNeutral([c("ScalingActive", "True", "DecisionReceived")])).toEqual(["DecisionAvailable"]);
+    expect(scalerNeutral(undefined)).toEqual([]);
   });
 });
 
@@ -91,5 +91,11 @@ describe("pdScaleStep", () => {
     expect(pdScaleStep(st({ outcome: "held", hold: "role-not-ready" }))).toEqual({ label: "PD autoscaling", state: "wait", detail: "2 slices, held: role-not-ready" });
     expect(pdScaleStep(st({ outcome: "error", error: "boom" }))).toEqual({ label: "PD autoscaling", state: "bad", detail: "boom" });
     expect(pdScaleStep(st({}))).toEqual({ label: "PD autoscaling", state: "wait", detail: "not evaluated yet" });
+  });
+
+  it("reads a pdengine pass that moves only the engines as scaling", () => {
+    const pd = { current: { prefill: 2, decode: 1 }, want: { prefill: 3, decode: 1 } };
+    expect(pdScaleStep(st({ outcome: "scaled-up", current: 1, want: 1, pd }))).toEqual({ label: "PD autoscaling", state: "wait", detail: "2P1D → 3P1D per slice" });
+    expect(pdScaleStep(st({ outcome: "unchanged", current: 1, want: 1, pd: { ...pd, want: pd.current } }))).toEqual({ label: "PD autoscaling", state: "ok", detail: "1 slice, steady" });
   });
 });

@@ -211,6 +211,7 @@
       "held": "{n} slices, held: {hold}",
       "heldBare": "{n} slices, held",
       "scaling": "{cur} → {want} slices",
+      "scalingEngines": "{cur} → {want} per slice",
       "steady": "{n} slices, steady"
     }
   },

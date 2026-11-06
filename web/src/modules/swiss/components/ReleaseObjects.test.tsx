@@ -41,11 +41,22 @@ describe("SLO card PD autoscaling", () => {
     expect(html).toContain("Last scaled");
   });
 
-  it("names a hold and a clamped decision", () => {
-    const html = render({ namespace: "models", release: "glm", enabled: true, current: 64, decision: 80, want: 64, outcome: "unchanged" });
-    expect(html).toContain(">steady<");
-    expect(html).toContain("clamped to 64");
+  it("shows a pdengine pass's engines per slice and decision", () => {
+    const pd = { current: { prefill: 2, decode: 1 }, want: { prefill: 3, decode: 1 }, decision: { prefill: 3, decode: 1 } };
+    const html = render({ namespace: "models", release: "glm", enabled: true, current: 1, want: 1, decision: 1, outcome: "scaled-up", pd });
+    expect(html).toContain("Engines");
+    expect(html).toMatch(/2P1D\s*→\s*3P1D/);
+    expect(html).toMatch(/·\s*3P1D/);
 
+    const steady = render({ namespace: "models", release: "glm", enabled: true, current: 1, want: 1, decision: 1, outcome: "unchanged", pd: { ...pd, want: pd.current, decision: pd.current } });
+    expect(steady).toContain(">2P1D<");
+    expect(steady).not.toContain("→");
+
+    const plain = render({ namespace: "models", release: "glm", enabled: true, current: 2, want: 2, decision: 2, outcome: "unchanged" });
+    expect(plain).not.toContain("Engines");
+  });
+
+  it("names a hold", () => {
     const held = render({ namespace: "models", release: "glm", enabled: true, current: 2, decision: 4, outcome: "held", hold: "role not ready" });
     expect(held).toContain(">held<");
     expect(held).toContain("role not ready");

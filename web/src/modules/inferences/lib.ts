@@ -13,7 +13,7 @@ import type {
   Run,
 } from "@swiss/lib/api";
 import { isUninstalling, rowPhase } from "@swiss/lib/phase";
-import { scalerFailing, scalerHold } from "@swiss/lib/scaler";
+import { enginesMove, scalerFailing, scalerHold } from "@swiss/lib/scaler";
 
 export type Tone = "success" | "info" | "warning" | "error" | "muted";
 
@@ -199,6 +199,8 @@ function pdScaleStep(st: AutoscaleState): Step {
       return st.hold ? { key, state: "wait", detail: "held", params: { n: st.current, hold: st.hold } } : { key, state: "wait", detail: "heldBare", params: { n: st.current } };
   }
   if (st.want !== undefined && st.want !== st.current) return { key, state: "wait", detail: "scaling", params: { cur: st.current, want: st.want } };
+  const move = enginesMove(st);
+  if (move) return { key, state: "wait", detail: "scalingEngines", params: move };
   return { key, state: "ok", detail: "steady", params: { n: st.current } };
 }
 
