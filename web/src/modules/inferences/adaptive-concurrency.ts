@@ -1,5 +1,6 @@
 import type { Form } from "@swiss/components/DeploySettings";
 import type { Plan, PlanRequest } from "@swiss/lib/api";
+import { requestFromPlan, samePlanBaseline } from "./plan-composition";
 import { routeDirectives, type RouteOptions } from "./routeOptions";
 
 type Tree = Record<string, unknown>;
@@ -30,14 +31,7 @@ export function withAdaptiveConcurrency(request: PlanRequest, form: Form, option
   modelRoute.nginx = nginx;
   overrides.modelRoute = modelRoute;
   if (!composed) return { ...request, overrides };
-  return {
-    ...request, fromRelease: undefined,
-    catalog: composed.source.catalogName || catalog || request.catalog,
-    model: composed.source.model, version: composed.source.version,
-    variant: composed.source.variant,
-    release: composed.release.name, namespace: composed.release.namespace,
-    chartVersion: composed.chart.version, overrides,
-  };
+  return requestFromPlan(request, composed, overrides, catalog);
 }
 
 export class AdaptivePlanChangedError extends Error {}
@@ -53,21 +47,9 @@ export async function composeAdaptivePlan(request: PlanRequest, form: Form, opti
   return proposed;
 }
 
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(",")}}`;
-  return JSON.stringify(value) ?? "undefined";
-}
-
 export function sameAdaptiveBaseline(before: Plan, after: Plan, options?: RouteOptions | null): boolean {
-  const layers = (plan: Plan) => {
-    const copy = structuredClone(plan.layers ?? {});
-    const values = routeValues(copy.form ?? {});
+  return samePlanBaseline(before, after, (layers) => {
+    const values = routeValues(layers.form ?? {});
     for (const key of Object.keys(values)) if (isAdaptiveOption(key, options)) delete values[key];
-    return canonical(copy);
-  };
-  return before.release.name === after.release.name && before.release.namespace === after.release.namespace
-    && before.chart.name === after.chart.name && before.chart.version === after.chart.version && before.chart.repo === after.chart.repo && before.chart.path === after.chart.path
-    && before.engine === after.engine && before.profile === after.profile && layers(before) === layers(after)
-    && (["catalog", "catalogName", "model", "variant", "version", "hf", "digest"] as const).every((key) => before.source[key] === after.source[key]);
+  });
 }

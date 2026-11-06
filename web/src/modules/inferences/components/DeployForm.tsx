@@ -58,9 +58,10 @@ export interface DeployFormProps {
   catalogRoute?: string;
   // The chart's values and swissd's layers for the Override YAML editor.
   helmValues?: HelmValuesSource;
+  recovery?: ReactNode;
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery }: DeployFormProps) {
   const t = useT();
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
@@ -187,6 +188,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
       {section(
         "routing",
         <>
+          {recovery}
           <FloatingField layout="inline" label={label("expose_routed_peer", "exposeRoutedPeer")} hint={hint("expose_routed_peer", "exposeRoutedPeerHint")}>
             {sw("exposeRoutedPeer", f("exposeRoutedPeer"))}
           </FloatingField>

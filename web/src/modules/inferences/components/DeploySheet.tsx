@@ -43,6 +43,9 @@ import { DeployForm } from "@/modules/inferences/components/DeployForm";
 import type { HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
 import { AdaptivePlanChangedError, composeAdaptivePlan, withAdaptiveConcurrency } from "../adaptive-concurrency";
+import { composeRecoveryPlan, composeRecoveryValuesRequest, RecoveryPlanChangedError } from "../recovery-compose";
+import { RecoveryFields } from "./RecoveryFields";
+import { mergeValues, planValues, recoveryError, recoveryInputError, recoverySettings, withRecovery } from "../recovery";
 import { readRouteOptions } from "@/modules/inferences/api";
 
 export type DeployTarget =
@@ -138,6 +141,11 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   if (current.data && !seedPlan) setSeedPlan(current.data);
   const deployModel = upgrade ? "" : target.model;
   const initial = useMemo<Form>(() => (upgrade ? (seedPlan ? formFromPlan(seedPlan) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }), [upgrade, seedPlan, deployModel]);
+  const initialRecovery = useMemo(() => recoverySettings(
+    upgrade && seedPlan ? planValues(seedPlan) : mergeValues(entry.data?.variant.values, profile.data?.profile?.extra),
+  ), [upgrade, seedPlan, entry.data?.variant.values, profile.data?.profile?.extra]);
+  const [recoveryPatch, setRecoveryPatch] = useState<Partial<ReturnType<typeof recoverySettings>>>({});
+  const recovery = { ...initialRecovery, ...recoveryPatch };
   const [form, setForm] = useState<Form>(initial);
   const catalogRoute = upgrade && current.data ? initial.route || initial.serviceId || target.release : undefined;
   const routeOptions = useQuery({
@@ -149,7 +157,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   });
   useEffect(() => setForm(initial), [initial]);
   const [seed, setSeed] = useState<SwitchDefaults | null>(null);
-  const dirty = useDirty({ form, version, variant, moveTo, chartVersion }, { form: seed ? reseed(initial, {}, seed) : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "" });
+  const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: seed ? reseed(initial, {}, seed) : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
 
   const [step, setStep] = useState<"form" | "review">("form");
   const [submitted, setSubmitted] = useState(false);
@@ -199,11 +207,23 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // overrides, which the editor merges itself. Cached per request while the
   // sheet is open, so saving the overrides and editing them again does not
   // read the chart again.
+  const compositionError = (error: unknown) => {
+    if (error instanceof RecoveryPlanChangedError) return new Error(t("deploy.recovery.errors.changedPlan"));
+    if (error instanceof AdaptivePlanChangedError) return new Error(t("deploy.fields.adaptiveChanged"));
+    return error;
+  };
   const valuesForm = { ...form, edits: "" };
-  const valuesRequest = upgrade && !recorded ? undefined : withAdaptiveConcurrency(requestFor(valuesForm), valuesForm, routeOptions.data);
+  const valuesRequest = upgrade && !recorded ? undefined : withAdaptiveConcurrency(withRecovery(requestFor(valuesForm), recovery), valuesForm, routeOptions.data);
   const helmValues = useQuery({
     queryKey: ["helmValues", JSON.stringify(valuesRequest ?? null)],
-    queryFn: () => deployApi.helmValues(valuesRequest!),
+    queryFn: async () => {
+      try {
+        const request = await composeRecoveryValuesRequest(requestFor(valuesForm), recovery, (next) => composeAdaptivePlan(next, valuesForm, routeOptions.data, deployApi.plan, catalogName), catalogName);
+        return await deployApi.helmValues(request);
+      } catch (error) {
+        throw compositionError(error);
+      }
+    },
     enabled: false,
     staleTime: Infinity,
     // Dropped when the sheet closes: they last one install or upgrade.
@@ -219,10 +239,14 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const compose = useMutation({
     mutationFn: async () => {
       try {
-        return await composeAdaptivePlan(requestFor(form), form, routeOptions.data, deployApi.plan, catalogName);
+        const inputError = recoveryInputError(recovery);
+        if (inputError) throw new Error(t(`deploy.recovery.errors.${inputError}`));
+        const proposed = await composeRecoveryPlan(requestFor(form), recovery, (request) => composeAdaptivePlan(request, form, routeOptions.data, deployApi.plan, catalogName), catalogName);
+        const invalid = recoveryError(proposed, recovery);
+        if (invalid) throw new Error(t(`deploy.recovery.errors.${invalid}`));
+        return proposed;
       } catch (error) {
-        if (error instanceof AdaptivePlanChangedError) throw new Error(t("deploy.fields.adaptiveChanged"));
-        throw error;
+        throw compositionError(error);
       }
     },
     onSuccess: (pl) => {
@@ -446,6 +470,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               onChange={change}
               upgrade={upgrade}
               submitted={submitted}
+              recovery={<RecoveryFields settings={recovery} onChange={(patch) => setRecoveryPatch((previous) => ({ ...previous, ...patch }))} />}
               target={targetFields}
               cluster={cluster.data}
               defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), cache }}
