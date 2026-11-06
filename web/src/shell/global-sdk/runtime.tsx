@@ -15,7 +15,8 @@ export interface InstalledPlugin {
   id: string;
   entry: string;
   styles?: string[];
-  menu?: PluginMenu;
+  menu: PluginMenu;
+  development?: boolean;
 }
 
 interface SDKMenu { name: string; path: string; authKey?: string }
@@ -45,7 +46,7 @@ function routePath(pattern: string): string {
 function buildModule(registration: Registration): ConsoleModule {
   const { plugin, definition, components, routes, error } = registration;
   if (error) throw error;
-  if (!definition || !plugin.menu) throw new Error("Entry did not register a Global SDK plugin");
+  if (!definition || !plugin.menu) throw new Error("Entry did not register a ModelSphere SDK plugin");
   const menu = plugin.menu;
   const component = components[menu.component];
   if (!component) throw new Error(`Menu component "${menu.component}" was not registered`);
@@ -68,7 +69,7 @@ export function createRegistration() {
     try {
       if (name !== current.plugin.id) throw new Error(`Plugin "${current.plugin.id}" registered "${name}"`);
       action(current);
-    } catch (error) { current.error = error instanceof Error ? error : new Error(String(error)); }
+    } catch (error) { current.error ??= error instanceof Error ? error : new Error(String(error)); }
   }
   const sdk = {
     registerPlugin(definition: Definition) {

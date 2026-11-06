@@ -25,12 +25,11 @@ import (
 )
 
 type Server struct {
-	cfg        *config.Config
-	kube       *cluster.Kube
-	log        *slog.Logger
-	version    string
-	web        fs.FS
-	pluginsDir string
+	cfg     *config.Config
+	kube    *cluster.Kube
+	log     *slog.Logger
+	version string
+	web     fs.FS
 
 	authn  *iam.Authenticator
 	signer *iam.Signer
@@ -222,6 +221,9 @@ type statusRecorder struct {
 	http.ResponseWriter
 	status int
 }
+
+// Unwrap lets ResponseController preserve WebSocket upgrades through logging.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code

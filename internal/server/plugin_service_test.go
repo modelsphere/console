@@ -23,7 +23,7 @@ func TestPluginImageService(t *testing.T) {
 		_, _ = w.Write([]byte("SDK bundle"))
 	}))
 	defer upstream.Close()
-	srv := pluginServer(t, "")
+	srv := pluginServer(t)
 	srv.cfg.Plugins = []config.Plugin{{ID: "example", URL: upstream.URL + "/frontend", Entry: "index.umd.js", Menu: config.PluginMenu{Title: "Example", Label: "Example", Path: "/example", Component: "Example"}}}
 	index := do(srv.Handler(), "GET", "/plugins/index.json", "", "")
 	var descriptors []pluginManifest
@@ -53,7 +53,7 @@ func TestPluginImageUnavailableAndInvalidPaths(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
-	srv := pluginServer(t, "")
+	srv := pluginServer(t)
 	srv.cfg.Plugins = []config.Plugin{{ID: "example", URL: upstream.URL, Entry: "index.umd.js"}}
 	for _, path := range []string{"/plugins/example/../private", "/plugins/example/%2e%2e/private", "/plugins/example/missing.js"} {
 		if response := do(srv.Handler(), "GET", path, "", ""); response.Code != http.StatusNotFound {

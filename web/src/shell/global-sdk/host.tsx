@@ -1,4 +1,6 @@
 import * as React from "react";
+import * as ReactJSXRuntime from "react/jsx-runtime";
+import * as ReactJSXDevRuntime from "react/jsx-dev-runtime";
 import * as Router from "react-router";
 import * as Query from "@tanstack/react-query";
 import * as ui from "@modelsphere/ui";
@@ -32,7 +34,7 @@ function navigate(path: string) {
 export function createGlobalHost() {
   const registration = createRegistration();
   const host = {
-    VERSION: "1.0.1", React, ...registration.sdk, apiClient, navigate, ui,
+    VERSION: "1.0.1", React, ReactJSXRuntime, ReactJSXDevRuntime, ...registration.sdk, apiClient, navigate, ui,
     business: { console: { Router, Query, i18n, apiFetch, useAuth, usePermissions } },
     ScopeContext: { scope: "platform", cluster: "", workspace: "", project: "" },
     scope: "platform", scopeValue: "global",
@@ -61,5 +63,5 @@ export function createGlobalHost() {
 export type GlobalSDK = ReturnType<typeof createGlobalHost>["host"];
 
 declare global {
-  interface Window { __GLOBAL_SDK__: GlobalSDK; __RISE_SDK__: GlobalSDK }
+  interface Window { __MODELSPHERE_SDK__: GlobalSDK; __GLOBAL_SDK__: GlobalSDK; __RISE_SDK__: GlobalSDK }
 }

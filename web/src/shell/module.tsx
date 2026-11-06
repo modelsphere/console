@@ -6,7 +6,7 @@ import { pageKey } from "@/shell/i18n";
 // pages; the shell owns everything around them: login, layout, sidebar, route
 // guards, the query client and the session on every request.
 //
-// Built-ins register in src/modules/index.ts; installed plugins use ConsolePluginHost.
+// Built-ins register in src/modules/index.ts; configured plugins register through the ModelSphere SDK host.
 export interface ModuleOverviewProps {
   session?: ReactNode;
 }
