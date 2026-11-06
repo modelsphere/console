@@ -63,7 +63,7 @@ export { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput, InputGr
 export { Sheet, SheetBody, SheetCancelButton, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger, useSheetClose } from "./components/ui/sheet"
 export type { SheetSize } from "./components/ui/sheet"
 export { FieldNotice } from "./components/floating-field"
-export { CodeBlock } from "./components/code-block"
+export { CodeBlock, highlightLine } from "./components/code-block"
 export { CodeToolbar } from "./components/code-toolbar"
 export type { CodeBlockProps, CodeBlockLanguage } from "./components/code-block"
 export type { CodeToolbarProps } from "./components/code-toolbar"

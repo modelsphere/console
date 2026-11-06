@@ -88,6 +88,13 @@ const COLOR: Record<Exclude<Tok["t"], "">, string> = {
   w: "var(--code-keyword)",
 }
 
+/** 一行的高亮，与 CodeBlock 画法相同。token 拼回去就是原文，所以可以垫在透明 textarea 下面做可编辑的高亮。 */
+export function highlightLine(line: string, language: CodeBlockLanguage = "shell"): React.ReactNode[] {
+  return tokenizeLine(line, language).map((tok, j) =>
+    tok.t ? <span key={j} style={{ color: COLOR[tok.t] }}>{tok.v}</span> : <React.Fragment key={j}>{tok.v}</React.Fragment>,
+  )
+}
+
 export function CodeBlock({
   value,
   language = "shell",
@@ -121,9 +128,7 @@ export function CodeBlock({
               </span>
             ) : null}
             <span className="min-w-0 flex-1">
-              {tokenizeLine(line, language).map((tok, j) =>
-                tok.t ? <span key={j} style={{ color: COLOR[tok.t] }}>{tok.v}</span> : <React.Fragment key={j}>{tok.v}</React.Fragment>,
-              )}
+              {highlightLine(line, language)}
               {line === "" ? "​" : null}
             </span>
           </div>

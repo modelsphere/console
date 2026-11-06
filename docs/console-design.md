@@ -362,25 +362,6 @@ The master switch and every `needsAdaptive` field share one section (console #75
 | Integrity | Preserve unrelated form values and explicit advanced YAML; reject source/chart identity or other layer changes between the two compositions |
 | Application | Only the cleaned plan enters the existing diff/revision/apply flow; composition performs no workload write |
 
-### Deployment YAML review
-
-The final deploy/upgrade review offers YAML editing, following Rise Global's deployment drawer.
-
-| Concern | Decision |
-|---|---|
-| Contents | Show the plan's merged values in deployment order; use the YAML library for serialization and validation |
-| Overrides | Store only changed keys in the edit layer; preserve existing edits, replace lists, and use Helm null tombstones for removals |
-| Identity | Recompose against the reviewed catalog/model/variant/chart versions; retain release context on upgrades |
-| Verification | Reject a recomposed result that differs from the edited values, including autoscale shadowing or changed defaults |
-| Drafts | Keep invalid drafts visible; pause background form reseeding while reviewing; closing warns only for actual changes |
-| Apply | Re-run diff for the new hash; block deployment while editing, composing, or awaiting a successful diff |
-
-```text
-form -> compose -> review -> edit YAML -> validate -> recompose -> diff -> review -> apply
-                              ^                       |
-                              +--- preserve errors ---+
-```
-
 ### Workload reads (`/api/k8s/...`)
 
 Events and logs are Kubernetes data, not swiss's, so console serves them itself

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { stringify } from "yaml";
 import { useNavigate } from "react-router";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -40,11 +39,9 @@ import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
-import { matchesDeploymentYaml, yamlPlanRequest } from "../deploy-yaml";
-import { DeployYamlEditor } from "./DeployYamlEditor";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
-import { AdaptivePlanChangedError, composeAdaptivePlan } from "../adaptive-concurrency";
+import { AdaptivePlanChangedError, composeAdaptivePlan, withAdaptiveConcurrency } from "../adaptive-concurrency";
 import { readRouteOptions } from "@/modules/inferences/api";
 
 export type DeployTarget =
@@ -154,8 +151,6 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const dirty = useDirty({ form, version, variant, moveTo, chartVersion }, { form: seed ? reseed(initial, {}, seed) : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "" });
 
   const [step, setStep] = useState<"form" | "review">("form");
-  const [editingYaml, setEditingYaml] = useState(false);
-  const [yamlDirty, setYamlDirty] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [expanded, setExpanded] = useState(OPEN);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -172,7 +167,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const siteDefaults = useMemo(() => siteSwitchDefaults(profile.data), [profile.data]);
   const variantValues = entry.data?.variant.values;
   useEffect(() => {
-    if (!seedReady || step !== "form") return;
+    if (!seedReady) return;
     const next = switchDefaults(siteDefaults, variantValues);
     if (seed && JSON.stringify(seed) === JSON.stringify(next)) return;
     setForm((f) => reseed(f, seed ?? {}, next));
@@ -182,7 +177,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
       setDiff(null);
       setStep("form");
     }
-  }, [seedReady, siteDefaults, variantValues, seed, step]);
+  }, [seedReady, siteDefaults, variantValues, seed]);
 
   const release = upgrade ? target.release : form.serviceId || defaultServiceId(target.model);
   const namespace = upgrade ? target.namespace : form.namespace || cluster.data?.namespace || "";
@@ -191,29 +186,28 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // A product the variant does not list is one swissd takes only as forced.
   const forceGpuProducts = unlistedProducts(v?.requires.gpuProduct, form.gpuProducts).length > 0;
   const change = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
+  // What a compose of f sends; the Override YAML editor's preview sends the same.
+  const requestFor = (f: Form) => planRequest(
+    { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
+    upgrade
+      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts }
+      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts },
+    profile.data?.profile,
+  );
+  const loadValues = (edits: string) => {
+    const f = { ...form, edits };
+    return deployApi.helmValues(withAdaptiveConcurrency(requestFor(f), f, routeOptions.data));
+  };
   const compose = useMutation({
-    mutationFn: async (yaml?: string) => {
+    mutationFn: async () => {
       try {
-        const request = planRequest(
-          { ...form, serviceId: form.serviceId || (upgrade ? form.serviceId : defaultServiceId(target.model)) },
-          upgrade
-            ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts }
-            : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts },
-          profile.data?.profile,
-        );
-        const prepared = yaml === undefined ? request : yamlPlanRequest(request, plan!, yaml);
-        const composed = await composeAdaptivePlan(prepared, form, routeOptions.data, deployApi.plan, catalogName);
-        if (yaml !== undefined && !matchesDeploymentYaml(composed, yaml)) throw new Error(t("deploy.review.yamlChanged"));
-        return composed;
+        return await composeAdaptivePlan(requestFor(form), form, routeOptions.data, deployApi.plan, catalogName);
       } catch (error) {
         if (error instanceof AdaptivePlanChangedError) throw new Error(t("deploy.fields.adaptiveChanged"));
         throw error;
       }
     },
-    onSuccess: (pl, yaml) => {
-      if (yaml !== undefined) setForm((previous) => ({ ...previous, edits: pl.layers.edit ? stringify(pl.layers.edit) : "" }));
-      setEditingYaml(false);
-      setYamlDirty(false);
+    onSuccess: (pl) => {
       setPlan(pl);
       setDiff(null);
       setStep("review");
@@ -390,7 +384,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   );
 
   return (
-    <Sheet open onOpenChange={(o) => !o && onClose()} dirty={dirty || yamlDirty} onDiscard={onClose}>
+    <Sheet open onOpenChange={(o) => !o && onClose()} dirty={dirty && step === "form"} onDiscard={onClose}>
     <SheetContent size="2xl" className="gap-0">
       <SheetHeader className="border-b px-5 py-3.5">
         <SheetTitle>{upgrade ? t("deploy.titleUpgrade", { release: target.release }) : t("deploy.title")}</SheetTitle>
@@ -450,28 +444,13 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               routeOptions={routeOptions.isSuccess ? routeOptions.data : undefined}
               catalogRoute={catalogRoute}
               idPrefix={ID_PREFIX}
+              loadValues={readOnly ? undefined : loadValues}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />
           </>
         ) : (
           plan && (
-            editingYaml ? <DeployYamlEditor
-              plan={plan}
-              busy={compose.isPending}
-              error={compose.error?.message}
-              onDirtyChange={setYamlDirty}
-              onSave={(text) => {
-                setDiff(null);
-                apply.reset();
-                compose.mutate(text);
-              }}
-              onCancel={() => {
-                setEditingYaml(false);
-                setYamlDirty(false);
-                compose.reset();
-                if (!diff) dryRun.mutate(plan);
-              }}
-            /> : <Review
+            <Review
               upgrade={upgrade}
               current={current.data}
               currentCatalog={ownCatalog}
@@ -500,13 +479,10 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
           </>
         ) : (
           <>
-            <Button variant="outline" onClick={() => (setStep("form"), setDiff(null), setPlan(null), apply.reset(), dryRun.reset())} disabled={apply.isPending || compose.isPending || dryRun.isPending || editingYaml}>
+            <Button variant="outline" onClick={() => (setStep("form"), setDiff(null), setPlan(null), apply.reset(), dryRun.reset())} disabled={apply.isPending}>
               {t("deploy.review.back")}
             </Button>
-            <Button variant="outline" onClick={() => { compose.reset(); setEditingYaml(true); }} disabled={editingYaml || apply.isPending || dryRun.isPending || !!readOnly}>
-              {t("deploy.review.editYaml")}
-            </Button>
-            <Button onClick={() => apply.mutate()} disabled={!state.canApply || editingYaml || compose.isPending || apply.isPending || !!readOnly}>
+            <Button onClick={() => apply.mutate()} disabled={!state.canApply || apply.isPending || !!readOnly}>
               {apply.isPending ? t("deploy.review.busy") : t(`deploy.review.${state.action}`)}
             </Button>
           </>
