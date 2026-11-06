@@ -69,12 +69,58 @@ Trusted JavaScript runs in the Console page. Resource proxies strip browser cred
 
 ## Scenarios
 
-Concrete SDK preparation, authoring, configuration, development, deployment, disable and recovery commands are in the [plugin guide](../development/plugins.md). Source origin is recorded in [UPSTREAM.md](../../web/packages/plugin-sdk/UPSTREAM.md).
+### Connect a deployed frontend
 
-| Scenario | Completion |
-| --- | --- |
-| Deploy plugin | Assets 200; root component appears in configured menu. |
-| Edit component | Automatic update with document identity and local state retained. |
-| Add shared import | Generated exports update without development-server restart. |
-| Service fails/recovers | Error visible; built-ins usable; refresh registers recovered plugin. |
-| Remove configuration | After restart/refresh, optional menu/routes disappear; business records remain. |
+**Prerequisites:** A compatible SDK bundle and stylesheet are served by a trusted static-resource image. Preserve existing Console auth/backend settings.
+
+**Operation:** Configure the service, entry, styles and menu as in the [plugin guide](../development/plugins.md#deploy-a-static-resource-image), restart the existing Console and refresh. From the Console origin, request `GET /plugins/index.json` and `GET /plugins/example/index.umd.js`.
+
+**Visible state:** Discovery includes `example`; assets return 200; the configured menu opens its registered root page.
+
+**Data flow:** Configuration → Go descriptor/proxy → image files → SDK registration → Console menu/routes.
+
+**Completion:** The root and `items/<id>` page render under the actual host providers; business requests retain normal authentication.
+
+### Edit a page with Fast Refresh
+
+**Prerequisites:** Console Vite is running and the SDK/plugin dependencies are prepared. Enable the development descriptor from the [guide](../development/plugins.md#develop-with-fast-refresh).
+
+**Operation:** From the plugin frontend directory:
+
+```sh
+CONSOLE_SOURCE_DIR=/path/to/console CONSOLE_ORIGIN=http://127.0.0.1:5173 pnpm exec vite --config vite.config.mjs
+```
+
+Refresh Console once, change local page state, edit a React component and save. Also add a previously unused shared named import.
+
+**Visible state:** Source updates automatically; new shared exports resolve without restarting Vite. Compatible component state remains selected.
+
+**Data flow:** Source edit → Vite/shared-import generation → proxy WebSocket → browser HMR → host React Refresh tree.
+
+**Completion:** Updated content appears while `performance.timeOrigin`, a window marker and compatible local state remain unchanged. Entry/registration edits may reload the document.
+
+### Recover an unavailable resource service
+
+**Prerequisites:** A configured service is unavailable; Console's built-in modules remain accessible.
+
+**Operation:** Restore the existing plugin service, confirm `GET /plugins/example/index.umd.js` returns 200, then refresh Console.
+
+**Visible state:** A loading error is replaced by the plugin's registered page after refresh. A previously loaded tab may keep its old registry until refreshed.
+
+**Data flow:** Restored service → Go resource proxy → browser entry execution → validated registry.
+
+**Completion:** Plugin resources and pages load; retrying resource delivery creates no business records.
+
+### Disable a plugin
+
+**Prerequisites:** Operator controls the Console configuration; business records remain in the existing backend.
+
+**Operation:** Set `plugins: []`, restart the existing Console backend, refresh, then request `GET /plugins/index.json`.
+
+**Visible state:** Discovery returns `[]`; optional navigation and routes disappear.
+
+**Data flow:** Updated configuration → startup snapshot → discovery → new browser registry.
+
+**Completion:** Optional surfaces are absent and backend business data remains owned by its existing storage.
+
+Source origin is recorded in [UPSTREAM.md](../../web/packages/plugin-sdk/UPSTREAM.md).
