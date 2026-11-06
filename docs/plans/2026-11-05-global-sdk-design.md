@@ -1,75 +1,80 @@
-# Global SDK frontend plugins
+# ModelSphere Plugin SDK architecture
 
-Console loads trusted frontend bundles with the Global SDK registration contract; operators declare navigation and asset services in configuration.
+## Background
+
+Optional pages need independent repositories and deployments while sharing Console's React, router, query, UI and authenticated transport. ModelSphere maintains the migrated reusable Global SDK source as `@modelsphere/plugin-sdk`.
+
+## Goals
+
+- Configure one menu with SDK-registered root and detail pages.
+- Develop source with Vite and React Fast Refresh, preserving compatible local state.
+- Deploy built JS/CSS with a static-resource image.
+- Keep business UI and release history in its owning repository.
+
+### Non-goals
+
+- Plugin manager, uploads, marketplace, dependency resolution, CRDs or lifecycle controllers.
+- Global API-server delivery or new menu/page permission management.
+- Every Global business module, scope or slot, or arbitrary multi-plugin stylesheet merging.
+
+## Architecture
+
+### Overview
 
 ```text
-private frontend -> Global SDK build -> static frontend image
-                                            |
-console.yaml -> /plugins/index.json -> same-origin asset proxy
-                                            |
-                         shared SDK -> components + routes -> Console shell
+configuration -> discovery -> SDK registration -> menu and routes
+                   |
+            same-origin proxy
+              /          \
+        Vite + HMR      static image
+        development     deployment
 ```
 
-## Decisions
+### Design
 
-| Decision | Reason / tradeoff |
-|---|---|
-| Keep the existing SDK package and build preset | `createPlugin`, shared React and `index.umd.js` remain compatible. Do not fork the SDK just to rename it. |
-| Publish `__GLOBAL_SDK__` and the compatible `__RISE_SDK__` alias | Both names reference the same host. Existing bundles need no rename. |
-| Declare a menu in Console configuration | Installation adds one configured entry; SDK routes supply detail and create pages. |
-| Serve frontend assets from an independent image | Console proxies a configured HTTP(S) service; no archive upload, Plugin CRD or installation controller. |
-| Keep filesystem packages working | Existing #114 local packages can still be tested. New configured packages use the SDK contract. |
-| Private frontend retains its current pages | Only runtime integration and packaging change. No private UI enters the public repository. |
+| Decision | Reason |
+| --- | --- |
+| Actual SDK source under `web/packages/plugin-sdk` | ModelSphere owns package and build maintenance while preserving the reusable contract. |
+| Canonical `__MODELSPHERE_SDK__` and Global/Rise aliases | Migrated and compatible existing bundles share one host. |
+| Configuration owns menu/upstream | Operator selects a trusted service; no installation database. |
+| Transactional registration | Invalid identity/component/routes/collisions do not enter the registry. |
+| Native development import | Wait for top-level await and complete SDK registration. |
+| Host React Refresh runtime | Both Vite servers update the same host React tree. |
+| Source-driven shared imports | Regenerate shim exports on edits without duplicate provider contexts. |
+| Static-resource image | Deployment serves built files without Vite. |
 
-## Configuration
+Configuration changes require backend restart and browser refresh. Compatible component edits use Fast Refresh; registration changes can reload the document. Discovery/loading is bounded to 15 seconds. HTTP proxy requests and response-header waits are bounded to 30 seconds; upgraded sockets remain long-lived. Resources use no-store responses.
 
-```yaml
-plugins:
-  - id: example
-    url: http://example-frontend:8080
-    entry: index.umd.js
-    styles: [index.css]
-    menu:
-      title: Example
-      label: Example
-      path: /example
-      component: Example
-      icon: boxes
-```
+Trusted JavaScript runs in the Console page. Resource proxies strip browser credentials/upstream cookies and allow GET/HEAD. Only development descriptors permit WebSocket upgrades. Existing business API authentication/authorization applies; optional SDK auth metadata adds no page/menu policy.
 
-- Empty `plugins` installs nothing. Configuration changes require a Console restart.
-- `/plugins/index.json` returns descriptors and configured navigation, never internal service URLs.
-- `/plugins/<id>/...` proxies static assets; it strips cookies and authorization and never permits writes.
-- Invalid IDs, paths, URLs, duplicate packages and missing menu fields fail configuration validation.
-- Components and routes register transactionally while their script loads. Failure removes the plugin and its assets; built-ins remain available.
-- SDK API calls use the existing Console transport. This change adds no menu/page permission policy. A platform scope is exposed; cluster/workspace management is outside this change.
-- SDK UI/business surfaces expose the actual Console services. Unsupported slots and namespaces fail explicitly.
-- Global's optional `authKey` metadata is accepted for compatibility. It does not create menu/page permission gates in this integration.
+### Components
 
-## Compatibility boundary
+| Component | Responsibility | Input/output | State owner | Dependency |
+| --- | --- | --- | --- | --- |
+| Configuration | Service, entry, styles, menu, development flag | YAML → validated snapshot | Operator | Service URL/component name |
+| Go discovery/proxy | Descriptors, HTTP and development WebSockets | `/plugins/*` → upstream | Startup config | Vite/static service |
+| SDK | Registration, types, shims, build/dev presets | Source → package/plugin outputs | SDK maintainers | Pinned toolchain |
+| Browser host | Validate and commit declarations | SDK calls → Console modules | Browser document | Host React/Router/Query/UI |
+| Plugin repository | Business pages/tests/image | Source + SDK → image | Plugin maintainers | Compatible host theme/SDK |
+| Business backend | Existing data operations | Authenticated APIs | Existing storage | Console transport |
 
-| Supported here | Separate platform capabilities |
-|---|---|
-| Actual SDK package and standard build preset | Global extension marketplace/install APIs |
-| `registerPlugin`, component and route registration | Plugin CRDs and lifecycle controllers |
-| Shared React and Console Router/Query/UI transport | Global-specific business modules and hierarchical scope management |
-| SDK `[id]` dynamic route patterns | Slot rendering and arbitrary multi-plugin CSS aggregation |
+### Data flow
 
-The private frontend's existing router/query/UI imports resolve to the Console host through the SDK business/UI surfaces. This is registration/build-protocol compatibility; it does not claim every Global business plugin can run unchanged.
+1. Build/deploy the static image, or run plugin Vite for development.
+2. Console validates configuration and returns same-origin descriptors.
+3. Browser establishes the SDK host, loads resources and collects component/route registrations.
+4. Validation commits a module and the configured menu atomically.
+5. Pages use shared providers and authenticated business transport.
+6. Development updates cross the proxy and refresh compatible mounted components.
 
-## Styles
+## Scenarios
 
-The SDK still emits `candidates.json`. The frontend image build compiles one stylesheet from its candidates and the pinned Console host candidates/theme. This preserves Tailwind rule order for the current single optional frontend. A shared runtime CSS compiler for arbitrary independently installed plugins is a separate change.
+Concrete SDK preparation, authoring, configuration, development, deployment, disable and recovery commands are in the [plugin guide](../development/plugins.md). Source origin is recorded in [UPSTREAM.md](../../web/packages/plugin-sdk/UPSTREAM.md).
 
-## Verification
-
-1. Configuration -> discovery -> image asset proxy, including invalid paths, missing upstream, and credential stripping.
-2. Standard SDK registration -> configured menu -> dynamic routes, shared React/query/router and language, without new page permission gates.
-3. Build the current private frontend with the actual SDK preset; verify bundle loading and retained page routes.
-4. Typecheck, unit tests and production builds. Keep the existing local instance unchanged until the candidate is ready.
-
-## Alternatives
-
-- A renamed custom loader would preserve the compatibility gap.
-- Importing Global's full installation backend adds unrelated lifecycle and Kubernetes dependencies.
-- Compiling private pages into Console still requires rebuilding Console to install them.
+| Scenario | Completion |
+| --- | --- |
+| Deploy plugin | Assets 200; root component appears in configured menu. |
+| Edit component | Automatic update with document identity and local state retained. |
+| Add shared import | Generated exports update without development-server restart. |
+| Service fails/recovers | Error visible; built-ins usable; refresh registers recovered plugin. |
+| Remove configuration | After restart/refresh, optional menu/routes disappear; business records remain. |

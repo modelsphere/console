@@ -1,109 +1,103 @@
-# Installed frontend plugins
+# Frontend plugins
 
-## Background and goals
+Console loads trusted, separately maintained frontend plugins through `@modelsphere/plugin-sdk`.
 
-Built-in Console modules remain compiled into the shell. Optional trusted modules can also be installed as independent frontend packages: before installation they have no menu, route or overview card; after installation and a browser refresh they use the same shell as built-ins.
+## Prepare the SDK
 
-No plugin management page, marketplace, backend installer or dependency resolver is included.
+SDK source lives in `web/packages/plugin-sdk`. The package is currently built from a pinned Console checkout; it has not been published to a registry.
 
-## Architecture
-
-```text
-operator-owned directory -> /plugins/index.json -> entry JS + CSS
-  -> window.ConsolePluginHost.register(ConsoleModule)
-  -> shared shell: navigation + routes + overview + permission guards
+```sh
+export CONSOLE_SOURCE_DIR=/path/to/console
+pnpm --dir "$CONSOLE_SOURCE_DIR/web/packages/plugin-sdk" install --frozen-lockfile
+pnpm --dir "$CONSOLE_SOURCE_DIR/web/packages/plugin-sdk" run typecheck
+pnpm --dir "$CONSOLE_SOURCE_DIR/web/packages/plugin-sdk" test
+pnpm --dir "$CONSOLE_SOURCE_DIR/web/packages/plugin-sdk" run build
 ```
 
-| Module | Responsibility | State |
-|---|---|---|
-| Go plugin handler | Discover package manifests and serve their assets | Directory is the installed-package source of truth |
-| Browser loader | Load CSS and entry scripts; validate registrations | Module registry for the current page load |
-| Existing Console shell | Render menus/pages/cards, authenticate and guard permissions | Existing user session and query cache |
+A consuming repository can prepare a generated local `file:` dependency from the built SDK. Keep generated package files out of Git; prepare them before dependency installation and record the Console revision with the build. Available exports are the runtime, `/build`, `/dev`, `/react-shim` and `/testing`.
 
-### Package contract
+## Register pages
 
-```text
-plugins/
-  example/
-    plugin.json
-    index.js
-    style.css
-```
-
-```json
-{ "id": "example", "entry": "index.js", "styles": ["style.css"] }
-```
-
-- Directory name and `id` match, using lowercase kebab-case.
-- `entry` and optional `styles` are existing package-relative files. Include nested asset paths if needed.
-- Entry is a browser script (IIFE/UMD), registering exactly one `ConsoleModule` synchronously. Its ID matches the manifest.
-- Each ID and base path must be unique across built-ins and installed packages. Shell and asset paths are reserved.
-- Use package-scoped CSS. Assets may be served publicly, as with the shell itself.
-- Installed JavaScript is trusted and has Console privileges. Backend authentication and RBAC still apply to API requests.
-
-### Host interface
-
-```js
-const { version, React, Router, Query, shell, icons, register } = window.ConsolePluginHost;
-// version === 1; icons currently exposes Boxes.
-register({
-  id: "my-tools",
-  title: "工具",
-  basePath: "/my-tools",
-  pages: [{
-    path: "",
-    element: React.createElement(MyPage),
-    menu: { label: "工具", icon: icons.Boxes },
-    // permission: "my-tools.view", // optional existing UI permission
-  }],
+```tsx
+import { createPlugin } from "@modelsphere/plugin-sdk";
+import { ExamplePage, ItemPage } from "./pages";
+declare const __PLUGIN_VERSION__: string;
+createPlugin({
+  name: "example",
+  version: __PLUGIN_VERSION__,
+  components: { ExamplePage },
+  routes: { "items/[id]": ItemPage },
 });
 ```
 
-Use the host's React instance and hooks; do not bundle another React. JSX authoring must compile to the shared `React.createElement` or a compatible host runtime, and output a browser script without unresolved imports. Other package-private dependencies can be bundled. The example uses plain JavaScript and requires no build step.
+The presets inject `__PLUGIN_VERSION__` from the frontend's `Chart.yaml`. Configuration selects the menu and root component. `[id]` routes become `:id`; `[...name]` becomes a catch-all. Use named imports for shared `react-router`, `@tanstack/react-query` and `@modelsphere/ui` modules. React and these imports use actual host instances. Authenticated `apiFetch` and i18n are exposed through `getBusiness<ConsoleServices>().console`. Optional auth metadata creates no new menu/page policy.
 
-`Router` shares React Router, `Query` shares TanStack Query, and `shell` exposes the same public interface as `web/src/shell/index.ts`: `useAuth`, `usePermissions`, `useModulePath`, `request`, `apiFetch`, `registerI18n`, `useT`, and the other existing exports. Components render inside the existing providers. `overview`, `frame`, page permissions and topbar placement use the existing `ConsoleModule` contract.
+## Develop with Fast Refresh
 
-## Scenarios
+Create `vite.config.mjs` in the plugin frontend:
 
-### First installation
-
-Prerequisites: a Console build supporting this mechanism, its existing config and cluster, and filesystem access to the Console host. From the repository root:
-
-```sh
-mkdir -p ./plugins
-./console --config ./console.yaml --plugins-dir ./plugins
-# Equivalent environment setting: CONSOLE_PLUGINS_DIR=/absolute/path/to/plugins
+```js
+import { definePluginDevConfig } from "@modelsphere/plugin-sdk/dev";
+export default definePluginDevConfig({
+  name: "example", entry: "src/runtime.tsx",
+  hostSource: process.env.CONSOLE_SOURCE_DIR,
+  hostOrigin: process.env.CONSOLE_ORIGIN,
+});
 ```
 
-With the directory empty, refresh the Console URL: there is no example menu or page. The discovery response is `[]`. With no flag/environment setting, external plugins are disabled and the response is also `[]`.
+Run one Console frontend and Go backend using the normal development instructions. Preserve existing cluster/auth/backend settings and add:
 
-In another terminal, from the repository root:
-
-```sh
-cp -R examples/plugins/example ./plugins/example
+```yaml
+plugins:
+  - id: example
+    url: http://127.0.0.1:4181
+    development: true
+    entry: __modelsphere_entry.ts
+    menu:
+      title: Example
+      label: Example
+      path: /example
+      component: ExamplePage
+      icon: puzzle
 ```
 
-Refresh the same Console URL. The sidebar contains the example tools group; the overview links to the workspace. Open it and click its action button: the count increases. Opening `/example` directly also renders the workspace after refresh.
-
-Data: package files -> discovery response -> browser assets -> module registration -> existing shell. No Console rebuild or server restart is required to copy/remove packages after the directory has been configured. Install complete packages before refreshing clients.
-
-### Removal
-
-Move the package outside the installed directory to retain a backup:
+Restart the existing backend. From the plugin frontend directory:
 
 ```sh
-# Verify both paths before executing in a real installation.
-mv ./plugins/example ./example-uninstalled
+export CONSOLE_SOURCE_DIR=/path/to/console
+export CONSOLE_ORIGIN=http://127.0.0.1:5173
+pnpm exec vite --config vite.config.mjs
 ```
 
-Refresh: the menu and overview disappear, and `/example` follows Console's existing unknown-route behavior. Already-open tabs retain their loaded modules until refreshed.
+Refresh Console once to discover the development entry. Compatible React component edits then update automatically and preserve local state. Entry/registration changes reload the page. New shared named imports regenerate their exports while Vite runs. The SDK compiles styles against the host theme and plugin source.
 
-### Failure and recovery
+HTTP and WebSocket requests use `/plugins/<id>/` through both Console proxies. The plugin reuses the host Vite server's `/@react-refresh` runtime. This development mode requires the Console Vite frontend; a production frontend does not provide that runtime.
 
-A malformed manifest makes discovery fail, with details in server logs and a visible plugin-loading notice in Console. Built-ins remain usable. Missing scripts/styles, missing registration, ID mismatch and route collisions are reported by the browser loader. A failed package does not enter the module list; later valid packages can still load. Discovery and each asset load have a 15-second timeout.
+## Deploy a static-resource image
 
-Correct the package files and refresh to retry. Package code must avoid startup side effects outside its own namespace; removing a failed script cannot roll back arbitrary JavaScript side effects. No package data or installation state is written by discovery.
+Production `tsup.config.mjs`:
 
-### Development and containers
+```js
+import { definePluginConfig } from "@modelsphere/plugin-sdk/build";
+export default definePluginConfig({ name: "example", entry: "src/runtime.tsx", outDir: "dist" });
+```
 
-`npm run dev` proxies `/plugins` to the same Console target as `/api` and `/oauth`; set `CONSOLE` as documented for local development. Container operators mount their package directory read-only and set `CONSOLE_PLUGINS_DIR` to that path. The default image and chart install no optional package.
+Run `pnpm exec tsup --config tsup.config.mjs`. It emits `index.umd.js` and Tailwind `candidates.json`. The image build must compile CSS using those candidates and the pinned Console theme. Current stylesheet integration supports one optional frontend; arbitrary multi-plugin runtime CSS merging is outside its scope.
+
+Serve the built files with a static-resource image. Change the descriptor to `url: http://example-frontend:8080`, `entry: index.umd.js`, `styles: [index.css]` and omit `development`. Keep the menu declaration, restart the existing backend and refresh Console. Deployment loads the classic built bundle and rejects WebSocket upgrades.
+
+## Verify and recover
+
+| Check | Observable result |
+| --- | --- |
+| `GET /plugins/index.json` | Identity, same-origin URLs and menu; no upstream URL. |
+| Entry and stylesheet requests | HTTP 200. |
+| `Object.keys(window.__MODELSPHERE_SDK__.getPluginComponents("example"))` | Contains `ExamplePage`. |
+| Menu/root and `items/<id>` | Render under host Router/Query/UI providers. |
+| Compatible component edit | Text changes with unchanged document and local state. |
+| Service unavailable | Visible plugin loading error; built-ins remain usable. Restore the service and refresh. |
+| Set `plugins: []`, restart and refresh | Optional menu/routes disappear; backend business records remain. |
+
+Configuration is read at backend startup. Open tabs retain their registry until refreshed. Plugin JavaScript runs with Console frontend privileges, so operators must select trusted services. The resource proxy strips Cookie/Authorization and upstream Set-Cookie; existing business API authentication/authorization still applies.
+
+`web/test/plugin-runtime.html` is a development browser test fixture using configured plugins and actual host providers. It is excluded from the production entry and does not disable application authentication.

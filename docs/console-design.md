@@ -132,9 +132,11 @@ Rules:
 - `validateModules` rejects duplicate ids/basePaths, shell-reserved paths and ids (`common`, `shell`: they are i18n namespaces) and pages declared twice at startup.
 - Text goes through `useT()` (see "i18n"); the declaration's `title` and menu labels stay Chinese.
 
-Runtime plugins reuse this declaration through `window.ConsolePluginHost` (version 1), which shares the shell's React, router, query library and shell exports. `--plugins-dir` / `CONSOLE_PLUGINS_DIR` selects a trusted package directory. `/plugins/index.json` discovers packages on every refresh; the browser loads their JS/CSS and validates registrations before constructing routes, navigation and overview cards. Built-ins remain compiled into `web/src/modules/index.ts`; external packages need no shell rebuild. Nothing from an uninstalled package enters the module list.
+Runtime plugins use `@modelsphere/plugin-sdk`, maintained in `web/packages/plugin-sdk`. Configuration declares a trusted resource service and one menu; SDK registration supplies components and internal routes. `/plugins/index.json` returns descriptors, and `/plugins/<id>/*` proxies assets without Console credentials. Registration validates identity and collisions before adding a module. Empty configuration adds no external module.
 
-See [the installation and authoring guide](development/plugins.md) and [the minimal design proposal](installed-plugins-proposal.md). Plugin management UI, dependency resolution and cross-module slots remain out of scope.
+Development uses the SDK Vite preset, same-origin WebSocket proxy and the host's React Refresh runtime. Deployment uses a built bundle served by a static-resource image. Configuration changes require a backend restart and browser refresh; compatible component edits update through Fast Refresh. This integration adds no menu/page permission policy.
+
+See the [authoring and deployment guide](development/plugins.md) and [design](plans/2026-11-05-global-sdk-design.md).
 
 ### i18n
 

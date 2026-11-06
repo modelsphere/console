@@ -10,11 +10,12 @@ import (
 
 // Plugin identifies a trusted frontend image service and its navigation entry.
 type Plugin struct {
-	ID     string     `yaml:"id" json:"id"`
-	URL    string     `yaml:"url" json:"-"`
-	Entry  string     `yaml:"entry" json:"entry"`
-	Styles []string   `yaml:"styles,omitempty" json:"styles,omitempty"`
-	Menu   PluginMenu `yaml:"menu" json:"menu"`
+	Development bool       `yaml:"development,omitempty" json:"development,omitempty"`
+	ID          string     `yaml:"id" json:"id"`
+	URL         string     `yaml:"url" json:"-"`
+	Entry       string     `yaml:"entry" json:"entry"`
+	Styles      []string   `yaml:"styles,omitempty" json:"styles,omitempty"`
+	Menu        PluginMenu `yaml:"menu" json:"menu"`
 }
 
 type PluginMenu struct {

@@ -1,0 +1,72 @@
+{
+  "name": "@modelsphere/plugin-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ModelSphere plugin SDK: shared host runtime, build presets and local development",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./build": {
+      "types": "./dist/build.d.ts",
+      "import": "./dist/build.mjs",
+      "require": "./dist/build.js"
+    },
+    "./react-shim": {
+      "import": "./dist/react-shim.mjs",
+      "require": "./dist/react-shim.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.mjs",
+      "require": "./dist/testing.js"
+    },
+    "./dev": {
+      "types": "./dist/dev.d.ts",
+      "import": "./dist/dev.mjs",
+      "require": "./dist/dev.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/modelsphere/console.git",
+    "directory": "web/packages/plugin-sdk"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "tsup": ">=8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "tsup": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "19.2.18",
+    "@types/react-test-renderer": "19.1.0",
+    "react": "19.2.8",
+    "react-test-renderer": "19.2.8",
+    "tsup": "8.5.1",
+    "vitest": "5.1.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@tailwindcss/oxide": "4.3.3",
+    "@tailwindcss/vite": "4.3.4",
+    "@vitejs/plugin-react": "6.2.1",
+    "vite": "8.3.6",
+    "typescript": "5.9.3"
+  }
+}
