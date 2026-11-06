@@ -56,7 +56,7 @@ export function computedYaml(defaults: string, overrides: string): string {
 }
 
 // Helm's merge of next over previous, a null kept for helm to read as delete.
-function mergeValues(previous: Values, next: Values): Values {
+export function mergeValues(previous: Values, next: Values): Values {
   return Object.fromEntries([...new Set([...Object.keys(previous), ...Object.keys(next)])].map((key) => {
     if (!Object.hasOwn(next, key)) return [key, previous[key]];
     return [key, isMap(next[key]) ? mergeValues(isMap(previous[key]) ? previous[key] : {}, next[key]) : next[key]];
