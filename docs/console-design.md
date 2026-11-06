@@ -95,7 +95,7 @@ unchanged. Moving either one moves both.
 
 ## Modules
 
-The console is a shell plus compile-time modules. A module is a feature area
+The console is a shell plus built-in and installed runtime modules. A module is a feature area
 (iam, inferences, playground, router, docs, later container management); the shell owns everything
 around it.
 
@@ -132,9 +132,11 @@ Rules:
 - `validateModules` rejects duplicate ids/basePaths, shell-reserved paths and ids (`common`, `shell`: they are i18n namespaces) and pages declared twice at startup.
 - Text goes through `useT()` (see "i18n"); the declaration's `title` and menu labels stay Chinese.
 
-Deliberately not built: runtime loading, micro-frontends, cross-module slots. The
-earlier Cordis design (branch `docs/console-plugin-design`) is parked; revisit it
-when one of those is actually needed.
+Runtime plugins use `@modelsphere/plugin-sdk`, maintained in `web/packages/plugin-sdk`. Configuration declares a trusted resource service and one menu; SDK registration supplies components and internal routes. `/plugins/index.json` returns descriptors, and `/plugins/<id>/*` proxies assets without Console credentials. Registration validates identity and collisions before adding a module. Empty configuration adds no external module.
+
+Development uses the SDK Vite preset, same-origin WebSocket proxy and the host's React Refresh runtime. Deployment uses a built bundle served by a static-resource image. Configuration changes require a backend restart and browser refresh; compatible component edits update through Fast Refresh. This integration adds no menu/page permission policy.
+
+See the [authoring and deployment guide](development/plugins.md) and [design](plans/2026-11-05-global-sdk-design.md).
 
 ### i18n
 
@@ -718,3 +720,28 @@ requests carry the same headers Global's apiserver sets.
 | P7 | Container management modules, moved over from Rise Global. |
 
 Each phase is independently committable and verifiable.
+
+## Configured frontend navigation
+
+The startup YAML tree selects built-ins and remote SDK plugins, their order, and nested menu folders.
+
+| Concern | Decision |
+| --- | --- |
+| Default order | Embedded `internal/config/default-plugins.yaml` |
+| Compiled registry | `web/src/modules/index.ts` maps IDs to available modules; configuration determines selection/order |
+| Explicit tree | Built-in and remote leaves share sibling ordering; folder nodes contain `folder`, `title`, `children` |
+| Folder state | Stable folder IDs identify expandable directories; navigation opens active ancestors, including detail routes |
+| Permissions | Existing page checks run before grouping; empty folders are omitted |
+| Discovery | `/plugins/index.json` returns the tree and same-origin remote URLs |
+| Failure | Discovery errors do not enable the registry; remote failures preserve other valid configured modules |
+| Compatibility | Unmarked legacy remote lists append to default built-ins; omitted/null uses defaults; [] explicitly disables modules |
+
+```text
+startup YAML -> validation/default resolution -> discovery tree
+                                                    |
+compiled registry + SDK loader -> ordered modules with folder ancestry
+                                                    |
+existing permissions -> visible sidebar tree -> expand/collapse
+```
+
+Configuration examples and lifecycle are in [the plugin guide](development/plugins.md#order-modules-and-group-menus-into-folders); the proposal is [configured navigation](plans/2026-11-06-configured-navigation-design.md).
