@@ -623,6 +623,24 @@
       "format": "Lowercase letters, digits and -, starting with a letter and ending with a letter or digit (it names Kubernetes Services, so no dots)",
       "length": "At most 53 characters"
     },
+    "overrides": {
+      "invalid": "Not valid YAML",
+      "description": "Values applied over everything this deploy sets. Load the chart's values to edit them merged instead.",
+      "load": "Load chart values",
+      "loading": "Loading…",
+      "layersDescription": "Nothing is stored until you deploy. Finish keeps only what you changed in the final values.",
+      "chart": "Chart defaults",
+      "chartHint": "The chart's values.yaml",
+      "swiss": "Overrides",
+      "swissHint": "Everything this deploy sets, its layers merged; null deletes a chart default",
+      "final": "Final values",
+      "finalHint": "Edit here; a key you delete becomes null",
+      "changes": "{n, plural, =0 {No changes} one {# change} other {# changes}}",
+      "search": "Search keys",
+      "noKey": "No key matches",
+      "back": "Back",
+      "finish": "Finish"
+    },
     "review": {
       "title": "Review",
       "plan": "Plan",

@@ -41,7 +41,7 @@ import { detailPath, sloEnabled } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
-import { AdaptivePlanChangedError, composeAdaptivePlan } from "../adaptive-concurrency";
+import { AdaptivePlanChangedError, composeAdaptivePlan, withAdaptiveConcurrency } from "../adaptive-concurrency";
 import { readRouteOptions } from "@/modules/inferences/api";
 
 export type DeployTarget =
@@ -186,16 +186,22 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // A product the variant does not list is one swissd takes only as forced.
   const forceGpuProducts = unlistedProducts(v?.requires.gpuProduct, form.gpuProducts).length > 0;
   const change = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
+  // What a compose of f sends; the Override YAML editor's preview sends the same.
+  const requestFor = (f: Form) => planRequest(
+    { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
+    upgrade
+      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts }
+      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts },
+    profile.data?.profile,
+  );
+  const loadValues = (edits: string) => {
+    const f = { ...form, edits };
+    return deployApi.helmValues(withAdaptiveConcurrency(requestFor(f), f, routeOptions.data));
+  };
   const compose = useMutation({
     mutationFn: async () => {
       try {
-        return await composeAdaptivePlan(planRequest(
-          { ...form, serviceId: form.serviceId || (upgrade ? form.serviceId : defaultServiceId(target.model)) },
-          upgrade
-            ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts }
-            : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts },
-          profile.data?.profile,
-        ), form, routeOptions.data, deployApi.plan, catalogName);
+        return await composeAdaptivePlan(requestFor(form), form, routeOptions.data, deployApi.plan, catalogName);
       } catch (error) {
         if (error instanceof AdaptivePlanChangedError) throw new Error(t("deploy.fields.adaptiveChanged"));
         throw error;
@@ -438,6 +444,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               routeOptions={routeOptions.isSuccess ? routeOptions.data : undefined}
               catalogRoute={catalogRoute}
               idPrefix={ID_PREFIX}
+              loadValues={readOnly ? undefined : loadValues}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />
           </>
