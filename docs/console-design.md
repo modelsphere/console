@@ -337,6 +337,25 @@ DeploySheet -> GET /api/llm/route-options[?route=<existing>]
 | Text | Per-key locale translations where present; new options retain engine text |
 | Ownership | Inferences adapts the Swiss metadata without editing the copied upstream module |
 
+### In-flight generation recovery
+
+The deploy and upgrade forms expose the charts' existing `continuationGateway` values (console #63).
+
+```text
+form -> recovery values -> adaptive compose -> optional timeout reset -> validate -> diff -> apply
+nginx -> continuation gateway -> CART -> engine
+```
+
+| Concern | Decision |
+|---|---|
+| Controls | Enable gateway, actual model identity, idle timeout, continuation execution and tool-call buffering |
+| Upgrade state | Seed from the stored plan once; query refreshes preserve edits |
+| Validation | Check all recorded plan layers, chart compatibility, CART, ModelRoute, actual model, timeout and engine |
+| Advanced YAML | Preserve precedence; stop when its effective settings differ from the recovery controls |
+| Timeout reset | Clearing removes a retained form override by recomposing the validated form without `fromRelease`, pinned to the resolved source and chart |
+| Integrity | Recovery and adaptive cleanup share source pinning and normalized plan comparison; reject unrelated changes |
+| Ownership | Existing plan API and chart values; copied Swiss sources remain unchanged |
+
 ### Unpublished Monitor integration
 
 `modules/inferences/features.ts` holds the single compile-time `ENABLE_MONITOR` flag, false until the Monitor backend is public (console #76).
