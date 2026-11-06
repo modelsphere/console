@@ -994,8 +994,18 @@ async function del<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// What an install hands helm, as YAML: the chart's values.yaml verbatim, and
+// swiss's layers merged over it, a null deleting that default.
+export interface HelmValues {
+  defaults: string;
+  overrides: string;
+}
+
 export const deployApi = {
   plan: (req: PlanRequest) => post<Plan>("/api/plans", req),
+  // v2 compose's dry run: nothing is stored.
+  helmValues: (req: PlanRequest) =>
+    post<{ helmValues: HelmValues }>("/api/v2/compose?dryRun=true&dumpHelmValues=true", req).then((r) => r.helmValues),
   diff: (req: (PlanRequest | { planHash: string }) & { applyFlags?: ApplyFlags }) => post<DiffResult>("/api/diff", req),
   // expectRevision is the optimistic lock a diff computed. It is left out when
   // no diff was run, and the server reads a missing revision as asserting

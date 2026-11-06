@@ -612,6 +612,24 @@
       "format": "只能用小写字母、数字和 -，以字母开头、字母或数字结尾（会用来命名 Kubernetes Service，不能有点）",
       "length": "最多 53 个字符"
     },
+    "overrides": {
+      "invalid": "YAML 格式有误",
+      "description": "在本次部署所有设置之上生效的 values。可加载 chart 的 values，在合并后的结果上编辑。",
+      "load": "加载 chart values",
+      "loading": "加载中…",
+      "layersDescription": "部署前不会保存任何内容。完成时只保留你在最终 values 里改动的部分。",
+      "chart": "Chart 默认值",
+      "chartHint": "chart 自带的 values.yaml",
+      "swiss": "覆盖值",
+      "swissHint": "本次部署设置的全部值，各层已合并；null 表示删除 chart 默认值",
+      "final": "最终 values",
+      "finalHint": "在这里编辑；删除的 key 会记为 null",
+      "changes": "{n, plural, =0 {没有改动} other {# 处改动}}",
+      "search": "搜索 key",
+      "noKey": "没有匹配的 key",
+      "back": "返回",
+      "finish": "完成"
+    },
     "review": {
       "title": "预览变更",
       "plan": "部署计划",
