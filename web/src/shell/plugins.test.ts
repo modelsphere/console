@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadPlugins } from "@/shell/plugins";
 import { navGroups, type ConsoleModule } from "@/shell/module";
+import type { FrontendNode } from "./plugin-tree";
 import type { InstalledPlugin } from "@/shell/global-sdk/runtime";
 import { importDevelopmentEntry } from "./plugin-development";
 vi.mock("./plugin-development", () => ({ importDevelopmentEntry: vi.fn() }));
@@ -14,7 +15,7 @@ class Asset {
   onerror: (() => void) | null = null;
   remove = vi.fn();
 }
-function browser(installed: InstalledPlugin[], execute: (asset: Asset) => void) {
+function browser(installed: FrontendNode[], execute: (asset: Asset) => void) {
   const assets: Asset[] = [];
   vi.stubGlobal("window", globalThis);
   vi.stubGlobal("HTMLScriptElement", Asset);
@@ -31,9 +32,9 @@ function register(id = "example") {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.resetAllMocks(); });
 
 describe("configured SDK plugins", () => {
-  it("keeps the shell unchanged with no configured plugins", async () => {
+  it("keeps only the shell with an explicitly empty plugin list", async () => {
     browser([], () => {});
-    expect(await loadPlugins([builtin])).toEqual({ modules: [builtin], errors: [] });
+    expect(await loadPlugins([builtin])).toEqual({ modules: [], errors: [] });
   });
   it("shares SDK host aliases and registers the configured menu and dynamic routes", async () => {
     browser([example()], asset => { register(); asset.onload?.(); });
@@ -91,5 +92,54 @@ describe("configured SDK plugins", () => {
     vi.useFakeTimers();browser([example()],()=>{});
     const loading=loadPlugins([builtin]);await vi.advanceTimersByTimeAsync(15000);
     expect((await loading).errors[0]).toMatch(/timed out/);
+  });
+});
+
+
+describe("configured frontend tree", () => {
+  it("interleaves built-ins and SDK plugins in YAML order inside nested folders", async () => {
+    browser([{ folder: "workloads", title: "模型与实验", children: [
+      { id: "core", source: "builtin" },
+      { folder: "experiments", title: "实验", children: [{ ...example(), source: "remote" }] },
+    ] }], (asset) => { register(); asset.onload?.(); });
+    const extra = { ...builtin, id: "unused", basePath: "/unused" };
+    const result = await loadPlugins([extra, builtin]);
+    expect(result.errors).toEqual([]);
+    expect(result.modules.map((module) => module.id)).toEqual(["core", "example"]);
+    expect(result.modules[1].navigationFolders).toEqual([{ id: "workloads", title: "模型与实验" }, { id: "experiments", title: "实验" }]);
+    expect(builtin.navigationFolders).toBeUndefined();
+  });
+
+  it("supports remote-first explicit configuration and omits unconfigured built-ins", async () => {
+    browser([{ ...example(), source: "remote" }], (asset) => { register(); asset.onload?.(); });
+    expect((await loadPlugins([builtin])).modules.map((module) => module.id)).toEqual(["example"]);
+  });
+
+  it("keeps configured built-ins when a remote sibling fails and reports unknown built-ins", async () => {
+    browser([{ id: "missing", source: "builtin" }, { ...example(), source: "remote" }, { id: "core", source: "builtin" }], (asset) => asset.onerror?.());
+    const result = await loadPlugins([builtin]);
+    expect(result.modules.map((module) => module.id)).toEqual(["core"]);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0]).toContain("Unknown built-in");
+  });
+});
+
+
+describe("frontend discovery integrity", () => {
+  it("does not enable the compiled registry when discovery fails", async () => {
+    browser([], () => {});
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("discovery unavailable"));
+    const result = await loadPlugins([builtin]);
+    expect(result.modules).toEqual([]);
+    expect(result.errors[0]).toContain("discovery unavailable");
+  });
+
+  it.each([false, true])("rejects builtin/remote path collisions before executing assets, reversed=%s", async (reversed) => {
+    const nodes: FrontendNode[] = [{ id: "core", source: "builtin" }, { ...example(), source: "remote", menu: { ...example().menu, path: "/core" } }];
+    const assets = browser(reversed ? nodes.reverse() : nodes, () => {});
+    const result = await loadPlugins([builtin]);
+    expect(result.modules).toEqual([]);
+    expect(result.errors[0]).toContain("already taken");
+    expect(assets).toEqual([]);
   });
 });

@@ -701,3 +701,28 @@ requests carry the same headers Global's apiserver sets.
 | P7 | Container management modules, moved over from Rise Global. |
 
 Each phase is independently committable and verifiable.
+
+## Configured frontend navigation
+
+The startup YAML tree selects built-ins and remote SDK plugins, their order, and nested menu folders.
+
+| Concern | Decision |
+| --- | --- |
+| Default order | Embedded `internal/config/default-plugins.yaml` |
+| Compiled registry | `web/src/modules/index.ts` maps IDs to available modules; configuration determines selection/order |
+| Explicit tree | Built-in and remote leaves share sibling ordering; folder nodes contain `folder`, `title`, `children` |
+| Folder state | Stable folder IDs identify expandable directories; navigation opens active ancestors, including detail routes |
+| Permissions | Existing page checks run before grouping; empty folders are omitted |
+| Discovery | `/plugins/index.json` returns the tree and same-origin remote URLs |
+| Failure | Discovery errors do not enable the registry; remote failures preserve other valid configured modules |
+| Compatibility | Unmarked legacy remote lists append to default built-ins; omitted/null uses defaults; [] explicitly disables modules |
+
+```text
+startup YAML -> validation/default resolution -> discovery tree
+                                                    |
+compiled registry + SDK loader -> ordered modules with folder ancestry
+                                                    |
+existing permissions -> visible sidebar tree -> expand/collapse
+```
+
+Configuration examples and lifecycle are in [the plugin guide](development/plugins.md#order-modules-and-group-menus-into-folders); the proposal is [configured navigation](plans/2026-11-06-configured-navigation-design.md).

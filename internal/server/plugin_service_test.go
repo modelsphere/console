@@ -24,7 +24,7 @@ func TestPluginImageService(t *testing.T) {
 	}))
 	defer upstream.Close()
 	srv := pluginServer(t)
-	srv.cfg.Plugins = []config.Plugin{{ID: "example", URL: upstream.URL + "/frontend", Entry: "index.umd.js", Menu: config.PluginMenu{Title: "Example", Label: "Example", Path: "/example", Component: "Example"}}}
+	srv.cfg.Plugins = []config.Plugin{{ID: "example", Source: "remote", URL: upstream.URL + "/frontend", Entry: "index.umd.js", Menu: config.PluginMenu{Title: "Example", Label: "Example", Path: "/example", Component: "Example"}}}
 	index := do(srv.Handler(), "GET", "/plugins/index.json", "", "")
 	var descriptors []pluginManifest
 	if err := json.Unmarshal(index.Body.Bytes(), &descriptors); err != nil {

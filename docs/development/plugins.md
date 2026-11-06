@@ -101,3 +101,48 @@ Serve the built files with a static-resource image. Change the descriptor to `ur
 Configuration is read at backend startup. Open tabs retain their registry until refreshed. Plugin JavaScript runs with Console frontend privileges, so operators must select trusted services. The resource proxy strips Cookie/Authorization and upstream Set-Cookie; existing business API authentication/authorization still applies.
 
 `web/test/plugin-runtime.html` is a development browser test fixture using configured plugins and actual host providers. It is excluded from the production entry and does not disable application authentication.
+
+## Order modules and group menus into folders
+
+Console loads the frontend tree from `plugins` at backend startup. Siblings appear in YAML order. Built-in IDs resolve against the compiled registry; remote entries register their pages through the SDK.
+
+```yaml
+plugins:
+  - folder: model-services
+    title: 模型与实验
+    children:
+      - id: inferences
+        source: builtin
+      - folder: experiments
+        title: 实验平台
+        children:
+          - id: canary
+            source: remote
+            url: http://canary-frontend:8080
+            entry: index.umd.js
+            styles: [index.css]
+            menu:
+              title: 北极星
+              label: 实验
+              path: /canary
+              component: Canary
+              icon: flask-conical
+  - id: playground
+    source: builtin
+  - id: docs
+    source: builtin
+```
+
+| Declaration | Behavior |
+| --- | --- |
+| Omitted `plugins` or `plugins: null` | Load `internal/config/default-plugins.yaml` with the default built-ins |
+| `plugins: []` | Load no modules; shell/login and overview remain |
+| Explicit `source: builtin` / `source: remote` entries, or folders | Load only the listed tree |
+| Legacy remote entries without `source` | Keep default built-ins, append the configured remotes |
+| `folder`, `title`, `children` | Nested expandable directory; no URL, route, or permission grant |
+
+The available built-ins are `inferences`, `playground`, `router`, `iam` and `docs`. Built-ins keep their existing page routes, labels and permission checks. A folder disappears when none of its descendants are visible. Navigating directly to a detail page expands its ancestors; collapsing the entire sidebar leaves authorized descendant links accessible.
+
+Duplicate plugin IDs/folder IDs, unknown built-ins, empty folders, and mixed folder/source declarations fail configuration validation. The browser checks the complete set of configured mount paths before executing remote entries. Discovery failure shows a loading error without enabling unconfigured built-ins. A failed remote preserves other valid configured modules.
+
+After editing YAML, restart the existing Console backend and refresh the browser. The plugin image does not need rebuilding to change its position or folder.

@@ -7,10 +7,14 @@ import (
 )
 
 type pluginManifest struct {
-	ID          string             `json:"id"`
-	Entry       string             `json:"entry"`
+	Source      string             `json:"source,omitempty"`
+	Folder      string             `json:"folder,omitempty"`
+	Title       string             `json:"title,omitempty"`
+	Children    []pluginManifest   `json:"children,omitempty"`
+	ID          string             `json:"id,omitempty"`
+	Entry       string             `json:"entry,omitempty"`
 	Styles      []string           `json:"styles,omitempty"`
-	Menu        *config.PluginMenu `json:"menu"`
+	Menu        *config.PluginMenu `json:"menu,omitempty"`
 	Development bool               `json:"development,omitempty"`
 }
 
@@ -22,7 +26,7 @@ func (s *Server) handlePluginIndex(writer http.ResponseWriter, _ *http.Request) 
 
 func (s *Server) handlePluginAsset(writer http.ResponseWriter, request *http.Request) {
 	id, asset := request.PathValue("id"), request.PathValue("asset")
-	for _, plugin := range s.cfg.Plugins {
+	for _, plugin := range s.cfg.RemotePlugins() {
 		if plugin.ID == id {
 			s.servePluginService(writer, request, plugin, asset)
 			return

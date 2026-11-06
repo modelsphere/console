@@ -10,6 +10,10 @@ import (
 
 // Plugin identifies a trusted frontend image service and its navigation entry.
 type Plugin struct {
+	Source      string     `yaml:"source,omitempty" json:"source,omitempty"`
+	Folder      string     `yaml:"folder,omitempty" json:"folder,omitempty"`
+	Title       string     `yaml:"title,omitempty" json:"title,omitempty"`
+	Children    []Plugin   `yaml:"children,omitempty" json:"children,omitempty"`
 	Development bool       `yaml:"development,omitempty" json:"development,omitempty"`
 	ID          string     `yaml:"id" json:"id"`
 	URL         string     `yaml:"url" json:"-"`
@@ -32,20 +36,6 @@ var pluginBase = regexp.MustCompile(`^/[a-z][a-z0-9-]*$`)
 // ValidPluginAsset limits assets to relative URL paths inside the image service.
 func ValidPluginAsset(asset string) bool {
 	return asset != "." && fs.ValidPath(asset) && !strings.ContainsAny(asset, `\?#%:`)
-}
-
-func validatePlugins(plugins []Plugin) error {
-	ids, paths := map[string]bool{}, map[string]bool{}
-	for index, plugin := range plugins {
-		if err := validatePlugin(plugin); err != nil {
-			return fmt.Errorf("plugins[%d]: %w", index, err)
-		}
-		if ids[plugin.ID] || paths[plugin.Menu.Path] {
-			return fmt.Errorf("plugins[%d]: duplicate id or menu path", index)
-		}
-		ids[plugin.ID], paths[plugin.Menu.Path] = true, true
-	}
-	return nil
 }
 
 func validatePlugin(plugin Plugin) error {

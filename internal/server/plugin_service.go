@@ -19,16 +19,28 @@ func newPluginResourceTransport() *http.Transport {
 }
 
 func (s *Server) pluginIndex() []pluginManifest {
-	plugins := make([]pluginManifest, 0, len(s.cfg.Plugins))
-	for _, plugin := range s.cfg.Plugins {
-		prefix := "/plugins/" + plugin.ID + "/"
-		manifest := pluginManifest{ID: plugin.ID, Entry: prefix + plugin.Entry, Menu: &plugin.Menu, Development: plugin.Development}
-		for _, style := range plugin.Styles {
-			manifest.Styles = append(manifest.Styles, prefix+style)
+	return pluginTree(s.cfg.FrontendPlugins())
+}
+
+func pluginTree(nodes []config.Plugin) []pluginManifest {
+	result := make([]pluginManifest, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Folder != "" {
+			result = append(result, pluginManifest{Folder: node.Folder, Title: node.Title, Children: pluginTree(node.Children)})
+			continue
 		}
-		plugins = append(plugins, manifest)
+		manifest := pluginManifest{ID: node.ID, Source: node.Source}
+		if node.Source != "builtin" {
+			prefix := "/plugins/" + node.ID + "/"
+			manifest.Source, manifest.Entry, manifest.Menu = "remote", prefix+node.Entry, &node.Menu
+			manifest.Development = node.Development
+			for _, style := range node.Styles {
+				manifest.Styles = append(manifest.Styles, prefix+style)
+			}
+		}
+		result = append(result, manifest)
 	}
-	return plugins
+	return result
 }
 
 func pluginProxyHeaders(request *httputil.ProxyRequest, development bool) {

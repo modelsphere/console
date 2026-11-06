@@ -12,6 +12,7 @@ export interface ModuleOverviewProps {
 }
 
 export interface ConsoleModule {
+  navigationFolders?: { id: string; title: string }[];
   // Stable id: used as the React key and in logs. Lowercase, no spaces.
   id: string;
   // Sidebar group heading, in Chinese. Other languages: "{id}:group.{title}"
@@ -99,6 +100,8 @@ export interface NavItem {
 }
 
 export interface NavGroup {
+  id?: string;
+  children?: NavGroup[];
   title?: string;
   ns?: string;
   // The module's mount point: every page below it belongs to this group, menu
@@ -113,7 +116,17 @@ export function navGroups(modules: ConsoleModule[], has: (permission: string) =>
   const groups: NavGroup[] = [{ items: [{ to: "/", label: "概览", ns: "shell", key: "overview", icon: LayoutDashboard, end: true }] }];
   for (const m of modules) {
     const items = menuItems(m, has);
-    if (items.length) groups.push({ title: m.title, ns: m.id, basePath: m.basePath, items });
+    if (!items.length) continue;
+    let level = groups;
+    for (const folder of m.navigationFolders ?? []) {
+      let parent = level.find((group) => group.id === `folder:${folder.id}`);
+      if (!parent) {
+        parent = { id: `folder:${folder.id}`, title: folder.title, items: [], children: [] };
+        level.push(parent);
+      }
+      level = parent.children!;
+    }
+    level.push({ id: m.id, title: m.title, ns: m.id, basePath: m.basePath, items });
   }
   return groups;
 }
@@ -144,5 +157,12 @@ export function topbarItems(modules: ConsoleModule[], has: (permission: string) 
 // none -- /inferences/x/details is under /inferences, whose index entry only
 // matches exactly.
 export function activeGroupTitle(groups: NavGroup[], pathname: string): string | undefined {
-  return groups.find((g) => g.title && g.basePath && (pathname === g.basePath || pathname.startsWith(g.basePath + "/")))?.title;
+  for (const group of groups) {
+    if (group.children) {
+      const active = activeGroupTitle(group.children, pathname);
+      if (active) return active;
+    }
+    if (group.basePath && (pathname === group.basePath || pathname.startsWith(group.basePath + "/"))) return group.title;
+  }
+  return undefined;
 }

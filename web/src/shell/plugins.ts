@@ -1,6 +1,7 @@
 import { validateModules, type ConsoleModule } from "@/shell/module";
 import { createGlobalHost } from "@/shell/global-sdk/host";
 import type { InstalledPlugin } from "@/shell/global-sdk/runtime";
+import { configuredBuiltin, explicitFrontendTree, frontendLeaves, validateFrontendPaths, type FrontendNode, type NavigationFolder } from "./plugin-tree";
 import { importDevelopmentEntry } from "./plugin-development";
 
 function loadAsset(asset: HTMLScriptElement | HTMLLinkElement): Promise<void> {
@@ -37,12 +38,12 @@ async function loadEntryAssets(plugin: InstalledPlugin, assets: HTMLElement[]) {
   await loadAsset(script);
 }
 
-async function loadEntry(plugin: InstalledPlugin, modules: ConsoleModule[], runtime: ReturnType<typeof createGlobalHost>) {
+async function loadEntry(plugin: InstalledPlugin, modules: ConsoleModule[], runtime: ReturnType<typeof createGlobalHost>, folders: NavigationFolder[] = []) {
   const assets: HTMLElement[] = [];
   try {
     runtime.begin(plugin);
     await loadEntryAssets(plugin, assets);
-    const module = runtime.finish();
+    const module = { ...runtime.finish(), ...(folders.length ? { navigationFolders: folders } : {}) };
     validateModules([...modules, module]);
     modules.push(module);
     runtime.commit();
@@ -55,17 +56,24 @@ async function loadEntry(plugin: InstalledPlugin, modules: ConsoleModule[], runt
 }
 
 export async function loadPlugins(builtins: ConsoleModule[]): Promise<{ modules: ConsoleModule[]; errors: string[] }> {
-  const modules = [...builtins];
+  const modules: ConsoleModule[] = [];
   const errors: string[] = [];
   const runtime = createGlobalHost();
   window.__MODELSPHERE_SDK__ = window.__GLOBAL_SDK__ = window.__RISE_SDK__ = runtime.host;
   try {
     const response = await fetch("/plugins/index.json", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
     if (!response.ok) throw new Error(`Plugin discovery failed (HTTP ${response.status})`);
-    const installed: InstalledPlugin[] = await response.json();
-    for (const plugin of installed) {
-      try { await loadEntry(plugin, modules, runtime); }
-      catch (error) { errors.push(`${plugin.id}: ${error instanceof Error ? error.message : String(error)}`); }
+    const installed: FrontendNode[] = await response.json();
+    if (!explicitFrontendTree(installed) && installed.length) modules.push(...builtins);
+    validateFrontendPaths(installed, builtins, modules);
+    for (const { plugin, folders } of frontendLeaves(installed)) {
+      try {
+        if (plugin.source === "builtin") {
+          const module = configuredBuiltin(plugin, builtins, folders);
+          validateModules([...modules, module]);
+          modules.push(module);
+        } else await loadEntry(plugin, modules, runtime, folders);
+      } catch (error) { errors.push(`${plugin.id}: ${error instanceof Error ? error.message : String(error)}`); }
     }
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));

@@ -49,3 +49,28 @@ backends:
 router:
   secret: console/console-api-keys
   backend: llm
+
+# Frontend navigation: omit plugins (or use null) for the embedded built-in defaults.
+# [] disables modules. An explicit tree selects and orders only the listed modules.
+# Folders are nested directories; they do not change page permissions or routes.
+# plugins:
+#   - folder: workloads
+#     title: Models and experiments
+#     children:
+#       - id: inferences
+#         source: builtin
+#       - id: example
+#         source: remote
+#         url: http://example-frontend:8080
+#         entry: index.umd.js
+#         styles: [index.css]
+#         menu:
+#           title: Example
+#           label: Experiments
+#           path: /example
+#           component: Example
+#           icon: flask-conical
+#   - id: playground
+#     source: builtin
+#   - id: docs
+#     source: builtin

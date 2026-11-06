@@ -227,7 +227,7 @@ func (c *Config) origin() string {
 
 // Validate covers what console needs to serve.
 func (c *Config) Validate() error {
-	if err := validatePlugins(c.Plugins); err != nil {
+	if err := validatePlugins(c.FrontendPlugins()); err != nil {
 		return fmt.Errorf("%s: %w", c.origin(), err)
 	}
 	if c.Server.Auth.JWTSecret == "" && !c.Server.Auth.Disabled {

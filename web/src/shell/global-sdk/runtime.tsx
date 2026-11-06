@@ -12,6 +12,7 @@ export interface PluginMenu {
 }
 
 export interface InstalledPlugin {
+  source?: "remote";
   id: string;
   entry: string;
   styles?: string[];

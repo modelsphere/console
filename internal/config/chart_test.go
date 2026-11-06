@@ -191,3 +191,10 @@ func TestHelmSwissTwiceIsRefused(t *testing.T) {
 		t.Fatalf("want a refusal naming both, got err=%v\n%s", err, out)
 	}
 }
+
+func TestHelmExplicitEmptyFrontendTree(t *testing.T) {
+	cfg := renderChartConfig(t, "--set-json", "plugins=[]")
+	if cfg.Plugins == nil || len(cfg.FrontendPlugins()) != 0 {
+		t.Fatalf("empty Helm frontend tree: %+v", cfg.Plugins)
+	}
+}
