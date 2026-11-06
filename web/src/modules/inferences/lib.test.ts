@@ -208,6 +208,8 @@ describe("installSteps", () => {
     expect(last({ outcome: "held", hold: "role-not-ready" })).toEqual({ key: "pdScale", state: "wait", detail: "held", params: { n: 2, hold: "role-not-ready" } });
     expect(last({ outcome: "error", error: "boom" })).toEqual({ key: "pdScale", state: "bad", detail: "error", params: { error: "boom" } });
     expect(last({})).toEqual({ key: "pdScale", state: "wait", detail: "notEvaluated" });
+    const engines = { current: { prefill: 2, decode: 1 }, want: { prefill: 3, decode: 1 } };
+    expect(last({ outcome: "scaled-up", want: 2, pd: engines })).toEqual({ key: "pdScale", state: "wait", detail: "scalingEngines", params: { cur: "2P1D", want: "3P1D" } });
   });
 
   const scaler = (conditions: { type: string; status: string; reason?: string; message?: string }[], cur = 1, want = 1) => ({

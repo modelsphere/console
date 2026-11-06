@@ -758,9 +758,9 @@ export interface AutoscaleState {
   enabled: boolean;
   // DisaggregatedSet slices the loop saw.
   current: number;
-  // decision clamped into [1, 64]. Absent on a hold.
+  // The decision's slices, as given. Absent on a hold.
   want?: number;
-  // decision-gen's count.
+  // decision-gen's slice count.
   decision?: number;
   noDecision?: boolean;
   // Absent until this swissd has evaluated the release.
@@ -769,6 +769,13 @@ export interface AutoscaleState {
   error?: string;
   lastEvaluated?: string;
   lastScaled?: string;
+  // Engines per slice, when decision-gen's row carries shape.pd. want is absent on a hold.
+  pd?: { current?: AutoscaleEngines; want?: AutoscaleEngines; decision?: AutoscaleEngines };
+}
+
+export interface AutoscaleEngines {
+  prefill: number;
+  decode: number;
 }
 
 // routing.modelsphere.dev ModelRoute: autoconfig keeps openresty's peers and

@@ -29,4 +29,14 @@ describe("Conditions", () => {
     expect(dotClass(both, "AbleToScale")).toContain("bg-warning");
     expect(dotClass(both, "AbleToScale")).not.toContain("bg-muted-foreground");
   });
+
+  it("colors an inverted condition's False as healthy and its True as a warning", () => {
+    const limited = (status: Condition["status"]): Condition => ({ type: "ScalingLimited", status, reason: "DesiredWithinRange" });
+    const within = renderToString(<Conditions conditions={[limited("False"), active]} inverted={["ScalingLimited"]} />);
+    expect(dotClass(within, "ScalingLimited")).toContain("bg-success");
+    expect(dotClass(within, "ScalingActive")).toContain("bg-success");
+
+    const capped = renderToString(<Conditions conditions={[limited("True")]} inverted={["ScalingLimited"]} />);
+    expect(dotClass(capped, "ScalingLimited")).toContain("bg-warning");
+  });
 });
