@@ -633,13 +633,14 @@
       "chartHint": "The chart's values.yaml",
       "swiss": "Overrides",
       "swissHint": "Everything this deploy sets, its layers merged; null deletes a chart default",
+      "edit": "edit.yaml",
+      "editHint": "The overrides as stored: applied over everything this deploy sets. Delete a line to drop that override; null deletes a chart default.",
       "final": "Final values",
       "finalHint": "Edit here; a key you delete becomes null",
       "changes": "{n, plural, =0 {No changes} one {# change} other {# changes}}",
+      "notLoaded": "Load chart values to see them.",
       "search": "Search keys",
-      "noKey": "No key matches",
-      "back": "Back",
-      "finish": "Finish"
+      "noKey": "No key matches"
     },
     "review": {
       "title": "Review",

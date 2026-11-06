@@ -622,13 +622,14 @@
       "chartHint": "chart 自带的 values.yaml",
       "swiss": "覆盖值",
       "swissHint": "本次部署设置的全部值，各层已合并；null 表示删除 chart 默认值",
+      "edit": "edit.yaml",
+      "editHint": "保存下来的覆盖值，在本次部署的所有设置之上生效。删掉一行即去掉该覆盖；null 表示删除 chart 默认值。",
       "final": "最终 values",
       "finalHint": "在这里编辑；删除的 key 会记为 null",
       "changes": "{n, plural, =0 {没有改动} other {# 处改动}}",
+      "notLoaded": "加载 chart values 后可查看。",
       "search": "搜索 key",
-      "noKey": "没有匹配的 key",
-      "back": "返回",
-      "finish": "完成"
+      "noKey": "没有匹配的 key"
     },
     "review": {
       "title": "预览变更",

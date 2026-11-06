@@ -40,6 +40,7 @@ import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
+import type { HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
 import { AdaptivePlanChangedError, composeAdaptivePlan, withAdaptiveConcurrency } from "../adaptive-concurrency";
 import { readRouteOptions } from "@/modules/inferences/api";
@@ -194,9 +195,26 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
       : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts },
     profile.data?.profile,
   );
-  const loadValues = (edits: string) => {
-    const f = { ...form, edits };
-    return deployApi.helmValues(withAdaptiveConcurrency(requestFor(f), f, routeOptions.data));
+  // The chart's values and swissd's layers for this form, without the
+  // overrides, which the editor merges itself. Cached per request while the
+  // sheet is open, so saving the overrides and editing them again does not
+  // read the chart again.
+  const valuesForm = { ...form, edits: "" };
+  const valuesRequest = upgrade && !recorded ? undefined : withAdaptiveConcurrency(requestFor(valuesForm), valuesForm, routeOptions.data);
+  const helmValues = useQuery({
+    queryKey: ["helmValues", JSON.stringify(valuesRequest ?? null)],
+    queryFn: () => deployApi.helmValues(valuesRequest!),
+    enabled: false,
+    staleTime: Infinity,
+    // Dropped when the sheet closes: they last one install or upgrade.
+    gcTime: 0,
+    retry: false,
+  });
+  const valuesSource: HelmValuesSource = {
+    data: helmValues.data,
+    loading: helmValues.isFetching,
+    error: helmValues.error,
+    load: async () => (valuesRequest ? (await helmValues.refetch()).data : undefined),
   };
   const compose = useMutation({
     mutationFn: async () => {
@@ -444,7 +462,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               routeOptions={routeOptions.isSuccess ? routeOptions.data : undefined}
               catalogRoute={catalogRoute}
               idPrefix={ID_PREFIX}
-              loadValues={readOnly ? undefined : loadValues}
+              helmValues={readOnly ? undefined : valuesSource}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />
           </>

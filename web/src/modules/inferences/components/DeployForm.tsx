@@ -22,7 +22,7 @@ import {
   cn,
 } from "@modelsphere/ui";
 import { Plus, RefreshCw, X } from "lucide-react";
-import type { ClusterInfo, HelmValues } from "@swiss/lib/api";
+import type { ClusterInfo } from "@swiss/lib/api";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { effective, imageChoices, type Form, type Toleration } from "@swiss/components/DeploySettings";
@@ -30,7 +30,7 @@ import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
 import { useT } from "@/modules/inferences/i18n";
 import { isAdaptiveOption, toggleAdaptive } from "../adaptive-concurrency";
-import { OverrideYaml } from "./OverrideYaml";
+import { OverrideYaml, type HelmValuesSource } from "./OverrideYaml";
 import { NAMED_VALUES, extraValue, fracOutOfRange, serviceIdError, type Section } from "@/modules/inferences/deploy-lib";
 
 const EFFECTS = ["", "NoSchedule", "PreferNoSchedule", "NoExecute"];
@@ -56,11 +56,11 @@ export interface DeployFormProps {
   idPrefix: string;
   routeOptions?: RouteOptions | null;
   catalogRoute?: string;
-  // Composes the form with these overrides, storing nothing, for the Override YAML editor.
-  loadValues?: (edits: string) => Promise<HelmValues>;
+  // The chart's values and swissd's layers for the Override YAML editor.
+  helmValues?: HelmValuesSource;
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, loadValues }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues }: DeployFormProps) {
   const t = useT();
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
@@ -249,7 +249,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           <FloatingField layout="inline" label={f("skipSchemaValidation")} hint={f("skipSchemaValidationHint")}>
             {sw("skipSchemaValidation", f("skipSchemaValidation"))}
           </FloatingField>
-          <OverrideYaml value={form.edits} onChange={(edits) => onChange({ edits })} load={loadValues} />
+          <OverrideYaml value={form.edits} onChange={(edits) => onChange({ edits })} source={helmValues} />
         </>,
       )}
     </div>

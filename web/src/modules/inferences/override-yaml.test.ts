@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computedYaml, keyLines, overrideEdit, overridePaths, parseValues, readYaml, searchKeys } from "./override-yaml";
+import { computedYaml, keyLines, mergeValues, overrideEdit, overridePaths, parseValues, readYaml, searchKeys } from "./override-yaml";
 
 const defaults = `# Engine replicas.
 replicaCount: 1
@@ -118,5 +118,14 @@ describe("readYaml", () => {
     expect(dup.values).toBeUndefined();
     expect(dup.error).toBeTruthy();
     expect(dup.keys.map((k) => k.path)).toEqual(["a", "a"]);
+  });
+});
+
+describe("mergeValues", () => {
+  it("lays the overrides over swissd's layers, keeping a null for helm", () => {
+    const layers = parseValues("replicaCount: 2\nimage:\n  tag: catalog\nprobe:\n  port: 8000\n");
+    expect(mergeValues(layers, { image: { pullPolicy: "Always" }, probe: { port: null }, flags: ["--x"] })).toEqual({
+      replicaCount: 2, image: { tag: "catalog", pullPolicy: "Always" }, probe: { port: null }, flags: ["--x"],
+    });
   });
 });
