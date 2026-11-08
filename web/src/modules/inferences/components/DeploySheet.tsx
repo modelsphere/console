@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -46,12 +46,17 @@ import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, clusterTaints, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
-import { OverrideYamlButton, type HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
-import { AdaptivePlanChangedError, composeAdaptivePlan, withAdaptiveConcurrency } from "../adaptive-concurrency";
-import { composeRecoveryPlan, composeRecoveryValuesRequest, RecoveryPlanChangedError } from "../recovery-compose";
+import { computedYaml, parseValues, valuesYaml } from "../override-yaml";
+import { useDeploymentDraft } from "../use-deployment-draft";
+import { useDeploymentValues } from "../use-deployment-values";
+import { assertDeploymentRevision, composeDeploymentDraft, deploymentValuesRequest, DeploymentChangedError, readDeploymentRevision } from "../deployment-preview";
+import { CurrentConfiguration } from "./CurrentConfiguration";
+import { gpuResolutionValues, resolvedGpuChanges } from "../deployment-gpu";
+import { withAdaptiveConcurrency } from "../adaptive-concurrency";
+import { withRecovery } from "../recovery";
 import { RecoveryFields } from "./RecoveryFields";
-import { mergeValues, planValues, recoveryError, recoveryInputError, recoverySettings, withRecovery } from "../recovery";
+import { mergeValues, planValues, recoveryError, recoveryInputError } from "../recovery";
 import { readRouteOptions } from "@/modules/inferences/api";
 
 export type DeployTarget =
@@ -63,11 +68,11 @@ const ID_PREFIX = "deploy-sec-";
 const OPEN: Record<Section, boolean> = { basic: true, resources: true, routing: false, advanced: false };
 const REFRESH = [["status"], ["revisions"], ["releasePlan"], ["release-plan"], ["runs"], ["deployments"], ["objects"]];
 
-export function DeploySheet({ target, onClose }: { target: DeployTarget | null; onClose: () => void }) {
-  return target ? <DeploySheetBody key={JSON.stringify(target)} target={target} onClose={onClose} /> : null;
+export function DeploySheet({ target, onClose, initialView = "form" }: { target: DeployTarget | null; onClose: () => void; initialView?: "form" | "yaml" }) {
+  return target ? <DeploySheetBody key={JSON.stringify(target)} target={target} onClose={onClose} initialView={initialView} /> : null;
 }
 
-function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: () => void }) {
+function DeploySheetBody({ target, onClose, initialView }: { target: DeployTarget; onClose: () => void; initialView: "form" | "yaml" }) {
   const t = useT();
   const p = useModulePath();
   const navigate = useNavigate();
@@ -150,18 +155,18 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   if (current.data && !seedPlan) setSeedPlan(current.data);
   const deployModel = upgrade ? "" : target.model;
   const gpuSpecs = profile.data?.profile?.nodes?.gpus;
-  const initial = useMemo<Form>(
-    () => (upgrade ? (seedPlan ? formFromPlan(seedPlan, gpuSpecs) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }),
-    [upgrade, seedPlan, deployModel, gpuSpecs],
-  );
-  const initialRecovery = useMemo(() => recoverySettings(
-    upgrade && seedPlan ? planValues(seedPlan) : mergeValues(entry.data?.variant.values, profile.data?.profile?.extra),
-  ), [upgrade, seedPlan, entry.data?.variant.values, profile.data?.profile?.extra]);
-  const [recoveryPatch, setRecoveryPatch] = useState<Partial<ReturnType<typeof recoverySettings>>>({});
-  const recovery = { ...initialRecovery, ...recoveryPatch };
-  const [form, setForm] = useState<Form>(initial);
+  const initial = useMemo<Form>(() => (upgrade ? (seedPlan ? { ...formFromPlan(seedPlan, gpuSpecs), serviceId: String(planValues(seedPlan).serviceId || seedPlan.release.name) } : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }), [upgrade, seedPlan, deployModel, gpuSpecs]);
+  const baselineValues = useMemo(() => mergeValues(mergeValues(entry.data?.variant.values, profile.data?.profile?.extra), seedPlan?.layers.form ?? {}), [entry.data?.variant.values, profile.data?.profile?.extra, seedPlan]);
+  const draftContext = useMemo(() => ({
+    options: { inputs: v?.inputs, values: v?.values ?? seedPlan?.layers.catalog, formLayer: seedPlan?.layers.form, gpuSpecs, gpuVendor: v?.requires.vendor },
+    profile: profile.data?.profile,
+    layers: seedPlan?.layers,
+  }), [v, seedPlan, gpuSpecs, profile.data?.profile]);
+  const draft = useDeploymentDraft(initial, seedPlan?.layers.form, baselineValues, gpuSpecs, draftContext);
+  const { form, recovery, setForm } = draft;
   const checkedInputs = useDebounced(form.inputs, CHECK_MS);
   const [remember, setRemember] = useState<Record<string, boolean>>({});
+  const invalidNumberError = draft.invalidField ? t("deploy.draft.invalidNumber", { field: t(`deploy.fields.${draft.invalidField === "replicaCount" ? "replicas" : draft.invalidField}`) }) : undefined;
   const catalogRoute = upgrade && current.data ? initial.route || initial.serviceId || target.release : undefined;
   const routeOptions = useQuery({
     queryKey: ["route-options", catalogRoute ?? ""],
@@ -170,15 +175,11 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     staleTime: 30_000,
     retry: false,
   });
-  const [upgradeSeeded, setUpgradeSeeded] = useState(false);
-  useEffect(() => {
-    setForm(initial);
-    if (upgrade && seedPlan) setUpgradeSeeded(true);
-  }, [initial, upgrade, seedPlan]);
   const [seed, setSeed] = useState<SwitchDefaults | null>(null);
-  const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: seed ? reseed(initial, {}, seed) : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
+  const dirty = useDirty({ edited: draft.dirty, version, variant, moveTo, chartVersion }, { edited: false, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "" });
 
   const [step, setStep] = useState<"form" | "review">("form");
+  const [configurationOpen, setConfigurationOpen] = useState(initialView === "yaml");
   const [submitted, setSubmitted] = useState(false);
   const [expanded, setExpanded] = useState(OPEN);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -198,7 +199,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     if (!seedReady) return;
     const next = switchDefaults(siteDefaults, variantValues);
     if (seed && JSON.stringify(seed) === JSON.stringify(next)) return;
-    setForm((f) => reseed(f, seed ?? {}, next));
+    draft.reseedForm((f) => reseed(f, seed ?? {}, next));
     setSeed(next);
     if (seed) {
       setPlan(null);
@@ -212,88 +213,103 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const live = useQuery({ queryKey: ["status", namespace, release], queryFn: () => api.status(namespace, release), enabled: step === "review" && !!release && !!namespace });
 
   // A product the variant does not list is one swissd takes only as forced.
-  const forceGpuProducts = unlistedProducts(v?.requires.gpuProduct, form.gpuProducts).length > 0;
-  const change = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
+  const change = (patch: Partial<Form>) => {
+    if ("gpuProducts" in patch || "gpuResource" in patch) gpuChange.mutate(patch);
+    else setForm(patch);
+  };
   const inputs = inputRows(v?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", modelName ?? "", v?.values, upgrade ? current.data?.layers?.form : undefined);
-  // A profile swissd did not parse is not written to from here.
   const canRemember = profile.data?.yaml !== undefined && !profile.data.error && !!cluster.data?.allowDeploy;
   const saves = canRemember ? siteSaves(inputs, form.inputs, remember) : [];
   // What a compose of f sends; the Override YAML editor's preview sends the same.
-  const requestFor = (f: Form) => planRequest(
+  const requestFor = (f: Form) => {
+    const forceGpuProducts = unlistedProducts(v?.requires.gpuProduct, f.gpuProducts).length > 0;
+    return planRequest(
     { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
     upgrade
       ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: v?.inputs, formLayer: seedPlan?.layers?.form, values: v?.values ?? seedPlan?.layers?.catalog }
       : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: v?.inputs, values: v?.values },
     profile.data?.profile,
-  );
-  // An upgrade waits for the profile too: it decides Monitor (planRequest).
+    );
+  };
+  const revisionSnapshot = useQuery({
+    queryKey: ["upgrade-snapshot", namespace, release],
+    queryFn: () => readDeploymentRevision(namespace, release),
+    enabled: upgrade && !!namespace && !!release,
+    staleTime: Infinity, gcTime: 0, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
+  });
   const loading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
   const error = cluster.error ?? current.error ?? entry.error;
   const nextSeed = useMemo(() => (seedReady ? switchDefaults(siteDefaults, variantValues) : null), [seedReady, siteDefaults, variantValues]);
-  const formSeeded = upgrade ? upgradeSeeded : !!seed && !!nextSeed && JSON.stringify(seed) === JSON.stringify(nextSeed);
-  // Chart discovery (images and per-role chart defaults) runs once on open after
-  // the form is seeded, on target changes, and on manual refresh.
-  // Override YAML runs its own standalone dry-run when opened so form edits stay quiet.
+  const formSeeded = upgrade ? !!seedPlan : !!seed && !!nextSeed && JSON.stringify(seed) === JSON.stringify(nextSeed);
   const canDiscover = !loading && !error && formSeeded && (!upgrade || !!recorded) && cluster.data?.allowDeploy !== false;
-  const compositionError = (error: unknown) => {
-    if (error instanceof RecoveryPlanChangedError) return new Error(t("deploy.recovery.errors.changedPlan"));
-    if (error instanceof AdaptivePlanChangedError) return new Error(t("deploy.fields.adaptiveChanged"));
-    return error;
+  const preview = useImageSlots(form, (f) => canDiscover ? withAdaptiveConcurrency(withRecovery(requestFor(f), recovery), f, routeOptions.data) : undefined, canDiscover, gpuSpecs);
+  const request = (upgrade && !recorded) ? undefined : requestFor(form);
+  const context = JSON.stringify([request, form, recovery, routeOptions.data, profile.data, revisionSnapshot.data?.revision]);
+  const latestContext = useRef(context);
+  const activePlan = useRef<string | undefined>(undefined);
+  useEffect(() => { latestContext.current = context; }, [context]);
+  const [reviewContext, setReviewContext] = useState<string>();
+  useEffect(() => {
+    if (reviewContext && reviewContext !== context) { setPlan(null); setDiff(null); setStep("form"); activePlan.current = undefined; }
+  }, [context, reviewContext]);
+  const settings = { form, recovery, routeOptions: routeOptions.data };
+  const valuesSource = useDeploymentValues(request, form.edits, catalogName, JSON.stringify([profile.data, revisionSnapshot.data?.revision]), settings);
+  const checkRevision = async () => {
+    if (!upgrade) return;
+    if (!revisionSnapshot.data || revisionSnapshot.isError || revisionSnapshot.isFetching) throw new DeploymentChangedError();
+    await assertDeploymentRevision(namespace, release, revisionSnapshot.data.revision);
   };
-  const preview = useImageSlots(
-    form,
-    (f) => (canDiscover ? withAdaptiveConcurrency(withRecovery(requestFor(f), recovery), f, routeOptions.data) : undefined),
-    canDiscover,
-    gpuSpecs,
-  );
-  const valuesKey = JSON.stringify(
-    canDiscover
-      ? withAdaptiveConcurrency(withRecovery(requestFor({ ...form, edits: "" }), recovery), form, routeOptions.data)
-      : null,
-  );
-  const valuesM = useMutation({
-    mutationFn: async (_key: string) => {
+  const compositionError = (error: unknown) => error instanceof DeploymentChangedError ? new Error(t("deploy.draft.changed")) : error;
+  const gpuChange = useMutation({
+    mutationFn: async (patch: Partial<Form>) => {
+      const captured = context;
+      const next = { ...form, ...patch, edits: valuesYaml(mergeValues(baselineValues, draft.values)) };
+      const input = requestFor(next);
+      const values = gpuResolutionValues(form.edits, profile.data?.profile?.nodes?.gpus);
       try {
-        const next = await composeRecoveryValuesRequest(
-          requestFor({ ...form, edits: "" }),
-          recovery,
-          (r) => composeAdaptivePlan(r, form, routeOptions.data, deployApi.plan, catalogName),
-          catalogName,
-        );
-        return await deployApi.helmValues(next);
-      } catch (error) {
-        throw compositionError(error);
-      }
+        await checkRevision();
+        if (captured !== latestContext.current) throw new DeploymentChangedError();
+        const validated = await composeDeploymentDraft(input, values, deployApi.plan, catalogName);
+        const resolution = deploymentValuesRequest(input, validated, catalogName);
+        delete resolution.fromRelease;
+        resolution.overrides = gpuResolutionValues(valuesYaml(input.overrides ?? {}), gpuSpecs);
+        const resolved = await composeDeploymentDraft(resolution, values, deployApi.plan, catalogName);
+        const helm = await deployApi.helmValues(deploymentValuesRequest(resolution, resolved, catalogName));
+        await checkRevision();
+        if (captured !== latestContext.current) throw new DeploymentChangedError();
+        return { changes: resolvedGpuChanges(resolved, next, profile.data?.profile?.nodes?.gpus, parseValues(helm.defaults), parseValues(computedYaml(helm.defaults, helm.overrides))), captured };
+      } catch (error) { throw compositionError(error); }
+    },
+    onSuccess: ({ changes, captured }) => {
+      if (captured !== latestContext.current) throw new Error(t("deploy.draft.changed"));
+      draft.setResolvedGpu(changes);
     },
   });
-  const valuesFresh = valuesM.variables === valuesKey;
-  const valuesSource: HelmValuesSource = {
-    data: valuesFresh && !valuesM.isError ? valuesM.data : undefined,
-    loading: valuesM.isPending,
-    error: valuesFresh && valuesM.error ? (valuesM.error instanceof Error ? valuesM.error : new Error(String(valuesM.error))) : null,
-    load: async () => {
-      if (!canDiscover) return undefined;
-      try {
-        return await valuesM.mutateAsync(valuesKey);
-      } catch {
-        return undefined;
-      }
-    },
-  };
   const compose = useMutation({
     mutationFn: async () => {
+      const captured = context;
+      const input = requestFor(form);
+      const values = draft.values;
       try {
         const inputError = recoveryInputError(recovery);
         if (inputError) throw new Error(t(`deploy.recovery.errors.${inputError}`));
-        const proposed = await composeRecoveryPlan(requestFor(form), recovery, (request) => composeAdaptivePlan(request, form, routeOptions.data, deployApi.plan, catalogName), catalogName);
+        if (draft.error || invalidNumberError) throw new Error(draft.error ?? invalidNumberError);
+        await checkRevision();
+        if (captured !== latestContext.current) throw new DeploymentChangedError();
+        const proposed = await composeDeploymentDraft(input, values!, deployApi.plan, catalogName, settings);
         const invalid = recoveryError(proposed, recovery);
         if (invalid) throw new Error(t(`deploy.recovery.errors.${invalid}`));
-        return proposed;
+        await checkRevision();
+        if (captured !== latestContext.current) throw new DeploymentChangedError();
+        return { proposed, captured };
       } catch (error) {
         throw compositionError(error);
       }
     },
-    onSuccess: (pl) => {
+    onSuccess: ({ proposed: pl, captured }) => {
+      if (captured !== latestContext.current) throw new Error(t("deploy.draft.changed"));
+      activePlan.current = pl.hash;
+      setReviewContext(captured);
       setPlan(pl);
       setDiff(null);
       setStep("review");
@@ -303,13 +319,20 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // The form is fixed while a plan is on screen, so its flags are the ones
   // the plan was composed beside.
   const flags = applyFlags(form);
-  const dryRun = useMutation({ mutationFn: (pl: Plan) => deployApi.diff({ planHash: pl.hash, applyFlags: flags }), onSuccess: setDiff });
+  const dryRun = useMutation({
+    mutationFn: async (pl: Plan) => ({ result: await deployApi.diff({ planHash: pl.hash, applyFlags: flags }), captured: context }),
+    onSuccess: ({ result, captured }) => { if (captured === latestContext.current && activePlan.current === result.planHash) setDiff(result); },
+  });
   const state = pipelineState({ diff, exists: live.data?.exists, applied: !!applied });
   const apply = useMutation({
-    mutationFn: () => (state.action === "install" ?
-      deployApi.install(plan!.hash, note.trim(), method, flags) :
-      deployApi.apply(plan!.hash, diff?.revision, note.trim(), force ? { ...flags, forceConflicts: true } : flags)
-    ),
+    mutationFn: async () => {
+      if (!plan || !diff || diff.planHash !== plan.hash || reviewContext !== latestContext.current) throw new Error(t("deploy.draft.changed"));
+      await checkRevision();
+      if (reviewContext !== latestContext.current) throw new Error(t("deploy.draft.changed"));
+      return state.action === "install"
+        ? deployApi.install(plan.hash, note.trim(), method, flags)
+        : deployApi.apply(plan.hash, diff.revision, note.trim(), force ? { ...flags, forceConflicts: true } : flags);
+    },
     onSuccess: (r) => {
       setApplied(r);
       for (const key of REFRESH) qc.invalidateQueries({ queryKey: key });
@@ -478,36 +501,21 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()} dirty={dirty && step === "form"} onDiscard={onClose}>
     <SheetContent size="2xl" className="gap-0">
-      <SheetHeader className="border-b py-3.5 pl-5 pr-12">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 space-y-0.5">
-            <SheetTitle>{upgrade ? t("deploy.titleUpgrade", { release: target.release }) : t("deploy.title")}</SheetTitle>
-            <SheetDescription>{upgrade ? t("deploy.descriptionUpgrade") : t("deploy.description")}</SheetDescription>
-          </div>
-          {step === "form" && canDiscover && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              disabled={preview.fetching}
-              onClick={() => void preview.reload()}
-              title={t("deploy.refreshPreviewHint")}
-            >
-              <RefreshCw className={cn("size-3.5", preview.fetching && "animate-spin")} />
-              {t("common:actions.refresh")}
-            </Button>
-          )}
-        </div>
+      <SheetHeader className="border-b px-5 py-3.5">
+        <SheetTitle>{upgrade ? t("deploy.titleUpgrade", { release: target.release }) : t("deploy.title")}</SheetTitle>
+        <SheetDescription>{upgrade ? t("deploy.descriptionUpgrade") : t("deploy.description")}</SheetDescription>
+        {upgrade && <CurrentConfiguration data={revisionSnapshot.data} loading={revisionSnapshot.isFetching} error={revisionSnapshot.error} onRefresh={() => { compose.reset(); apply.reset(); setPlan(null); setDiff(null); setStep("form"); revisionSnapshot.refetch(); }} />}
       </SheetHeader>
 
       {step === "form" && !loading && !error && (
-        <div className={cn("flex gap-1 border-b px-5 py-2", nav.scrolled && "shadow-sm")}>
+        <div className={cn("flex flex-wrap items-center gap-1 border-b px-5 py-2", nav.scrolled && "shadow-sm")}>
           {SECTIONS.map((s) => (
             <Button key={s} variant="ghost" size="sm" className={cn("text-muted-foreground", nav.active === s && "bg-muted text-foreground")} onClick={() => nav.go(s)}>
               {t(`deploy.sections.${upgrade && s === "basic" ? "target" : s}`)}
             </Button>
           ))}
+          {canDiscover && <Button variant="outline" size="sm" disabled={preview.fetching} onClick={() => void preview.reload()} title={t("deploy.refreshPreviewHint")}><RefreshCw className={cn("size-3.5", preview.fetching && "animate-spin")} />{t("common:actions.refresh")}</Button>}
+          <Button variant="outline" size="sm" className="ml-auto" onClick={() => setConfigurationOpen(true)}>{t("deploy.draft.editYaml")}</Button>
         </div>
       )}
 
@@ -521,10 +529,10 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         {routeOptions.error && (
           <Alert variant="warning"><TriangleAlert /><AlertDescription>{t("deploy.routeOptions.error", { error: routeOptions.error.message })}</AlertDescription></Alert>
         )}
-        {(error || compose.error || apply.error) && (
+        {(error || draft.error || draft.invalidField || gpuChange.error || compose.error || apply.error) && (
           <Alert variant="destructive">
             <TriangleAlert />
-            <AlertDescription>{(error ?? compose.error ?? apply.error)?.message}</AlertDescription>
+            <AlertDescription>{draft.error ?? invalidNumberError ?? (error ?? gpuChange.error ?? compose.error ?? apply.error)?.message}</AlertDescription>
           </Alert>
         )}
         {loading ? (
@@ -538,10 +546,16 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               onChange={change}
               upgrade={upgrade}
               submitted={submitted}
-              recovery={<RecoveryFields settings={recovery} onChange={(patch) => setRecoveryPatch((previous) => ({ ...previous, ...patch }))} />}
+              recovery={<RecoveryFields settings={recovery} onChange={draft.setRecovery} />}
+              disabled={!!draft.error || compose.isPending || gpuChange.isPending}
               target={targetFields}
               cluster={cluster.data}
               defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), imageMirror: profile.data?.profile?.registry?.mirror, cache }}
+              inputs={inputs}
+              remember={canRemember ? remember : undefined}
+              onRemember={(key, on) => setRemember((previous) => ({ ...previous, [key]: on }))}
+              presets={upgrade ? undefined : profile.data?.profile?.presets}
+              taints={clusterTaints(nodes.data?.nodes)}
               slots={preview.slots}
               slotsError={preview.queryError}
               resources={preview.resources}
@@ -563,11 +577,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               catalogRoute={catalogRoute}
               idPrefix={ID_PREFIX}
               helmValues={readOnly ? undefined : valuesSource}
-              inputs={inputs}
-              remember={canRemember ? remember : undefined}
-              onRemember={(key, on) => setRemember((r) => ({ ...r, [key]: on }))}
-              presets={upgrade ? undefined : profile.data?.profile?.presets}
-              taints={clusterTaints(nodes.data?.nodes)}
+              configurationOpen={configurationOpen}
+              onConfigurationOpenChange={setConfigurationOpen}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />
           </>
@@ -597,8 +608,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         {step === "form" ? (
           <>
             <SheetCancelButton />
-            <OverrideYamlButton value={form.edits} onChange={(edits) => change({ edits })} source={readOnly ? undefined : valuesSource} disabled={!!readOnly || loading} />
-            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)}>
+            <Button onClick={submit} disabled={!!readOnly || loading || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity) || compose.isPending || gpuChange.isPending || !!draft.error || !!draft.invalidField || (upgrade && (revisionSnapshot.isFetching || revisionSnapshot.isError || !revisionSnapshot.data))}>
               {compose.isPending ? t("deploy.review.composing") : t("deploy.review.compose")}
             </Button>
           </>

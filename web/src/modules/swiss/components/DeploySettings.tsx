@@ -2387,7 +2387,7 @@ export function applyFlags(f: Form): ApplyFlags | undefined {
 // The plan stores the composed overrides tree, not the form fields, so this is
 // the inverse of planRequest -- and the pair is why an upgrade can show the
 // settings rather than only promise it carried them forward.
-export function formFromPlan(plan: Plan, gpuSpecs?: GPUSpec[]): Form {
+export function formFromPlan(plan: Pick<Plan, "release" | "layers">, gpuSpecs?: GPUSpec[]): Form {
   // The form's own document, not the composed result: an upgrade seeds from
   // what the operator set, so recomposing against a newer catalog keeps it.
   const o = (plan.layers?.form ?? {}) as Record<string, unknown>;
@@ -2467,7 +2467,7 @@ export function formFromPlan(plan: Plan, gpuSpecs?: GPUSpec[]): Form {
   };
 }
 
-function cacheOn(plan: Plan): boolean {
+function cacheOn(plan: Pick<Plan, "layers">): boolean {
   let on = false;
   for (const layer of layersOf(plan)) {
     const c = plan.layers[layer]?.cache;

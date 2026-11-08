@@ -667,8 +667,7 @@
       "fracRange": "必须大于 0 且不超过 1，否则 openresty 会忽略",
       "serviceMonitor": "ServiceMonitor",
       "serviceMonitorHint": "随 release 一起采集 Prometheus 指标",
-      "edits": "覆盖 YAML",
-      "editsHint": "任意 values key，在所有层之后生效，不受层归属约束；在计划里显示为单独的 edit 层",
+      "edits": "配置 YAML",
       "cache": "编译缓存",
       "cacheHint": "把编译好的内核留在节点上，Pod 重启时不必再花 20–40 分钟重新编译。留空的字段沿用站点配置，否则用 chart 默认值。关闭时不写入任何值，站点开启的缓存仍会生效：如需强制关闭，在覆盖 YAML 中设置 cache.enabled: false",
       "cacheNone": "{chart} chart 不支持",
@@ -700,6 +699,20 @@
       "required": "必填",
       "format": "只能用小写字母、数字和 -，以字母开头、字母或数字结尾（会用来命名 Kubernetes Service，不能有点）",
       "length": "最多 53 个字符"
+    },
+    "draft": {
+      "editYaml": "编辑 YAML",
+      "baseline": "部署基线",
+      "user": "用户配置",
+      "effective": "最终生效配置",
+      "unavailable": "配置暂不可用",
+      "description": "编辑用户配置，同时查看部署基线和最终生效值。",
+      "refresh": "刷新预览",
+      "current": "当前运行配置",
+      "refreshRevision": "更新运行版本",
+      "changed": "部署或配置已变化，请更新运行版本后重新预览。",
+      "invalidNumber": "请为{field}填写有效数字。",
+      "managed": "{field}：配置为 {requested}，最终为 {actual}（{source}）"
     },
     "overrides": {
       "invalid": "YAML 格式有误",

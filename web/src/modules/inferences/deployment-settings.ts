@@ -13,7 +13,7 @@ function monitorSettings(form: Form, on: boolean): Form {
 export const EMPTY: Form = monitorSettings(SWISS_EMPTY, false);
 
 // Keeps the plan's monitor model and GPU type; planRequest decides whether they are sent.
-export const formFromPlan = (plan: Plan, gpuSpecs?: GPUSpec[]): Form => swissFormFromPlan(plan, gpuSpecs);
+export const formFromPlan = (plan: Pick<Plan, "release" | "layers">, gpuSpecs?: GPUSpec[]): Form => swissFormFromPlan(plan, gpuSpecs);
 
 export const planRequest = (form: Form, options: Parameters<typeof swissPlanRequest>[1], profile?: SiteProfile) =>
   swissPlanRequest(profile ? monitorSettings(form, monitorOn(profile)) : form, {

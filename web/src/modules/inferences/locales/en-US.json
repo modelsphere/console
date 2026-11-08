@@ -678,8 +678,7 @@
       "fracRange": "Must be over 0 and at most 1, or openresty ignores it",
       "serviceMonitor": "ServiceMonitor",
       "serviceMonitorHint": "Prometheus metrics scraped alongside the release",
-      "edits": "Override YAML",
-      "editsHint": "Any values key, applied after every layer and exempt from layer ownership; shown as its own edit layer in the plan",
+      "edits": "Configuration YAML",
       "cache": "Compile cache",
       "cacheHint": "Keeps compiled kernels on the node, so a restarted pod skips the 20–40 minute recompile. Empty fields keep the site's, else the chart's. Off writes nothing, so a site that turns it on still applies: set cache.enabled: false in Override YAML to force it off",
       "cacheNone": "Not supported by the {chart} chart",
@@ -711,6 +710,20 @@
       "required": "Required",
       "format": "Lowercase letters, digits and -, starting with a letter and ending with a letter or digit (it names Kubernetes Services, so no dots)",
       "length": "At most 53 characters"
+    },
+    "draft": {
+      "editYaml": "Edit YAML",
+      "baseline": "Deployment baseline",
+      "user": "User configuration",
+      "effective": "Effective configuration",
+      "unavailable": "Configuration unavailable",
+      "description": "Edit user configuration alongside its baseline and effective values.",
+      "refresh": "Refresh preview",
+      "current": "Current configuration",
+      "refreshRevision": "Reload current revision",
+      "changed": "The deployment or configuration changed. Reload the current revision and preview again.",
+      "invalidNumber": "Enter a valid number for {field}.",
+      "managed": "{field}: configured {requested}, effective {actual} ({source})"
     },
     "overrides": {
       "invalid": "Not valid YAML",

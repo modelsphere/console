@@ -14,8 +14,12 @@ function documentValues(document: Document): Values {
   if (document.errors.length) throw new Error(document.errors[0].message);
   if (document.warnings.length) throw new Error(document.warnings[0].message);
   const values: unknown = document.toJS({ maxAliasCount: 100 });
-  if (values === null || values === undefined) return {};
+  if (values === null || values === undefined) {
+    if (document.contents !== null) throw new Error("YAML must contain a mapping of values.");
+    return {};
+  }
   JSON.stringify(values, (_key, value: unknown) => {
+    if (typeof value === "number" && Number.isInteger(value) && !Number.isSafeInteger(value)) throw new Error("YAML integers must be within the exact JavaScript integer range.");
     if (typeof value === "number" && !Number.isFinite(value)) throw new Error("YAML values must contain finite numbers.");
     if (value && typeof value === "object" && !Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype) throw new Error("YAML values must contain plain mappings, lists and scalars.");
     return value;
