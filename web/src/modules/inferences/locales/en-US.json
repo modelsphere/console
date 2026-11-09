@@ -105,7 +105,9 @@
     "current": "This is already the current revision",
     "sloOff": "SLO was not turned on at deploy; turn it on in an upgrade",
     "sloPending": "SLO shows once the deploy has applied",
-    "uninstalling": "This release is uninstalling; wait until its pods are gone"
+    "uninstalling": "This release is uninstalling; wait until its pods are gone",
+    "serviceManaged": "Managed by another resource; change configuration or release it from its owner",
+    "serviceAssigned": "Service configuration is reserved; release the assignment from its owner first"
   },
   "state": {
     "applied": "Applied",
@@ -468,44 +470,125 @@
         "Other": "Other"
       },
       "options": {
-        "adaptive_cc": { "label": "Adaptive concurrency" },
-        "adaptive_cc_min": { "label": "Adaptive floor" },
-        "adaptive_cc_min_frac": { "label": "Floor fraction" },
-        "adaptive_cc_init": { "label": "Start point" },
-        "adaptive_cc_init_frac": { "label": "Start fraction" },
-        "adaptive_cc_hold_when_idle": { "label": "Hold when idle" },
-        "adaptive_cc_use_ttft": { "label": "Judge on TTFT too" },
-        "default_max": { "label": "Default peer maximum" },
-        "max_more_tries": { "label": "Retry budget" },
-        "cross_tier_fallback": { "label": "Cross-tier fallback" },
-        "health_probe_path": { "label": "Probe path" },
-        "session_affinity_enabled": { "label": "Session affinity" },
-        "expose_routed_peer": { "label": "Expose routed peer" },
-        "bodylog_default_pct": { "label": "Body log sample percent" },
-        "adaptive_cc_inc": { "label": "Climb multiplier" },
-        "adaptive_cc_dec": { "label": "Shrink multiplier" },
-        "adaptive_cc_abs": { "label": "Absolute headroom" },
-        "adaptive_cc_pressure_frac": { "label": "Pressure fraction" },
-        "adaptive_cc_slack_frac": { "label": "Slack fraction", "detail": "Slack band relative to the start point; inactive while hold-when-idle is enabled." },
-        "adaptive_cc_ttl": { "label": "Start-point TTL", "detail": "Lifetime of the idle start-point state; inactive while hold-when-idle is enabled." },
-        "adaptive_cc_interval": { "label": "Step interval" },
-        "rt_limit_factor": { "label": "Runtime limit factor", "detail": "Scales the pool's runtime concurrency limit, not each peer's maximum." },
-        "health_check_interval": { "label": "Probe interval" },
-        "health_ban_ttl": { "label": "Ban TTL" },
-        "cluster_avg_interval": { "label": "Cluster average interval" },
-        "ttft_ewma_alpha": { "label": "TTFT EWMA alpha" },
-        "ttft_window": { "label": "TTFT window" },
-        "ttft_ttl": { "label": "TTFT TTL" },
-        "tps_ewma_alpha": { "label": "TPS EWMA alpha" },
-        "tps_window": { "label": "TPS window" },
-        "tps_ttl": { "label": "TPS TTL" },
-        "tps_min_tokens": { "label": "Minimum tokens" },
-        "tps_min_decode_s": { "label": "Minimum decode seconds" },
-        "ttft_probe_window": { "label": "TTFT probe window" },
-        "ttft_probe_per_window": { "label": "TTFT probes per window", "detail": "Probe requests allowed through while TTFT limiting is active, per probe window." },
-        "tps_probe_window": { "label": "TPS probe window" },
-        "tps_probe_per_window": { "label": "TPS probes per window", "detail": "Probe requests allowed through while TPS limiting is active, per probe window." },
-        "reject_rules_status": { "label": "Rejection status" }
+        "adaptive_cc": {
+          "label": "Adaptive concurrency"
+        },
+        "adaptive_cc_min": {
+          "label": "Adaptive floor"
+        },
+        "adaptive_cc_min_frac": {
+          "label": "Floor fraction"
+        },
+        "adaptive_cc_init": {
+          "label": "Start point"
+        },
+        "adaptive_cc_init_frac": {
+          "label": "Start fraction"
+        },
+        "adaptive_cc_hold_when_idle": {
+          "label": "Hold when idle"
+        },
+        "adaptive_cc_use_ttft": {
+          "label": "Judge on TTFT too"
+        },
+        "default_max": {
+          "label": "Default peer maximum"
+        },
+        "max_more_tries": {
+          "label": "Retry budget"
+        },
+        "cross_tier_fallback": {
+          "label": "Cross-tier fallback"
+        },
+        "health_probe_path": {
+          "label": "Probe path"
+        },
+        "session_affinity_enabled": {
+          "label": "Session affinity"
+        },
+        "expose_routed_peer": {
+          "label": "Expose routed peer"
+        },
+        "bodylog_default_pct": {
+          "label": "Body log sample percent"
+        },
+        "adaptive_cc_inc": {
+          "label": "Climb multiplier"
+        },
+        "adaptive_cc_dec": {
+          "label": "Shrink multiplier"
+        },
+        "adaptive_cc_abs": {
+          "label": "Absolute headroom"
+        },
+        "adaptive_cc_pressure_frac": {
+          "label": "Pressure fraction"
+        },
+        "adaptive_cc_slack_frac": {
+          "label": "Slack fraction",
+          "detail": "Slack band relative to the start point; inactive while hold-when-idle is enabled."
+        },
+        "adaptive_cc_ttl": {
+          "label": "Start-point TTL",
+          "detail": "Lifetime of the idle start-point state; inactive while hold-when-idle is enabled."
+        },
+        "adaptive_cc_interval": {
+          "label": "Step interval"
+        },
+        "rt_limit_factor": {
+          "label": "Runtime limit factor",
+          "detail": "Scales the pool's runtime concurrency limit, not each peer's maximum."
+        },
+        "health_check_interval": {
+          "label": "Probe interval"
+        },
+        "health_ban_ttl": {
+          "label": "Ban TTL"
+        },
+        "cluster_avg_interval": {
+          "label": "Cluster average interval"
+        },
+        "ttft_ewma_alpha": {
+          "label": "TTFT EWMA alpha"
+        },
+        "ttft_window": {
+          "label": "TTFT window"
+        },
+        "ttft_ttl": {
+          "label": "TTFT TTL"
+        },
+        "tps_ewma_alpha": {
+          "label": "TPS EWMA alpha"
+        },
+        "tps_window": {
+          "label": "TPS window"
+        },
+        "tps_ttl": {
+          "label": "TPS TTL"
+        },
+        "tps_min_tokens": {
+          "label": "Minimum tokens"
+        },
+        "tps_min_decode_s": {
+          "label": "Minimum decode seconds"
+        },
+        "ttft_probe_window": {
+          "label": "TTFT probe window"
+        },
+        "ttft_probe_per_window": {
+          "label": "TTFT probes per window",
+          "detail": "Probe requests allowed through while TTFT limiting is active, per probe window."
+        },
+        "tps_probe_window": {
+          "label": "TPS probe window"
+        },
+        "tps_probe_per_window": {
+          "label": "TPS probes per window",
+          "detail": "Probe requests allowed through while TPS limiting is active, per probe window."
+        },
+        "reject_rules_status": {
+          "label": "Rejection status"
+        }
       }
     },
     "fields": {
@@ -543,8 +626,8 @@
       "namespaceLocked": "Fixed on an upgrade: another namespace installs a second release",
       "createNamespace": "Create namespace",
       "createNamespaceHint": "Helm creates it during install (helmDefaults.createNamespace in the plan)",
-      "scaler": "Scale Executor",
-      "scalerHint": "Leave it on. After install the SLO config drives the replica count; min and max are only the outer bounds and should cover the SLO's replica range. Empty keeps the chart's bounds",
+      "scaler": "Autoscaling",
+      "scalerHint": "Independent of SLO requirements. Turn off for fixed replicas, including experiment control and candidate services. Empty bounds keep chart defaults.",
       "scalerMin": "Min replicas",
       "scalerMax": "Max replicas",
       "replicas": "Replicas",
@@ -631,6 +714,8 @@
       "adaptiveCc": "Adaptive concurrency",
       "adaptiveCcHint": "AIMD on the effective TPS signal; on by default",
       "adaptiveOff": "Enable adaptive concurrency to add this setting.",
+      "productionBindingLocked": "This service is the production target of an experiment. Upgrades may retain autoscaling, but must preserve the chart and routing/service binding. Stop the experiment before changing that binding or uninstalling the service.",
+      "assignedAdaptiveOnly": "This service is assigned to an experiment. Only Routing → Adaptive concurrency can be changed. Stop the experiment before changing other settings.",
       "adaptiveChanged": "The model source changed or adaptive settings could not be cleared. Compose the plan again before applying.",
       "adaptiveCcMinFrac": "Adaptive floor fraction",
       "adaptiveCcMinFracHint": "Of the static maximum, 0 < value ≤ 1; empty uses the engine default. Unused when the absolute floor is set",
@@ -1068,5 +1153,16 @@
     "truncated": "Showing the last {n} lines, at most 2 MiB",
     "init": "init",
     "restarts": "{n} restarts"
+  },
+  "serviceOwner": {
+    "managed": "Managed service",
+    "assigned": "Assigned service",
+    "description": "Configuration and resource release are controlled by the owner.",
+    "anomaly": "Ownership metadata is inconsistent. Ask an administrator to investigate."
+  },
+  "serviceRelationship": {
+    "standalone": "Standalone",
+    "referenced": "Referenced by experiment",
+    "owned": "Owned by experiment"
   }
 }

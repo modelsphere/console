@@ -45,6 +45,8 @@ export interface DeployFormProps {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
   upgrade?: boolean;
+  adaptiveOnly?: boolean;
+  bindingLocked?: boolean;
   submitted: boolean;
   target: ReactNode;
   cluster?: ClusterInfo;
@@ -74,7 +76,7 @@ export interface DeployFormProps {
   presets?: Record<string, Preset>;
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember, presets }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, adaptiveOnly, bindingLocked, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember, presets }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -90,7 +92,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
     return showRuntime && d?.set !== undefined ? `${detail} · ${runtimeText(t, d)}` : detail;
   };
   const text = (k: keyof Form) => ({ value: form[k] as string, onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange({ [k]: e.target.value }) });
-  const sw = (k: keyof Form, label: string) => <Switch aria-label={label} checked={form[k] as boolean} onCheckedChange={(v) => onChange({ [k]: v })} />;
+  const sw = (k: keyof Form, label: string) => <Switch disabled={adaptiveOnly} aria-label={label} checked={form[k] as boolean} onCheckedChange={(v) => onChange({ [k]: v })} />;
   const idError = submitted ? serviceIdError(form.serviceId || defaults.serviceId || "") : undefined;
   const cache = defaults.cache;
   const cacheOn = !!cache && !cache.unsupported && form.cache;
@@ -99,7 +101,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
   const section = (id: Section, children: ReactNode) => (
     <div id={`${idPrefix}${id}`}>
       <FormSection id={`${idPrefix}${id}-section`} title={t(`deploy.sections.${upgrade && id === "basic" ? "target" : id}`)} expanded={expanded[id]} onExpandedChange={(o) => onExpand(id, o)}>
-        <div className="flex flex-col gap-3">{children}</div>
+        <fieldset disabled={adaptiveOnly && id !== "routing"} className="flex min-w-0 flex-col gap-3 disabled:opacity-50">{children}</fieldset>
       </FormSection>
     </div>
   );
@@ -120,11 +122,11 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
             expanded={on.modelRoute}
             expandedContent={
               <div className="pb-3">
-                <Suggest bare value={form.route} onChange={(route) => onChange({ route })} suggestion={form.serviceId || defaults.serviceId} aria-label={f("route")} />
+                <Suggest bare disabled={bindingLocked || adaptiveOnly} value={form.route} onChange={(route) => onChange({ route })} suggestion={form.serviceId || defaults.serviceId} aria-label={f("route")} />
               </div>
             }
           >
-            <Switch aria-label={f("modelRoute")} checked={on.modelRoute} onCheckedChange={(v) => onChange(v ? { modelRoute: true } : { modelRoute: false, route: "" })} />
+            <Switch disabled={adaptiveOnly || bindingLocked} aria-label={f("modelRoute")} checked={on.modelRoute} onCheckedChange={(v) => onChange(v ? { modelRoute: true } : { modelRoute: false, route: "" })} />
           </FloatingField>
           <div className={cn(!upgrade && "grid grid-cols-2 gap-3")}>
             <FloatingField value={shown(form.namespace, cluster?.namespace)} label={f("namespace")} hint={upgrade ? f("namespaceLocked") : undefined} disabled={upgrade}>
@@ -145,6 +147,13 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
       {section(
         "resources",
         <>
+          <FloatingField layout="inline" label={f("scaler")} hint={f("scalerHint")}>
+            {sw("scaler", f("scaler"))}
+          </FloatingField>
+          {form.scaler ? <div className="grid grid-cols-2 gap-3">
+            <FloatingField label={f("scalerMin")}><FieldInput {...text("scalerMin")} inputMode="numeric" aria-label={f("scalerMin")} /></FloatingField>
+            <FloatingField label={f("scalerMax")}><FieldInput {...text("scalerMax")} inputMode="numeric" aria-label={f("scalerMax")} /></FloatingField>
+          </div> : <FloatingField label={f("replicas")}><FieldInput {...text("replicaCount")} inputMode="numeric" aria-label={f("replicas")} /></FloatingField>}
           {gpuResources && <GpuResource resources={gpuResources} value={form.gpuResource} onChange={(gpuResource) => onChange({ gpuResource })} />}
           <FloatingField label={f("gpuProducts")} hint={f("gpuProductsHint")} notice={forced.length > 0 ? t("deploy.fields.gpuForced", { products: forced.join(", ") }) : undefined}>
             <FieldSelect multiple values={form.gpuProducts} onValuesChange={(v) => onChange({ gpuProducts: v })} options={gpuOptions.map((o) => ({ value: o, label: o, badge: unlistedProducts(gpuListed, [o]).length ? <Badge variant="warning">{f("gpuUnverified")}</Badge> : <Badge variant="success">{f("gpuVerified")}</Badge> }))} placeholder={gpuOptions.length ? undefined : f("gpuProductsEmpty")} disabled={!gpuOptions.length} />
@@ -223,7 +232,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
                 </div>
               }
             >
-              <Switch aria-label={f("image")} checked={!!form.image.trim()} onCheckedChange={(v) => onChange({ image: v ? defaults.image!.site : "" })} />
+              <Switch disabled={adaptiveOnly} aria-label={f("image")} checked={!!form.image.trim()} onCheckedChange={(v) => onChange({ image: v ? defaults.image!.site : "" })} />
             </FloatingField>
           )}
         </>,
@@ -232,6 +241,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
       {section(
         "routing",
         <>
+          <fieldset disabled={adaptiveOnly} className="flex min-w-0 flex-col gap-3 disabled:opacity-50">
           {recovery}
           <FloatingField layout="inline" label={label("expose_routed_peer", "exposeRoutedPeer")} hint={hint("expose_routed_peer", "exposeRoutedPeerHint")}>
             {sw("exposeRoutedPeer", f("exposeRoutedPeer"))}
@@ -252,6 +262,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           >
             {sw("cart", f("cart"))}
           </FloatingField>
+          </fieldset>
           <FloatingField
             layout="inline"
             label={label("adaptive_cc", "adaptiveCc")}
@@ -268,10 +279,12 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           >
             <Switch aria-label={f("adaptiveCc")} checked={form.adaptiveCc} onCheckedChange={(value) => onChange(toggleAdaptive(form, value, routeOptions))} />
           </FloatingField>
+          <fieldset disabled={adaptiveOnly} className="flex min-w-0 flex-col gap-3 disabled:opacity-50">
           <RouteExtras form={form} onChange={onChange} options={routeOptions} showRuntime={showRuntime} mode="other" />
           <FloatingField layout="inline" label={f("serviceMonitor")} hint={f("serviceMonitorHint")}>
             {sw("serviceMonitor", f("serviceMonitor"))}
           </FloatingField>
+          </fieldset>
         </>,
       )}
 
