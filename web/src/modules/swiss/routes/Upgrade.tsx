@@ -30,6 +30,7 @@ import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, SchemaBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
 import { movableCatalogs } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
+import { inputRows } from "@swiss/lib/inputs";
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { VariantCard } from "@swiss/components/VariantCard";
@@ -164,6 +165,7 @@ export function Upgrade() {
           // dropped by a form that never knew about it.
           fromRelease: release,
           cacheUnsupported: !!cache.unsupported,
+          inputs: entry.data?.variant.requires.inputs,
         }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping
@@ -468,6 +470,13 @@ export function Upgrade() {
         }
         localPathDefault={entry.data?.localPath}
         localPathPlaceholder={entry.data?.pathTemplate}
+        inputs={inputRows(
+          entry.data?.variant.requires.inputs,
+          profile.data?.profile,
+          entry.data?.model.source?.hf ?? "",
+          current.data?.source.model ?? "",
+          current.data?.layers?.form,
+        )}
         image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
         cache={cache}
         lockIdentity

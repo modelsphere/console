@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { ChevronDown, Plus, RefreshCw, TriangleAlert, X } from "lucide-react";
-import type { ApplyFlags, ClusterInfo, Plan, PlanRequest, ProfileResponse, Variant } from "@swiss/lib/api";
+import type { ApplyFlags, ClusterInfo, Input as CatalogInput, Plan, PlanRequest, ProfileResponse, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
+import { inputProblem, setInputOverrides, type InputRow } from "@swiss/lib/inputs";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
 import {
@@ -50,6 +51,8 @@ export interface Form {
   createNamespace: boolean;
   serviceId: string;
   localPath: string;
+  // By chart path, as typed. Empty is the row's answer (InputRow).
+  inputs: Record<string, string>;
   scaler: boolean;
   // The LLMScaler's bounds. Empty leaves the chart's own.
   scalerMin: string;
@@ -105,6 +108,7 @@ export const EMPTY: Form = {
   createNamespace: false,
   serviceId: "",
   localPath: "",
+  inputs: {},
   scaler: true,
   scalerMin: "",
   scalerMax: "",
@@ -181,6 +185,7 @@ export function DeploySettings({
   serviceIdPlaceholder,
   localPathDefault,
   localPathPlaceholder,
+  inputs,
   image,
   supportedGPUs,
   clusterGPUs,
@@ -204,6 +209,7 @@ export function DeploySettings({
   // a field with.
   localPathDefault?: string;
   localPathPlaceholder?: string;
+  inputs?: InputRow[];
   // The engine image the catalog pins, and what the site's mirror rewrites it
   // to. Equal when this site mirrors nothing, which is when there is no rewrite
   // to offer a choice about.
@@ -314,6 +320,35 @@ export function DeploySettings({
               placeholder={localPathDefault ?? localPathPlaceholder}
             />
           </Row>
+
+          {inputs?.map(({ input, answer, from }) => {
+            const value = form.inputs[input.path] ?? "";
+            const problem = inputProblem(input, value);
+            return (
+              <Row
+                key={input.path}
+                label={input.title}
+                note={
+                  from === "release"
+                    ? "the release's answer, kept unless you change it"
+                    : from === "site"
+                      ? "the site profile's answer, unless you change it"
+                      : "required: the site profile has no answer"
+                }
+                hint={input.description ? `${input.description} (${input.path})` : input.path}
+              >
+                <div className="min-w-0 flex-1">
+                  <Suggest
+                    value={value}
+                    onChange={(v) => onChange({ inputs: { ...form.inputs, [input.path]: v } })}
+                    suggestion={answer}
+                    placeholder={answer ?? `e.g. ${String(input.example)}`}
+                  />
+                  {problem && <p className="mt-1 text-[11px] text-destructive">{problem}</p>}
+                </div>
+              </Row>
+            );
+          })}
 
           <Row
             label="Autoscale"
@@ -1602,6 +1637,8 @@ export function planRequest(
     forceGpuProducts?: boolean;
     // The chart has no cache section (CHART_FEATURES): the switch is forced off.
     cacheUnsupported?: boolean;
+    // To send the form's answers typed.
+    inputs?: CatalogInput[];
   },
 ): PlanRequest {
   const overrides: Record<string, unknown> = {};
@@ -1706,6 +1743,8 @@ export function planRequest(
 
   if (f.priorityClassName.trim()) overrides.priorityClassName = f.priorityClassName.trim();
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
+
+  setInputOverrides(overrides, opts.inputs, f.inputs);
 
   return {
     catalog: opts.catalog || undefined,

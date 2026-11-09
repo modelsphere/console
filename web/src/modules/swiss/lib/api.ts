@@ -118,6 +118,20 @@ export interface Requires {
   topology?: string;
   gpuProduct?: string[];
   rdma?: boolean;
+  // Chart values the variant leaves to the deploy.
+  inputs?: Input[];
+}
+
+export interface Input {
+  path: string;
+  title: string;
+  description?: string;
+  // Unset is string.
+  type?: "string" | "integer" | "boolean";
+  // Matches a whole string answer.
+  pattern?: string;
+  // The field's placeholder; never a real value.
+  example: string | number | boolean;
 }
 
 // v1 is the legacy schema: read-only, and still what a catalog with no
@@ -344,6 +358,8 @@ export interface SiteProfile {
   // The site's preferences, beneath the catalog: a variant overrides them.
   // features unset is on (featureOn).
   defaults?: { features?: { cart?: boolean; serviceMonitor?: boolean; sloRequirement?: boolean; scaler?: boolean } };
+  // inputs answers requires.inputs by chart path; strings take pathTemplate's placeholders.
+  features?: { inputs?: Record<string, string | number | boolean> };
   nodes?: {
     gpusPerNode?: number;
     // Required by swissd; [] is a site without GPUs.

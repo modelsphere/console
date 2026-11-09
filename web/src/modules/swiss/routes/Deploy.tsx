@@ -12,6 +12,7 @@ import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog }
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { isChartRange } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
+import { inputRows } from "@swiss/lib/inputs";
 import { deployCapacity, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { InstallMethodChoice } from "@swiss/components/InstallMethod";
@@ -119,6 +120,7 @@ export function Deploy() {
           chartVersion: chartVersion || undefined,
           forceGpuProducts: unlistedProducts(model.data?.variant.requires.gpuProduct, form.gpuProducts).length > 0,
           cacheUnsupported: !!cache.unsupported,
+          inputs: model.data?.variant.requires.inputs,
         }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping
@@ -264,6 +266,7 @@ export function Deploy() {
         serviceIdPlaceholder={name}
         localPathDefault={model.data.localPath}
         localPathPlaceholder={model.data.pathTemplate}
+        inputs={inputRows(model.data.variant.requires.inputs, profile.data?.profile, model.data.model.source?.hf ?? "", name)}
         image={imageOf(variant, model.data.imageRepository)}
         supportedGPUs={variant?.requires.gpuProduct}
         clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
