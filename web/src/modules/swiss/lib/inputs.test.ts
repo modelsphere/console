@@ -33,13 +33,16 @@ describe("inputRows", () => {
     ]);
     expect(inputRows([port], site({ [port.path]: 8050 }), "a/b", "m")[0].answer).toBe("8050");
   });
-  it("leaves an input the site does not answer for the deployer", () => {
-    expect(inputRows([master], site({}), "a/b", "m")).toEqual([{ input: master }]);
+  it("falls back to the variant's default, and leaves an input with none for the deployer", () => {
+    const tuned = { storageKVOffload: { mooncake: { master: "tuned:1" } } };
+    expect(inputRows([master], site({}), "a/b", "m", tuned)).toEqual([{ input: master, answer: "tuned:1", from: "variant" }]);
+    expect(inputRows([master], site({ [master.path]: "site:1" }), "a/b", "m", tuned)[0].from).toBe("site");
+    expect(inputRows([master], site({}), "a/b", "m", { storageKVOffload: { mooncake: { master: "" } } })).toEqual([{ input: master }]);
     expect(inputRows([master], undefined, "a/b", "m")).toEqual([{ input: master }]);
   });
   it("shows an upgrade the release's own answer over the site's", () => {
     const release = { storageKVOffload: { mooncake: { master: "mine:1" } } };
-    expect(inputRows([master], site({ [master.path]: "site:1" }), "a/b", "m", release)[0]).toEqual({ input: master, answer: "mine:1", from: "release" });
+    expect(inputRows([master], site({ [master.path]: "site:1" }), "a/b", "m", undefined, release)[0]).toEqual({ input: master, answer: "mine:1", from: "release" });
   });
 });
 

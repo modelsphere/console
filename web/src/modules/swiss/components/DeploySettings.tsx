@@ -333,7 +333,9 @@ export function DeploySettings({
                     ? "the release's answer, kept unless you change it"
                     : from === "site"
                       ? "the site profile's answer, unless you change it"
-                      : "required: the site profile has no answer"
+                      : from === "variant"
+                        ? "the variant's default, unless you change it"
+                        : "required: no default, and the site profile has no answer"
                 }
                 hint={input.description ? `${input.description} (${input.path})` : input.path}
               >

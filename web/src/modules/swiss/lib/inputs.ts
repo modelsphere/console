@@ -4,7 +4,7 @@ import type { Input, SiteProfile } from "./api";
 export interface InputRow {
   input: Input;
   answer?: string;
-  from?: "site" | "release";
+  from?: "release" | "site" | "variant";
 }
 
 // fillTemplate mirrors swissd's site.fill, and is undefined where swissd refuses.
@@ -27,12 +27,14 @@ export function answerAt(tree: Record<string, unknown> | undefined, path: string
   return String(node);
 }
 
-// release is the upgraded plan's form layer: swissd carries it forward, so its answer is kept.
+// The order swissd answers in: the release's form layer (carried forward on upgrade),
+// the site profile, then the variant's own values.
 export function inputRows(
   inputs: Input[] | undefined,
   profile: SiteProfile | undefined,
   hf: string,
   model: string,
+  variantValues?: Record<string, unknown>,
   release?: Record<string, unknown>,
 ): InputRow[] {
   return (inputs ?? []).map((input) => {
@@ -40,7 +42,9 @@ export function inputRows(
     if (kept !== undefined) return { input, answer: kept, from: "release" };
     const v = profile?.features?.inputs?.[input.path];
     const site = v === undefined || v === null ? undefined : typeof v === "string" ? fillTemplate(v, hf, model) : String(v);
-    return site !== undefined ? { input, answer: site, from: "site" } : { input };
+    if (site !== undefined) return { input, answer: site, from: "site" };
+    const def = answerAt(variantValues, input.path);
+    return def !== undefined ? { input, answer: def, from: "variant" } : { input };
   });
 }
 
