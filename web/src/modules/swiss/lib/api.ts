@@ -132,6 +132,8 @@ export interface Input {
   pattern?: string;
   // The field's placeholder; never a real value.
   example: string | number | boolean;
+  // swissd's answer when the site profile has none.
+  default?: string | number | boolean;
 }
 
 // v1 is the legacy schema: read-only, and still what a catalog with no

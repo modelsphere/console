@@ -475,7 +475,6 @@ export function Upgrade() {
           profile.data?.profile,
           entry.data?.model.source?.hf ?? "",
           current.data?.source.model ?? "",
-          entry.data?.variant.values,
           current.data?.layers?.form,
         )}
         image={imageOf(entry.data?.variant, entry.data?.imageRepository)}

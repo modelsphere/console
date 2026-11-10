@@ -28,13 +28,12 @@ export function answerAt(tree: Record<string, unknown> | undefined, path: string
 }
 
 // The order swissd answers in: the release's form layer (carried forward on upgrade),
-// the site profile, then the variant's own values.
+// the site profile, then the input's default.
 export function inputRows(
   inputs: Input[] | undefined,
   profile: SiteProfile | undefined,
   hf: string,
   model: string,
-  variantValues?: Record<string, unknown>,
   release?: Record<string, unknown>,
 ): InputRow[] {
   return (inputs ?? []).map((input) => {
@@ -43,8 +42,7 @@ export function inputRows(
     const v = profile?.features?.inputs?.[input.path];
     const site = v === undefined || v === null ? undefined : typeof v === "string" ? fillTemplate(v, hf, model) : String(v);
     if (site !== undefined) return { input, answer: site, from: "site" };
-    const def = answerAt(variantValues, input.path);
-    return def !== undefined ? { input, answer: def, from: "variant" } : { input };
+    return input.default !== undefined && input.default !== null ? { input, answer: String(input.default), from: "variant" } : { input };
   });
 }
 
