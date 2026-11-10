@@ -2,6 +2,7 @@ import { useId, useState, type ReactNode } from "react";
 import {
   Badge,
   Button,
+  Checkbox,
   DataSelect,
   DropdownMenu,
   DropdownMenuContent,
@@ -25,6 +26,8 @@ import { Plus, RefreshCw, X } from "lucide-react";
 import type { ClusterInfo } from "@swiss/lib/api";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
+import { CHECK_MS, inputError, rememberable, type InputRow } from "@swiss/lib/inputs";
+import { useDebounced } from "@swiss/lib/useDebounced";
 import { effective, imageChoices, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
@@ -59,10 +62,16 @@ export interface DeployFormProps {
   // The chart's values and swissd's layers for the Override YAML editor.
   helmValues?: HelmValuesSource;
   recovery?: ReactNode;
+  // The variant's inputs, each with the answer that applies when its field is left empty.
+  inputs?: InputRow[];
+  // Which typed answers to save to the site profile once the deploy applies; absent where it cannot be saved.
+  remember?: Record<string, boolean>;
+  onRemember?: (key: string, on: boolean) => void;
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember }: DeployFormProps) {
   const t = useT();
+  const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
   const forced = unlistedProducts(gpuListed, form.gpuProducts);
@@ -149,6 +158,34 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           <FloatingField value={shown(form.localPath, defaults.localPath || defaults.localPathTemplate)} label={f("localPath")} hint={f("localPathHint")}>
             <Suggest value={form.localPath} onChange={(localPath) => onChange({ localPath })} suggestion={defaults.localPath} placeholder={defaults.localPath || defaults.localPathTemplate} />
           </FloatingField>
+          {inputs?.map((row) => {
+            const { input, answer, choices, site } = row;
+            const value = form.inputs[input.key] ?? "";
+            const error = inputError({ input, answer }, checked[input.key]);
+            const set = (v: string) => onChange({ inputs: { ...form.inputs, [input.key]: v } });
+            return (
+              <div key={input.key} className="flex flex-col gap-1.5">
+                <FloatingField
+                  value={shown(value, answer)}
+                  label={input.title}
+                  required
+                  hint={input.description ? `${input.description} (${input.key})` : input.key}
+                  aside={t("deploy.fields.inputExample", { example: String(input.example) })}
+                  error={error && (error === "required" ? t("deploy.fields.inputRequired") : t(`deploy.fields.inputProblem.${input.type ?? "string"}`, { pattern: input.pattern ?? "" }))}
+                >
+                  <Suggest value={value} onChange={set} suggestion={answer} placeholder={answer} choices={choices?.map((c) => ({ value: c.answer, label: f(`inputFrom.${c.from}`) }))} />
+                </FloatingField>
+                {remember && onRemember && rememberable(row, checked[input.key]) && (
+                  <label className="flex flex-wrap items-center gap-1.5 px-1 text-xs text-muted-foreground">
+                    <Checkbox checked={!!remember[input.key]} onCheckedChange={(on) => onRemember(input.key, !!on)} />
+                    {f("inputRemember")}
+                    <FieldHint>{f("inputRememberHint")}</FieldHint>
+                    {site && <span className="break-all">· {t("deploy.fields.inputReplaces", { answer: site.written })}</span>}
+                  </label>
+                )}
+              </div>
+            );
+          })}
           {defaults.image && (
             <FloatingField
               layout="inline"
@@ -473,20 +510,28 @@ export function RouteExtras({ form, onChange, options, showRuntime = false, mode
 }
 
 // Tab fills an empty field with the default it shows, as swiss's own form does.
-function Suggest({ value, onChange, suggestion, bare, placeholder, className, ...props }: Omit<React.ComponentProps<typeof Input>, "value" | "onChange"> & { value: string; onChange: (v: string) => void; suggestion?: string; bare?: boolean }) {
+// choices list under the field when the empty field is clicked; typing closes the list.
+function Suggest({ value, onChange, suggestion, bare, placeholder, className, choices, ...props }: Omit<React.ComponentProps<typeof Input>, "value" | "onChange"> & { value: string; onChange: (v: string) => void; suggestion?: string; bare?: boolean; choices?: { value: string; label: string }[] }) {
   const [focused, setFocused] = useState(false);
+  const [listed, setListed] = useState(false);
   const offer = !value && !props.disabled ? suggestion : undefined;
   const hint = !!offer && focused;
   const Control = bare ? Input : FieldInput;
   return (
     <div className="relative h-full w-full min-w-0">
       <Control
+        autoComplete="off"
         {...props}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        onBlur={() => {
+          setFocused(false);
+          setListed(false);
+        }}
+        onClick={() => setListed(!!choices?.length && !value)}
         onKeyDown={(e) => {
+          if (e.key === "Escape") setListed(false);
           if (e.key !== "Tab" || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || !offer) return;
           e.preventDefault();
           onChange(offer);
@@ -496,6 +541,28 @@ function Suggest({ value, onChange, suggestion, bare, placeholder, className, ..
       />
       {hint && (
         <kbd className={cn("pointer-events-none absolute right-3 rounded border px-1 py-px text-[10px] leading-none text-muted-foreground", bare ? "top-1/2 -translate-y-1/2" : "top-[27px]")}>tab</kbd>
+      )}
+      {listed && !value && choices && (
+        <div role="listbox" className="absolute top-full right-0 left-0 z-50 mt-1 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
+          {choices.map((c) => (
+            // mousedown, not click: the field keeps focus, and its blur does not close the list first.
+            <button
+              key={c.label}
+              type="button"
+              role="option"
+              aria-selected={false}
+              className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(c.value);
+                setListed(false);
+              }}
+            >
+              <span className="min-w-0 flex-1 font-mono text-xs break-all">{c.value}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{c.label}</span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

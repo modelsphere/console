@@ -120,6 +120,21 @@ export interface Requires {
   rdma?: boolean;
 }
 
+export interface Input {
+  // The chart value's dotted key: storageKVOffload.mooncake.master.
+  key: string;
+  title: string;
+  description?: string;
+  // Unset is string.
+  type?: "string" | "integer" | "boolean";
+  // Matches a whole string answer.
+  pattern?: string;
+  // The field's placeholder; never a real value.
+  example: string | number | boolean;
+  // swissd's answer when the site profile has none.
+  default?: string | number | boolean;
+}
+
 // v1 is the legacy schema: read-only, and still what a catalog with no
 // schemaVersion reads. v2 is the one new catalogs publish.
 export type CatalogSchema = "v1" | "v2";
@@ -192,6 +207,8 @@ export interface CatalogResponse {
 export interface Variant extends Omit<ModelVariant, "servedName" | "deprecated" | "replaces"> {
   servedName: string;
   image?: { repository: string; tag: string; digest?: string };
+  // The chart values every deploy must answer.
+  inputs?: Input[];
   values?: Record<string, unknown>;
 }
 
@@ -344,6 +361,8 @@ export interface SiteProfile {
   // The site's preferences, beneath the catalog: a variant overrides them.
   // features unset is on (featureOn).
   defaults?: { features?: { cart?: boolean; serviceMonitor?: boolean; sloRequirement?: boolean; scaler?: boolean } };
+  // Answers a variant's inputs by chart path; strings take pathTemplate's placeholders.
+  inputs?: Record<string, string | number | boolean>;
   nodes?: {
     gpusPerNode?: number;
     // Required by swissd; [] is a site without GPUs.

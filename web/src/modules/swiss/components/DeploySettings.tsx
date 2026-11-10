@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { ChevronDown, Plus, RefreshCw, TriangleAlert, X } from "lucide-react";
-import type { ApplyFlags, ClusterInfo, Plan, PlanRequest, ProfileResponse, Variant } from "@swiss/lib/api";
+import type { ApplyFlags, ClusterInfo, Input as CatalogInput, Plan, PlanRequest, ProfileResponse, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
+import { CHECK_MS, inputError, inputProblem, rememberable, setInputOverrides, type InputChoice, type InputRow } from "@swiss/lib/inputs";
+import { useDebounced } from "@swiss/lib/useDebounced";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
 import {
@@ -50,6 +52,8 @@ export interface Form {
   createNamespace: boolean;
   serviceId: string;
   localPath: string;
+  // By chart path, as typed. Empty is the row's answer (InputRow).
+  inputs: Record<string, string>;
   scaler: boolean;
   // The LLMScaler's bounds. Empty leaves the chart's own.
   scalerMin: string;
@@ -105,6 +109,7 @@ export const EMPTY: Form = {
   createNamespace: false,
   serviceId: "",
   localPath: "",
+  inputs: {},
   scaler: true,
   scalerMin: "",
   scalerMax: "",
@@ -181,6 +186,7 @@ export function DeploySettings({
   serviceIdPlaceholder,
   localPathDefault,
   localPathPlaceholder,
+  inputs,
   image,
   supportedGPUs,
   clusterGPUs,
@@ -194,6 +200,8 @@ export function DeploySettings({
   // archived plan verbatim, so an editable field beside it would promise a
   // change that the rollback would then not make.
   readOnly = false,
+  remember,
+  onRemember,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -204,6 +212,7 @@ export function DeploySettings({
   // a field with.
   localPathDefault?: string;
   localPathPlaceholder?: string;
+  inputs?: InputRow[];
   // The engine image the catalog pins, and what the site's mirror rewrites it
   // to. Equal when this site mirrors nothing, which is when there is no rewrite
   // to offer a choice about.
@@ -221,7 +230,11 @@ export function DeploySettings({
   // What the picked resource and products can land on; absent without GPUs.
   capacity?: CapacityProps;
   cache?: CacheCard;
+  // Which typed answers to save to the site profile once the deploy applies; absent where it cannot be saved.
+  remember?: Record<string, boolean>;
+  onRemember?: (key: string, on: boolean) => void;
 }) {
+  const checked = useDebounced(form.inputs, CHECK_MS);
   const set =
     (k: keyof Form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -314,6 +327,52 @@ export function DeploySettings({
               placeholder={localPathDefault ?? localPathPlaceholder}
             />
           </Row>
+
+          {inputs?.map((row) => {
+            const { input, answer, from, choices, site } = row;
+            const value = form.inputs[input.key] ?? "";
+            const typed = checked[input.key] ?? "";
+            const error = inputError({ input, answer }, typed);
+            const problem = error === "required" ? "required" : error && inputProblem(input, typed.trim() || answer || "");
+            return (
+              <Row
+                key={input.key}
+                label={input.title}
+                note={
+                  from === "release"
+                    ? "the release's answer, kept unless you change it"
+                    : from === "site"
+                      ? "the site profile's answer, unless you change it"
+                      : from === "variant"
+                        ? "the variant's default, unless you change it"
+                        : "unanswered: the variant has no default, and the site profile no answer"
+                }
+                hint={input.description ? `${input.description} (${input.key})` : input.key}
+                aside={`e.g. ${String(input.example)}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <Suggest
+                    value={value}
+                    onChange={(v) => onChange({ inputs: { ...form.inputs, [input.key]: v } })}
+                    suggestion={answer}
+                    placeholder={answer}
+                    invalid={!!error}
+                    choices={choices?.map((c) => ({ value: c.answer, label: FROM[c.from] }))}
+                  />
+                  {problem && <p className="mt-1 text-[11px] text-destructive">{problem}</p>}
+                  {remember && onRemember && rememberable(row, typed) && (
+                    <label className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <input type="checkbox" className="size-3.5 accent-primary" checked={!!remember[input.key]} onChange={(e) => onRemember(input.key, e.target.checked)} />
+                      <HoverHint text="Every variant that declares this key, for any model, will take it.">
+                        <span>Save to the site profile</span>
+                      </HoverHint>
+                      {site && <span className="break-all">· replaces the site's answer {site.written}</span>}
+                    </label>
+                  )}
+                </div>
+              </Row>
+            );
+          })}
 
           <Row
             label="Autoscale"
@@ -811,11 +870,14 @@ function Row({
   note,
   hint,
   caption,
+  aside,
   toggle,
   children,
   muted,
 }: {
   label: string;
+  // Muted text after the label's hint icon, e.g. an input's example.
+  aside?: string;
   note?: string;
   // Longer hover text when note stays short (or when note is absent).
   hint?: string;
@@ -842,6 +904,7 @@ function Row({
             {label}
           </span>
         </HoverHint>
+        {aside && <span className="ml-1.5 break-all text-xs text-muted-foreground">{aside}</span>}
         {caption ? (
           <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{caption}</p>
         ) : null}
@@ -998,32 +1061,72 @@ function TabHint() {
   );
 }
 
+const FROM: Record<InputChoice["from"], string> = { release: "Release", site: "Site profile", variant: "Variant default" };
+
+// choices list under the field when the empty field is clicked; typing closes the list.
 function Suggest({
   value,
   onChange,
   suggestion,
   placeholder,
   disabled,
+  invalid,
+  choices,
 }: {
   value: string;
   onChange: (v: string) => void;
   suggestion?: string;
   placeholder?: string;
   disabled?: boolean;
+  invalid?: boolean;
+  choices?: { value: string; label: string }[];
 }) {
   const s = useSuggestion(value, suggestion, disabled);
+  const [listed, setListed] = useState(false);
   return (
     <div className="relative min-w-0 flex-1">
       <Input
+        autoComplete="off"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => accept(e, s.offer, onChange)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setListed(false);
+          accept(e, s.offer, onChange);
+        }}
         disabled={disabled}
         placeholder={placeholder}
-        className={cn(s.hint && "pr-11")}
-        {...s.focus}
+        aria-invalid={invalid || undefined}
+        className={cn(s.hint && "pr-11", invalid && "border-destructive")}
+        onFocus={s.focus.onFocus}
+        onBlur={() => {
+          s.focus.onBlur();
+          setListed(false);
+        }}
+        onClick={() => setListed(!!choices?.length && !value)}
       />
       {s.hint && <TabHint />}
+      {listed && !value && choices && (
+        <div role="listbox" className="absolute top-full right-0 left-0 z-50 mt-1 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+          {choices.map((c) => (
+            // mousedown, not click: the field keeps focus, and its blur does not close the list first.
+            <button
+              key={c.label}
+              type="button"
+              role="option"
+              aria-selected={false}
+              className="flex w-full items-center gap-3 rounded-sm px-2 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(c.value);
+                setListed(false);
+              }}
+            >
+              <span className="min-w-0 flex-1 font-mono text-xs break-all">{c.value}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{c.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1602,6 +1705,8 @@ export function planRequest(
     forceGpuProducts?: boolean;
     // The chart has no cache section (CHART_FEATURES): the switch is forced off.
     cacheUnsupported?: boolean;
+    // To send the form's answers typed.
+    inputs?: CatalogInput[];
   },
 ): PlanRequest {
   const overrides: Record<string, unknown> = {};
@@ -1706,6 +1811,8 @@ export function planRequest(
 
   if (f.priorityClassName.trim()) overrides.priorityClassName = f.priorityClassName.trim();
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
+
+  setInputOverrides(overrides, opts.inputs, f.inputs);
 
   return {
     catalog: opts.catalog || undefined,

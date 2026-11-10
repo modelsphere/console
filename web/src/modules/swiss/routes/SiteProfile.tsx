@@ -11,6 +11,7 @@ import { ErrorState, Loading } from "@swiss/components/States";
 import { Code } from "@swiss/components/ui/code";
 import { toYaml } from "@swiss/lib/yaml";
 import { GpuTable } from "@swiss/components/GpuResources";
+import { answerText } from "@swiss/lib/inputs";
 
 export function SiteProfile() {
   const [editing, setEditing] = useState(false);
@@ -149,6 +150,17 @@ export function SiteProfile() {
               ))}
             </Section>
           )}
+
+          <Section
+            title="Variant inputs"
+            hint="Answers to the inputs catalog variants declare, by chart key. Only a variant that declares a key takes its answer, and a deploy can still override it."
+          >
+            {p.inputs && Object.keys(p.inputs).length > 0 ? (
+              Object.entries(p.inputs).map(([k, v]) => <Row key={k} label={k} value={answerText(v)} mono />)
+            ) : (
+              <Row label="Answers" value={undefined} fallback="none: an input takes its default, or the deploy's answer" />
+            )}
+          </Section>
 
           <Section title="Routing">
             <Row
@@ -333,7 +345,7 @@ function Row({
   const unset = value === undefined || value === null || value === "";
   return (
     <>
-      <dt className="text-muted-foreground">{label}</dt>
+      <dt className="break-words text-muted-foreground">{label}</dt>
       <dd
         className={
           (mono && !unset ? "font-mono text-xs " : "") +

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { DeployForm } from "./DeployForm";
 import { EMPTY, planRequest, type Form } from "@swiss/components/DeploySettings";
 import type { CacheCard } from "@swiss/lib/cache";
+import type { InputRow } from "@swiss/lib/inputs";
 import type { RouteOptions } from "@/modules/inferences/routeOptions";
 import en from "@/modules/inferences/locales/en-US.json";
 import zh from "@/modules/inferences/locales/zh-CN.json";
@@ -217,5 +218,68 @@ describe("GPU capacity", () => {
     expect(has(html, "gpuCapacityNone")).toBe(false);
     expect(has(html, "gpuCapacityUsageUnknown")).toBe(true);
     expect(html).toContain("24");
+  });
+});
+
+describe("variant inputs", () => {
+  const master = { key: "storageKVOffload.mooncake.master", title: "Mooncake master", description: "host:port of the master", pattern: "[^\\s:/]+:[0-9]+", example: "mooncake-master.example:50051" };
+  const render = (form: Form, inputs: InputRow[]) =>
+    renderToStaticMarkup(
+      <DeployForm
+        form={form} onChange={() => {}} submitted={false} target={null} defaults={{}} gpuOptions={[]} inputs={inputs}
+        expanded={{ basic: false, resources: true, routing: false, advanced: false }}
+        onExpand={() => {}} idPrefix="test-"
+      />,
+    );
+  it("renders each input as its variant declares it", () => {
+    const html = render({ ...EMPTY, serviceId: "model" }, [{ input: master }]);
+    expect(html).toContain("Mooncake master");
+    expect([en, zh].some((l) => html.includes(l.deploy.fields.inputExample.replace("{example}", master.example)))).toBe(true);
+    expect(html).not.toContain(`placeholder="${master.example}"`);
+    expect(html).not.toMatch(/placeholder="[^"]*mooncake-master\.example/);
+    expect([en, zh].some((l) => html.includes(l.deploy.fields.inputRequired))).toBe(true);
+    expect(html).toContain('aria-invalid="true"');
+  });
+  it("shows the answer that applies when the field is left empty", () => {
+    const html = render({ ...EMPTY, serviceId: "model" }, [{ input: master, answer: "site.svc:50051", from: "site" }]);
+    expect(html).toContain('placeholder="site.svc:50051"');
+    expect(html).not.toContain('aria-invalid="true"');
+  });
+  it("says when a typed answer does not match the pattern", () => {
+    const html = render({ ...EMPTY, serviceId: "model", inputs: { [master.key]: "no-port" } }, [{ input: master }]);
+    expect(html).toContain('value="no-port"');
+    expect([en, zh].some((l) => html.includes(l.deploy.fields.inputProblem.string.replace(" {pattern}", "")))).toBe(true);
+  });
+  it("offers a pick between the answers when more than one is found, the applying one shown", () => {
+    const choices = [{ answer: "site.svc:50051", from: "site" as const }, { answer: "tuned.svc:50051", from: "variant" as const }];
+    const html = render({ ...EMPTY, serviceId: "model" }, [{ input: master, answer: "site.svc:50051", from: "site", choices }]);
+    const single = render({ ...EMPTY, serviceId: "model" }, [{ input: master, answer: "site.svc:50051", from: "site" }]);
+    // The list opens on a click; closed, the field is the plain one.
+    expect(html).not.toContain('role="listbox"');
+    expect(html).toBe(single);
+    expect(html).toContain('placeholder="site.svc:50051"');
+  });
+  it("offers to save a typed answer to the site profile, naming the one it replaces", () => {
+    const row: InputRow = { input: master, answer: "mc-m.svc:50051", from: "site", site: { answer: "mc-m.svc:50051", written: "mc-{{model}}.svc:50051" } };
+    const remember = (form: Form, on?: Record<string, boolean>) =>
+      renderToStaticMarkup(
+        <DeployForm
+          form={form} onChange={() => {}} submitted={false} target={null} defaults={{}} gpuOptions={[]} inputs={[row]} remember={on} onRemember={() => {}}
+          expanded={{ basic: false, resources: true, routing: false, advanced: false }}
+          onExpand={() => {}} idPrefix="test-"
+        />,
+      );
+    const offers = (h: string) => [en, zh].some((l) => h.includes(l.deploy.fields.inputRemember));
+    const typed = remember({ ...EMPTY, serviceId: "model", inputs: { [master.key]: "mine.svc:50051" } }, {});
+    expect(offers(typed)).toBe(true);
+    expect(typed).toContain("mc-{{model}}.svc:50051");
+    expect(offers(remember({ ...EMPTY, serviceId: "model", inputs: { [master.key]: "mc-m.svc:50051" } }, {}))).toBe(false);
+    expect(offers(remember({ ...EMPTY, serviceId: "model", inputs: { [master.key]: "no-port" } }, {}))).toBe(false);
+    expect(offers(remember({ ...EMPTY, serviceId: "model" }, {}))).toBe(false);
+    expect(offers(remember({ ...EMPTY, serviceId: "model", inputs: { [master.key]: "mine.svc:50051" } }))).toBe(false);
+  });
+  it("sends a typed answer at the input's key", () => {
+    const form = { ...EMPTY, serviceId: "model", inputs: { [master.key]: "mine.svc:50051" } };
+    expect(planRequest(form, { model: "model", inputs: [master] }).overrides).toMatchObject({ storageKVOffload: { mooncake: { master: "mine.svc:50051" } } });
   });
 });
