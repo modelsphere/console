@@ -4,7 +4,8 @@ import type { ApplyFlags, ClusterInfo, Input as CatalogInput, Plan, PlanRequest,
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
-import { inputError, inputProblem, setInputOverrides, type InputRow } from "@swiss/lib/inputs";
+import { CHECK_MS, inputError, inputProblem, setInputOverrides, type InputRow } from "@swiss/lib/inputs";
+import { useDebounced } from "@swiss/lib/useDebounced";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
 import {
@@ -228,6 +229,7 @@ export function DeploySettings({
   capacity?: CapacityProps;
   cache?: CacheCard;
 }) {
+  const checked = useDebounced(form.inputs, CHECK_MS);
   const set =
     (k: keyof Form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -323,8 +325,9 @@ export function DeploySettings({
 
           {inputs?.map(({ input, answer, from }) => {
             const value = form.inputs[input.key] ?? "";
-            const error = inputError({ input, answer }, value);
-            const problem = error === "required" ? "required" : error && inputProblem(input, value.trim() || answer || "");
+            const typed = checked[input.key] ?? "";
+            const error = inputError({ input, answer }, typed);
+            const problem = error === "required" ? "required" : error && inputProblem(input, typed.trim() || answer || "");
             return (
               <Row
                 key={input.key}
@@ -1061,6 +1064,7 @@ function Suggest({
   return (
     <div className="relative min-w-0 flex-1">
       <Input
+        autoComplete="off"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => accept(e, s.offer, onChange)}

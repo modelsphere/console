@@ -34,7 +34,8 @@ import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
 import { deployCapacity, gpuShort, pickableProducts, productChoices, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { isChartRange, movableCatalogs } from "@swiss/lib/upgrade";
-import { inputRows, inputsAnswered } from "@swiss/lib/inputs";
+import { CHECK_MS, inputRows, inputsAnswered } from "@swiss/lib/inputs";
+import { useDebounced } from "@swiss/lib/useDebounced";
 import { cacheCard } from "@swiss/lib/cache";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { useT } from "@/modules/inferences/i18n";
@@ -148,6 +149,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const [recoveryPatch, setRecoveryPatch] = useState<Partial<ReturnType<typeof recoverySettings>>>({});
   const recovery = { ...initialRecovery, ...recoveryPatch };
   const [form, setForm] = useState<Form>(initial);
+  const checkedInputs = useDebounced(form.inputs, CHECK_MS);
   const catalogRoute = upgrade && current.data ? initial.route || initial.serviceId || target.release : undefined;
   const routeOptions = useQuery({
     queryKey: ["route-options", catalogRoute ?? ""],
@@ -519,7 +521,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         {step === "form" ? (
           <>
             <SheetCancelButton />
-            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || !inputsAnswered(inputs, form.inputs)}>
+            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || !inputsAnswered(inputs, checkedInputs)}>
               {compose.isPending ? t("deploy.review.composing") : t("deploy.review.compose")}
             </Button>
           </>

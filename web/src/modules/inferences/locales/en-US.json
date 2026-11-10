@@ -580,6 +580,11 @@
       "localPathHint": "Overrides the site profile's path template",
       "inputExample": "e.g. {example}",
       "inputRequired": "Required: no default or site answer",
+      "inputFrom": {
+        "release": "Release",
+        "site": "Site profile",
+        "variant": "Variant default"
+      },
       "inputProblem": {
         "string": "Must match {pattern}",
         "integer": "Enter a whole number",
@@ -823,6 +828,7 @@
       "placement": "Placement",
       "catalog": "Catalogs, charts and images",
       "model": "Model paths",
+      "inputs": "Variant inputs",
       "routing": "Routing",
       "auth": "Entrypoint auth",
       "scaler": "Cache and scaler",
@@ -835,6 +841,7 @@
       "placement": "Where releases land. The scheduler and priority class apply before the deploy form merges, so a deploy can override either.",
       "catalog": "Where the models come from, and the registries the catalog deliberately does not name.",
       "model": "Built from the catalog's source.hf. Variables: hf (the full repo id), org and name (its halves), model (the catalog entry name); see the field's example for the syntax.",
+      "inputs": "Answers to the inputs catalog variants declare, by chart key. Only a variant that declares a key takes its answer, and a deploy can still override it. A string takes the model path variables.",
       "routing": "The openresty entrypoint every model publishes a route on.",
       "auth": "Used only by the serving and health checks. This document is a ConfigMap, so it names a Secret rather than holding the key.",
       "pdScale": "swissd's PD slice autoscaler, for releases planned with PD on and the form SLO on. Field names follow the LLMScaler's.",
@@ -907,6 +914,8 @@
       "pathTemplate": "Path template",
       "overrides": "Path overrides",
       "overridesHint": "Keyed by catalog model name, for weights that do not sit where the template says",
+      "inputs": "Answers",
+      "inputsHint": "8000 reads as a number and true as a boolean; quote one to keep it a string",
       "key": "Key",
       "value": "Value",
       "add": "Add",

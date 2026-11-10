@@ -30,7 +30,8 @@ import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, SchemaBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
 import { movableCatalogs } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
-import { inputRows, inputsAnswered } from "@swiss/lib/inputs";
+import { CHECK_MS, inputRows, inputsAnswered } from "@swiss/lib/inputs";
+import { useDebounced } from "@swiss/lib/useDebounced";
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { VariantCard } from "@swiss/components/VariantCard";
@@ -125,6 +126,7 @@ export function Upgrade() {
   });
 
   const [form, setForm] = useState<Form>(EMPTY);
+  const checkedInputs = useDebounced(form.inputs, CHECK_MS);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [applied, setApplied] = useState<ApplyResult | null>(null);
@@ -489,7 +491,7 @@ export function Upgrade() {
         onTab={setTab}
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
-        composeDisabled={!rollbackTo && !inputsAnswered(inputs, form.inputs)}
+        composeDisabled={!rollbackTo && !inputsAnswered(inputs, checkedInputs)}
         composeLabel={planM.isPending ? "Composing…" : plan ? "Recompose upgrade" : "Compose upgrade"}
         applyFlags={applyFlags(form)}
         onDiff={setDiff}

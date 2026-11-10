@@ -250,6 +250,15 @@ describe("variant inputs", () => {
     expect(html).toContain('value="no-port"');
     expect([en, zh].some((l) => html.includes(l.deploy.fields.inputProblem.string.replace(" {pattern}", "")))).toBe(true);
   });
+  it("offers a pick between the answers when more than one is found, the applying one shown", () => {
+    const choices = [{ answer: "site.svc:50051", from: "site" as const }, { answer: "tuned.svc:50051", from: "variant" as const }];
+    const html = render({ ...EMPTY, serviceId: "model" }, [{ input: master, answer: "site.svc:50051", from: "site", choices }]);
+    const single = render({ ...EMPTY, serviceId: "model" }, [{ input: master, answer: "site.svc:50051", from: "site" }]);
+    // The list opens on a click; closed, the field is the plain one.
+    expect(html).not.toContain('role="listbox"');
+    expect(html).toBe(single);
+    expect(html).toContain('placeholder="site.svc:50051"');
+  });
   it("sends a typed answer at the input's key", () => {
     const form = { ...EMPTY, serviceId: "model", inputs: { [master.key]: "mine.svc:50051" } };
     expect(planRequest(form, { model: "model", inputs: [master] }).overrides).toMatchObject({ storageKVOffload: { mooncake: { master: "mine.svc:50051" } } });

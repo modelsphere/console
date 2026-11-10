@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Input, SiteProfile } from "./api";
-import { fillTemplate, inputError, inputProblem, inputRows, inputsAnswered, setInputOverrides } from "./inputs";
+import { answerText, fillTemplate, inputError, inputProblem, inputRows, inputsAnswered, parseAnswer, setInputOverrides } from "./inputs";
 
 const master: Input = {
   key: "storageKVOffload.mooncake.master",
@@ -45,7 +45,18 @@ describe("inputRows", () => {
   });
   it("shows an upgrade the release's own answer over the site's", () => {
     const release = { storageKVOffload: { mooncake: { master: "mine:1" } } };
-    expect(inputRows([master], site({ [master.key]: "site:1" }), "a/b", "m", undefined, release)[0]).toEqual({ input: master, answer: "mine:1", from: "release" });
+    expect(inputRows([master], site({ [master.key]: "site:1" }), "a/b", "m", undefined, release)[0]).toMatchObject({ input: master, answer: "mine:1", from: "release" });
+  });
+  it("lists the answers to pick between when there is more than one", () => {
+    const tuned = { ...master, default: "tuned:1" };
+    expect(inputRows([tuned], site({ [master.key]: "site:1" }), "a/b", "m")[0].choices).toEqual([
+      { answer: "site:1", from: "site" },
+      { answer: "tuned:1", from: "variant" },
+    ]);
+    const release = { storageKVOffload: { mooncake: { master: "mine:1" } } };
+    expect(inputRows([tuned], site({ [master.key]: "site:1" }), "a/b", "m", undefined, release)[0].choices?.map((c) => c.from)).toEqual(["release", "site", "variant"]);
+    expect(inputRows([tuned], site({ [master.key]: "tuned:1" }), "a/b", "m")[0]).toEqual({ input: tuned, answer: "tuned:1", from: "site" });
+    expect(inputRows([master], site({ [master.key]: "site:1" }), "a/b", "m", { storageKVOffload: { mooncake: { master: "" } } })[0].choices).toBeUndefined();
   });
 });
 
@@ -94,5 +105,23 @@ describe("setInputOverrides", () => {
       storageKVOffload: { enabled: true, mooncake: { master: "mc:50051" } },
       service: { port: 8050 },
     });
+  });
+});
+
+describe("input answers", () => {
+  it("reads a typed answer as the YAML tab does", () => {
+    expect(parseAnswer("mc.svc:50051")).toBe("mc.svc:50051");
+    expect(parseAnswer("8000")).toBe(8000);
+    expect(parseAnswer("-1")).toBe(-1);
+    expect(parseAnswer("true")).toBe(true);
+    expect(parseAnswer("false")).toBe(false);
+    expect(parseAnswer('"8000"')).toBe("8000");
+    expect(parseAnswer('"true"')).toBe("true");
+    expect(parseAnswer('"quoted"')).toBe('"quoted"');
+    expect(parseAnswer("")).toBe("");
+  });
+  it("shows an answer so it reads back the same", () => {
+    for (const v of ["mc-{{model}}.svc:50051", 8000, true, "8000", "false", '"quoted"', ""]) expect(parseAnswer(answerText(v))).toBe(v);
+    expect(answerText("8000")).toBe('"8000"');
   });
 });

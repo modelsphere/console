@@ -12,7 +12,8 @@ import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog }
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { isChartRange } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
-import { inputRows, inputsAnswered } from "@swiss/lib/inputs";
+import { CHECK_MS, inputRows, inputsAnswered } from "@swiss/lib/inputs";
+import { useDebounced } from "@swiss/lib/useDebounced";
 import { deployCapacity, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { InstallMethodChoice } from "@swiss/components/InstallMethod";
@@ -69,6 +70,7 @@ export function Deploy() {
   const [picked, setPicked] = useState<ApplyWith>();
 
   const [form, setForm] = useState<Form>({ ...EMPTY, serviceId: name });
+  const checkedInputs = useDebounced(form.inputs, CHECK_MS);
   // serviceId is the identity everything else is named after: the helm release,
   // the openresty route, the LLMScaler and the LLMSLORequirement.
   const release = form.serviceId;
@@ -290,7 +292,7 @@ export function Deploy() {
         onTab={setTab}
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
-        composeDisabled={!form.serviceId || !inputsAnswered(inputs, form.inputs)}
+        composeDisabled={!form.serviceId || !inputsAnswered(inputs, checkedInputs)}
         applyWith={method}
         applyFlags={applyFlags(form)}
         onDiff={setDiff}

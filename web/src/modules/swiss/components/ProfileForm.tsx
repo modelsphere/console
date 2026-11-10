@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FolderTree, Gauge, Globe, KeyRound, Library, MapPin, Plus, Route, Scaling, ToggleRight, TriangleAlert, X, type LucideIcon } from "lucide-react";
+import { FolderTree, Gauge, Globe, KeyRound, Library, ListChecks, MapPin, Plus, Route, Scaling, ToggleRight, TriangleAlert, X, type LucideIcon } from "lucide-react";
 import { api, type Site, type SiteProfile } from "@swiss/lib/api";
 import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent, CardHeader } from "@swiss/components/ui/card";
@@ -9,6 +9,7 @@ import { Input } from "@swiss/components/ui/input";
 import { Switch } from "@swiss/components/ui/switch";
 import { catalogErrors, FEATURES, featureOn, withFeature, type FeatureKey } from "@swiss/lib/profile";
 import { GpuTable } from "@swiss/components/GpuResources";
+import { answersText, parseAnswers } from "@swiss/lib/inputs";
 import { cn } from "@swiss/lib/utils";
 
 const FEATURE_LABELS: Record<FeatureKey, { label: string; hint: string }> = {
@@ -122,6 +123,16 @@ export function ProfileForm({
         </Row>
         <Row top label="Path overrides" hint="Keyed by catalog model name, for weights that do not sit where the template says. Real layouts are not uniform.">
           <Pairs keyLabel="model" valueLabel="path" value={value.model?.overrides} onChange={(overrides) => setIn("model", { overrides })} />
+        </Row>
+      </Section>
+
+      <Section
+        icon={ListChecks}
+        title="Variant inputs"
+        hint="Answers to the inputs catalog variants declare, by chart key. Only a variant that declares a key takes its answer, and a deploy can still override it. A string takes the model path's {{hf}}, {{org}}, {{name}} and {{model}}."
+      >
+        <Row top label="Answers" hint="8000 reads as a number and true as a boolean; quote one to keep it a string.">
+          <Pairs keyLabel="chart key" valueLabel="answer" value={answersText(value.inputs)} onChange={(inputs) => set("inputs", parseAnswers(inputs))} />
         </Row>
       </Section>
 
