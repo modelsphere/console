@@ -39,7 +39,7 @@ export function inputRows(
   return (inputs ?? []).map((input) => {
     const kept = answerAt(release, input.path);
     if (kept !== undefined) return { input, answer: kept, from: "release" };
-    const v = profile?.features?.inputs?.[input.path];
+    const v = profile?.inputs?.[input.path];
     const site = v === undefined || v === null ? undefined : typeof v === "string" ? fillTemplate(v, hf, model) : String(v);
     if (site !== undefined) return { input, answer: site, from: "site" };
     return input.default !== undefined && input.default !== null ? { input, answer: String(input.default), from: "variant" } : { input };

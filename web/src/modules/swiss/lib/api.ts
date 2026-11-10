@@ -118,8 +118,6 @@ export interface Requires {
   topology?: string;
   gpuProduct?: string[];
   rdma?: boolean;
-  // Chart values the variant leaves to the deploy.
-  inputs?: Input[];
 }
 
 export interface Input {
@@ -208,6 +206,8 @@ export interface CatalogResponse {
 export interface Variant extends Omit<ModelVariant, "servedName" | "deprecated" | "replaces"> {
   servedName: string;
   image?: { repository: string; tag: string; digest?: string };
+  // The chart values every deploy must answer.
+  inputs?: Input[];
   values?: Record<string, unknown>;
 }
 
@@ -360,8 +360,8 @@ export interface SiteProfile {
   // The site's preferences, beneath the catalog: a variant overrides them.
   // features unset is on (featureOn).
   defaults?: { features?: { cart?: boolean; serviceMonitor?: boolean; sloRequirement?: boolean; scaler?: boolean } };
-  // inputs answers requires.inputs by chart path; strings take pathTemplate's placeholders.
-  features?: { inputs?: Record<string, string | number | boolean> };
+  // Answers a variant's inputs by chart path; strings take pathTemplate's placeholders.
+  inputs?: Record<string, string | number | boolean>;
   nodes?: {
     gpusPerNode?: number;
     // Required by swissd; [] is a site without GPUs.

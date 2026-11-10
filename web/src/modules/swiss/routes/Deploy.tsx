@@ -120,7 +120,7 @@ export function Deploy() {
           chartVersion: chartVersion || undefined,
           forceGpuProducts: unlistedProducts(model.data?.variant.requires.gpuProduct, form.gpuProducts).length > 0,
           cacheUnsupported: !!cache.unsupported,
-          inputs: model.data?.variant.requires.inputs,
+          inputs: model.data?.variant.inputs,
         }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping
@@ -266,7 +266,7 @@ export function Deploy() {
         serviceIdPlaceholder={name}
         localPathDefault={model.data.localPath}
         localPathPlaceholder={model.data.pathTemplate}
-        inputs={inputRows(model.data.variant.requires.inputs, profile.data?.profile, model.data.model.source?.hf ?? "", name)}
+        inputs={inputRows(model.data.variant.inputs, profile.data?.profile, model.data.model.source?.hf ?? "", name)}
         image={imageOf(variant, model.data.imageRepository)}
         supportedGPUs={variant?.requires.gpuProduct}
         clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}

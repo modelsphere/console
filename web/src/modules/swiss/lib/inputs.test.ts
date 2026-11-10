@@ -12,7 +12,7 @@ const port: Input = { path: "service.port", title: "Port", type: "integer", exam
 const site = (inputs: Record<string, string | number | boolean>): SiteProfile => ({
   name: "prod",
   model: { pathTemplate: "/models/{{name}}" },
-  features: { inputs },
+  inputs,
 });
 
 describe("fillTemplate", () => {

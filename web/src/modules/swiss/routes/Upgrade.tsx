@@ -165,7 +165,7 @@ export function Upgrade() {
           // dropped by a form that never knew about it.
           fromRelease: release,
           cacheUnsupported: !!cache.unsupported,
-          inputs: entry.data?.variant.requires.inputs,
+          inputs: entry.data?.variant.inputs,
         }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping
@@ -471,7 +471,7 @@ export function Upgrade() {
         localPathDefault={entry.data?.localPath}
         localPathPlaceholder={entry.data?.pathTemplate}
         inputs={inputRows(
-          entry.data?.variant.requires.inputs,
+          entry.data?.variant.inputs,
           profile.data?.profile,
           entry.data?.model.source?.hf ?? "",
           current.data?.source.model ?? "",
