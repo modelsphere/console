@@ -79,5 +79,12 @@
         "hint": "Full-height sidebar; header and content share one rounded board, layered by corners and gaps rather than borders"
       }
     }
+  },
+  "capability": {
+    "loading": "Loading feature configuration…",
+    "failed": "Could not load feature configuration.",
+    "unconfigured": "Canary is not configured for this Console.",
+    "forbidden": "You do not have permission to access this page.",
+    "retry": "Retry"
   }
 }

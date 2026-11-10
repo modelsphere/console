@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/modelsphere/console/internal/config"
@@ -75,6 +76,18 @@ func (s *Server) mountBackends(mux *http.ServeMux) {
 		mux.HandleFunc(strings.TrimSuffix(b.Prefix, "/")+"/", func(w http.ResponseWriter, r *http.Request) {
 			if !s.authorize(w, r, backendVerb(r.Method), backendResource, b.Name) {
 				return
+			}
+			parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+			if b.Name == "canary" && prefix == "/api/canary" && r.Method == http.MethodPatch && len(parts) == 5 && parts[2] == "experiments" && parts[4] == "traffic" {
+				permissions, err := s.authz.PermissionsFor(r.Context(), identityFrom(r.Context()))
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+				if !slices.Contains(permissions, "*") && !slices.Contains(permissions, "canary.write") {
+					writeError(w, http.StatusForbidden, "canary.write permission required")
+					return
+				}
 			}
 			target, err := resolve(r.Context())
 			if err != nil {

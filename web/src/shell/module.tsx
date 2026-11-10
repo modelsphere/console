@@ -1,6 +1,7 @@
 import { createContext, useContext, type ComponentType, type ReactNode } from "react";
 import { LayoutDashboard, type LucideIcon } from "lucide-react";
 import { pageKey } from "@/shell/i18n";
+import type { Capabilities } from "@/shell/api";
 
 // A module is one feature area of the console (iam, swiss, …). It declares its
 // pages; the shell owns everything around them: login, layout, sidebar, route
@@ -20,6 +21,7 @@ export interface ConsoleModule {
   // Every page mounts below this path, e.g. "/swiss". No trailing slash.
   basePath: string;
   pages: ModulePage[];
+  capability?: keyof Capabilities;
   // "flush": pages draw Rise Global's skeleton themselves -- a PageBanner edge to
   // edge, then their own p-4 body. Default "padded": the shell insets the page.
   frame?: "padded" | "flush";
@@ -34,6 +36,7 @@ export interface ModulePage {
   // UI permission (a Role's uiPermissions entry). Guards the route and hides the
   // menu entry. Omit for pages every logged-in user may see.
   permission?: string;
+  requiresWrite?: boolean;
   // Present means the page gets a sidebar entry. label is Chinese; other
   // languages: "{module id}:menu.{pageKey(path)}".
   menu?: { label: string; icon: LucideIcon };
