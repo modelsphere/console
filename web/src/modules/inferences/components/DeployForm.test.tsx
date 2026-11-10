@@ -259,6 +259,25 @@ describe("variant inputs", () => {
     expect(html).toBe(single);
     expect(html).toContain('placeholder="site.svc:50051"');
   });
+  it("offers to save a typed answer to the site profile, naming the one it replaces", () => {
+    const row: InputRow = { input: master, answer: "mc-m.svc:50051", from: "site", site: { answer: "mc-m.svc:50051", written: "mc-{{model}}.svc:50051" } };
+    const remember = (form: Form, on?: Record<string, boolean>) =>
+      renderToStaticMarkup(
+        <DeployForm
+          form={form} onChange={() => {}} submitted={false} target={null} defaults={{}} gpuOptions={[]} inputs={[row]} remember={on} onRemember={() => {}}
+          expanded={{ basic: false, resources: true, routing: false, advanced: false }}
+          onExpand={() => {}} idPrefix="test-"
+        />,
+      );
+    const offers = (h: string) => [en, zh].some((l) => h.includes(l.deploy.fields.inputRemember));
+    const typed = remember({ ...EMPTY, serviceId: "model", inputs: { [master.key]: "mine.svc:50051" } }, {});
+    expect(offers(typed)).toBe(true);
+    expect(typed).toContain("mc-{{model}}.svc:50051");
+    expect(offers(remember({ ...EMPTY, serviceId: "model", inputs: { [master.key]: "mc-m.svc:50051" } }, {}))).toBe(false);
+    expect(offers(remember({ ...EMPTY, serviceId: "model", inputs: { [master.key]: "no-port" } }, {}))).toBe(false);
+    expect(offers(remember({ ...EMPTY, serviceId: "model" }, {}))).toBe(false);
+    expect(offers(remember({ ...EMPTY, serviceId: "model", inputs: { [master.key]: "mine.svc:50051" } }))).toBe(false);
+  });
   it("sends a typed answer at the input's key", () => {
     const form = { ...EMPTY, serviceId: "model", inputs: { [master.key]: "mine.svc:50051" } };
     expect(planRequest(form, { model: "model", inputs: [master] }).overrides).toMatchObject({ storageKVOffload: { mooncake: { master: "mine.svc:50051" } } });

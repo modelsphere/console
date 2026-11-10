@@ -2,6 +2,7 @@ import { useId, useState, type ReactNode } from "react";
 import {
   Badge,
   Button,
+  Checkbox,
   DataSelect,
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +26,7 @@ import { Plus, RefreshCw, X } from "lucide-react";
 import type { ClusterInfo } from "@swiss/lib/api";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
-import { CHECK_MS, inputError, type InputRow } from "@swiss/lib/inputs";
+import { CHECK_MS, inputError, rememberable, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { effective, imageChoices, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
@@ -63,9 +64,12 @@ export interface DeployFormProps {
   recovery?: ReactNode;
   // The variant's inputs, each with the answer that applies when its field is left empty.
   inputs?: InputRow[];
+  // Which typed answers to save to the site profile once the deploy applies; absent where it cannot be saved.
+  remember?: Record<string, boolean>;
+  onRemember?: (key: string, on: boolean) => void;
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -154,22 +158,32 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           <FloatingField value={shown(form.localPath, defaults.localPath || defaults.localPathTemplate)} label={f("localPath")} hint={f("localPathHint")}>
             <Suggest value={form.localPath} onChange={(localPath) => onChange({ localPath })} suggestion={defaults.localPath} placeholder={defaults.localPath || defaults.localPathTemplate} />
           </FloatingField>
-          {inputs?.map(({ input, answer, choices }) => {
+          {inputs?.map((row) => {
+            const { input, answer, choices, site } = row;
             const value = form.inputs[input.key] ?? "";
             const error = inputError({ input, answer }, checked[input.key]);
             const set = (v: string) => onChange({ inputs: { ...form.inputs, [input.key]: v } });
             return (
-              <FloatingField
-                key={input.key}
-                value={shown(value, answer)}
-                label={input.title}
-                required
-                hint={input.description ? `${input.description} (${input.key})` : input.key}
-                aside={t("deploy.fields.inputExample", { example: String(input.example) })}
-                error={error && (error === "required" ? t("deploy.fields.inputRequired") : t(`deploy.fields.inputProblem.${input.type ?? "string"}`, { pattern: input.pattern ?? "" }))}
-              >
-                <Suggest value={value} onChange={set} suggestion={answer} placeholder={answer} choices={choices?.map((c) => ({ value: c.answer, label: f(`inputFrom.${c.from}`) }))} />
-              </FloatingField>
+              <div key={input.key} className="flex flex-col gap-1.5">
+                <FloatingField
+                  value={shown(value, answer)}
+                  label={input.title}
+                  required
+                  hint={input.description ? `${input.description} (${input.key})` : input.key}
+                  aside={t("deploy.fields.inputExample", { example: String(input.example) })}
+                  error={error && (error === "required" ? t("deploy.fields.inputRequired") : t(`deploy.fields.inputProblem.${input.type ?? "string"}`, { pattern: input.pattern ?? "" }))}
+                >
+                  <Suggest value={value} onChange={set} suggestion={answer} placeholder={answer} choices={choices?.map((c) => ({ value: c.answer, label: f(`inputFrom.${c.from}`) }))} />
+                </FloatingField>
+                {remember && onRemember && rememberable(row, checked[input.key]) && (
+                  <label className="flex flex-wrap items-center gap-1.5 px-1 text-xs text-muted-foreground">
+                    <Checkbox checked={!!remember[input.key]} onCheckedChange={(on) => onRemember(input.key, !!on)} />
+                    {f("inputRemember")}
+                    <FieldHint>{f("inputRememberHint")}</FieldHint>
+                    {site && <span className="break-all">· {t("deploy.fields.inputReplaces", { answer: site.written })}</span>}
+                  </label>
+                )}
+              </div>
             );
           })}
           {defaults.image && (

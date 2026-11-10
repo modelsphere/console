@@ -4,7 +4,7 @@ import type { ApplyFlags, ClusterInfo, Input as CatalogInput, Plan, PlanRequest,
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
-import { CHECK_MS, inputError, inputProblem, setInputOverrides, type InputRow } from "@swiss/lib/inputs";
+import { CHECK_MS, inputError, inputProblem, rememberable, setInputOverrides, type InputChoice, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
@@ -200,6 +200,8 @@ export function DeploySettings({
   // archived plan verbatim, so an editable field beside it would promise a
   // change that the rollback would then not make.
   readOnly = false,
+  remember,
+  onRemember,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -228,6 +230,9 @@ export function DeploySettings({
   // What the picked resource and products can land on; absent without GPUs.
   capacity?: CapacityProps;
   cache?: CacheCard;
+  // Which typed answers to save to the site profile once the deploy applies; absent where it cannot be saved.
+  remember?: Record<string, boolean>;
+  onRemember?: (key: string, on: boolean) => void;
 }) {
   const checked = useDebounced(form.inputs, CHECK_MS);
   const set =
@@ -323,7 +328,8 @@ export function DeploySettings({
             />
           </Row>
 
-          {inputs?.map(({ input, answer, from }) => {
+          {inputs?.map((row) => {
+            const { input, answer, from, choices, site } = row;
             const value = form.inputs[input.key] ?? "";
             const typed = checked[input.key] ?? "";
             const error = inputError({ input, answer }, typed);
@@ -351,8 +357,18 @@ export function DeploySettings({
                     suggestion={answer}
                     placeholder={answer}
                     invalid={!!error}
+                    choices={choices?.map((c) => ({ value: c.answer, label: FROM[c.from] }))}
                   />
                   {problem && <p className="mt-1 text-[11px] text-destructive">{problem}</p>}
+                  {remember && onRemember && rememberable(row, typed) && (
+                    <label className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <input type="checkbox" className="size-3.5 accent-primary" checked={!!remember[input.key]} onChange={(e) => onRemember(input.key, e.target.checked)} />
+                      <HoverHint text="Every variant that declares this key, for any model, will take it.">
+                        <span>Save to the site profile</span>
+                      </HoverHint>
+                      {site && <span className="break-all">· replaces the site's answer {site.written}</span>}
+                    </label>
+                  )}
                 </div>
               </Row>
             );
@@ -1045,6 +1061,9 @@ function TabHint() {
   );
 }
 
+const FROM: Record<InputChoice["from"], string> = { release: "Release", site: "Site profile", variant: "Variant default" };
+
+// choices list under the field when the empty field is clicked; typing closes the list.
 function Suggest({
   value,
   onChange,
@@ -1052,6 +1071,7 @@ function Suggest({
   placeholder,
   disabled,
   invalid,
+  choices,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -1059,22 +1079,54 @@ function Suggest({
   placeholder?: string;
   disabled?: boolean;
   invalid?: boolean;
+  choices?: { value: string; label: string }[];
 }) {
   const s = useSuggestion(value, suggestion, disabled);
+  const [listed, setListed] = useState(false);
   return (
     <div className="relative min-w-0 flex-1">
       <Input
         autoComplete="off"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => accept(e, s.offer, onChange)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setListed(false);
+          accept(e, s.offer, onChange);
+        }}
         disabled={disabled}
         placeholder={placeholder}
         aria-invalid={invalid || undefined}
         className={cn(s.hint && "pr-11", invalid && "border-destructive")}
-        {...s.focus}
+        onFocus={s.focus.onFocus}
+        onBlur={() => {
+          s.focus.onBlur();
+          setListed(false);
+        }}
+        onClick={() => setListed(!!choices?.length && !value)}
       />
       {s.hint && <TabHint />}
+      {listed && !value && choices && (
+        <div role="listbox" className="absolute top-full right-0 left-0 z-50 mt-1 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+          {choices.map((c) => (
+            // mousedown, not click: the field keeps focus, and its blur does not close the list first.
+            <button
+              key={c.label}
+              type="button"
+              role="option"
+              aria-selected={false}
+              className="flex w-full items-center gap-3 rounded-sm px-2 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(c.value);
+                setListed(false);
+              }}
+            >
+              <span className="min-w-0 flex-1 font-mono text-xs break-all">{c.value}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{c.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

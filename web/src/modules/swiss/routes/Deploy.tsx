@@ -12,7 +12,8 @@ import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog }
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { isChartRange } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
-import { CHECK_MS, inputRows, inputsAnswered } from "@swiss/lib/inputs";
+import { CHECK_MS, inputRows, inputsAnswered, siteSaves } from "@swiss/lib/inputs";
+import { SiteSaves, useSiteSaver } from "@swiss/components/SiteSaves";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { deployCapacity, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
@@ -71,6 +72,7 @@ export function Deploy() {
 
   const [form, setForm] = useState<Form>({ ...EMPTY, serviceId: name });
   const checkedInputs = useDebounced(form.inputs, CHECK_MS);
+  const siteSaver = useSiteSaver(profile.data);
   // serviceId is the identity everything else is named after: the helm release,
   // the openresty route, the LLMScaler and the LLMSLORequirement.
   const release = form.serviceId;
@@ -163,6 +165,7 @@ export function Deploy() {
     { name: variant.chart.name, version: chart.resolved ?? variant.chart.version },
   );
   const inputs = inputRows(variant.inputs, profile.data?.profile, m.source?.hf ?? "", name, variant.values);
+  const saves = siteSaver.remember ? siteSaves(inputs, form.inputs, siteSaver.remember) : [];
 
   if (!cluster.data?.allowDeploy) {
     return (
@@ -270,6 +273,8 @@ export function Deploy() {
         localPathDefault={model.data.localPath}
         localPathPlaceholder={model.data.pathTemplate}
         inputs={inputs}
+        remember={siteSaver.remember}
+        onRemember={siteSaver.onRemember}
         image={imageOf(variant, model.data.imageRepository)}
         supportedGPUs={variant?.requires.gpuProduct}
         clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
@@ -296,8 +301,13 @@ export function Deploy() {
         applyWith={method}
         applyFlags={applyFlags(form)}
         onDiff={setDiff}
-        onApplied={setApplied}
-      />
+        onApplied={(r) => {
+          setApplied(r);
+          siteSaver.save(saves);
+        }}
+      >
+        <SiteSaves saves={saves} />
+      </Pipeline>
     </div>
   );
 }

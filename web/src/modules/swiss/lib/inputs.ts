@@ -7,11 +7,13 @@ export interface InputChoice {
 
 // answer applies when the field is left empty; none means the deployer must fill it.
 // choices, when more than one answer is found, are the ones to pick between, answer first.
+// site is the site profile's answer: as it is written, and filled for this model.
 export interface InputRow {
   input: Input;
   answer?: string;
   from?: InputChoice["from"];
   choices?: InputChoice[];
+  site?: { answer?: string; written: string };
 }
 
 // fillTemplate mirrors swissd's site.fill, and is undefined where swissd refuses.
@@ -46,16 +48,17 @@ export function inputRows(
 ): InputRow[] {
   return (inputs ?? []).map((input) => {
     const v = profile?.inputs?.[input.key];
+    const site = v === undefined || v === null ? undefined : { answer: typeof v === "string" ? fillTemplate(v, hf, model) : String(v), written: String(v) };
     const found: [string | undefined, InputChoice["from"]][] = [
       [answerAt(release, input.key), "release"],
-      [v === undefined || v === null ? undefined : typeof v === "string" ? fillTemplate(v, hf, model) : String(v), "site"],
+      [site?.answer, "site"],
       [input.default !== undefined && input.default !== null ? String(input.default) : answerAt(variantValues, input.key), "variant"],
     ];
     const answers = found.flatMap(([answer, from]) => (answer === undefined ? [] : [{ answer, from }]));
-    if (!answers.length) return { input };
+    if (!answers.length) return site ? { input, site } : { input };
     // The form sends no empty answer, so "" is no choice; one answer is listed once, under its first source.
     const choices = answers.filter((c, i) => c.answer && answers.findIndex((d) => d.answer === c.answer) === i);
-    return { input, ...answers[0], ...(choices.length > 1 && { choices }) };
+    return { input, ...answers[0], ...(choices.length > 1 && { choices }), ...(site && { site }) };
   });
 }
 
@@ -91,9 +94,31 @@ export function inputError(row: InputRow, text = ""): "required" | "invalid" | u
   return inputProblem(row.input, answer) ? "invalid" : undefined;
 }
 
+// A typed answer the site profile can take: one the input takes, and not the site's own.
+export function rememberable(row: InputRow, text = ""): boolean {
+  const t = text.trim();
+  return !!t && !inputError(row, t) && t !== row.site?.answer;
+}
+
+export interface SiteSave {
+  key: string;
+  text: string;
+  value: unknown;
+  replaces?: string;
+}
+
+// What a deploy saves to the site profile once it applies: the ticked answers it can take.
+export function siteSaves(rows: InputRow[], answers: Record<string, string>, remember: Record<string, boolean>): SiteSave[] {
+  return rows.flatMap((row) => {
+    const text = answers[row.input.key]?.trim() ?? "";
+    if (!remember[row.input.key] || !rememberable(row, text)) return [];
+    return [{ key: row.input.key, text, value: typed(row.input, text), replaces: row.site?.written }];
+  });
+}
+
 export const inputsAnswered = (rows: InputRow[], answers: Record<string, string>) => rows.every((row) => !inputError(row, answers[row.input.key]));
 
-function typed(input: Input, text: string): unknown {
+export function typed(input: Input, text: string): unknown {
   switch (input.type ?? "string") {
     case "integer":
       return Number(text);

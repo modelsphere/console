@@ -34,7 +34,9 @@ import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
 import { deployCapacity, gpuShort, pickableProducts, productChoices, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { isChartRange, movableCatalogs } from "@swiss/lib/upgrade";
-import { CHECK_MS, inputRows, inputsAnswered } from "@swiss/lib/inputs";
+import { CHECK_MS, inputRows, inputsAnswered, siteSaves, type SiteSave } from "@swiss/lib/inputs";
+import { saveSiteAnswers } from "@swiss/lib/siteAnswers";
+import { messageOf, useToast } from "@swiss/components/ui/toast";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { cacheCard } from "@swiss/lib/cache";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
@@ -68,6 +70,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const p = useModulePath();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const toast = useToast();
   const upgrade = target.kind === "upgrade";
 
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
@@ -150,6 +153,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const recovery = { ...initialRecovery, ...recoveryPatch };
   const [form, setForm] = useState<Form>(initial);
   const checkedInputs = useDebounced(form.inputs, CHECK_MS);
+  const [remember, setRemember] = useState<Record<string, boolean>>({});
   const catalogRoute = upgrade && current.data ? initial.route || initial.serviceId || target.release : undefined;
   const routeOptions = useQuery({
     queryKey: ["route-options", catalogRoute ?? ""],
@@ -199,6 +203,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const forceGpuProducts = unlistedProducts(v?.requires.gpuProduct, form.gpuProducts).length > 0;
   const change = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
   const inputs = inputRows(v?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", modelName ?? "", v?.values, upgrade ? current.data?.layers?.form : undefined);
+  // A profile swissd did not parse is not written to from here.
+  const canRemember = profile.data?.yaml !== undefined && !profile.data.error && !!cluster.data?.allowDeploy;
+  const saves = canRemember ? siteSaves(inputs, form.inputs, remember) : [];
   // What a compose of f sends; the Override YAML editor's preview sends the same.
   const requestFor = (f: Form) => planRequest(
     { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
@@ -273,6 +280,15 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     onSuccess: (r) => {
       setApplied(r);
       for (const key of REFRESH) qc.invalidateQueries({ queryKey: key });
+      // After the deploy, not before: one abandoned at review leaves the profile as it was.
+      if (saves.length)
+        saveSiteAnswers(saves).then(
+          (saved) => {
+            qc.setQueryData(["profile"], saved);
+            toast.success(t("deploy.review.siteSaved", { keys: saves.map((s) => s.key).join(", ") }));
+          },
+          (e) => toast.error(t("deploy.review.siteNotSaved", { error: messageOf(e) })),
+        );
       onClose();
       if (!upgrade) navigate(p(detailPath(plan!.release.name, plan!.release.namespace)), { state: { sloSetup: state.action === "install" && sloEnabled(plan!) } });
     },
@@ -493,6 +509,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               idPrefix={ID_PREFIX}
               helmValues={readOnly ? undefined : valuesSource}
               inputs={inputs}
+              remember={canRemember ? remember : undefined}
+              onRemember={(key, on) => setRemember((r) => ({ ...r, [key]: on }))}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />
           </>
@@ -512,6 +530,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               force={force}
               onForce={setForce}
               method={state.action === "install" ? method : live.data?.backend}
+              siteSaves={saves}
             />
           )
         )}
@@ -556,6 +575,7 @@ export function Review({
   force,
   onForce,
   method,
+  siteSaves,
 }: {
   upgrade: boolean;
   rollback?: boolean;
@@ -572,6 +592,8 @@ export function Review({
   onForce: (v: boolean) => void;
   // The install method: the one picked on an install, the release's own otherwise.
   method?: ApplyWith;
+  // Typed answers saved to the site profile once this applies.
+  siteSaves?: SiteSave[];
 }) {
   const t = useT();
   const moves = current && (upgrade || rollback) ? whatMoves(current, plan, currentCatalog) : null;
@@ -595,6 +617,27 @@ export function Review({
               </div>
             ))}
             {current && current.hash === plan.hash && <p className="pt-1 text-muted-foreground">{t("deploy.review.identical")}</p>}
+          </div>
+        </SectionCard>
+      )}
+      {!!siteSaves?.length && (
+        <SectionCard title={t("deploy.review.siteProfile")}>
+          <div className="space-y-2 text-sm">
+            <p className="text-muted-foreground">{t("deploy.review.siteProfileHint")}</p>
+            {siteSaves.map((s) => (
+              <div key={s.key} className="font-mono text-xs">
+                <div className="break-all">{s.key}</div>
+                <div className="flex min-w-0 flex-wrap items-center gap-2 ps-4">
+                  {s.replaces && (
+                    <>
+                      <span className="break-all text-muted-foreground">{s.replaces}</span>
+                      <ArrowRight className="size-3.5 shrink-0 text-primary" />
+                    </>
+                  )}
+                  <span className="break-all font-medium">{s.text}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </SectionCard>
       )}

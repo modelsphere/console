@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Input, SiteProfile } from "./api";
-import { answerText, fillTemplate, inputError, inputProblem, inputRows, inputsAnswered, parseAnswer, setInputOverrides } from "./inputs";
+import { answerText, fillTemplate, inputError, inputProblem, inputRows, inputsAnswered, parseAnswer, rememberable, setInputOverrides, siteSaves } from "./inputs";
 
 const master: Input = {
   key: "storageKVOffload.mooncake.master",
@@ -29,7 +29,7 @@ describe("fillTemplate", () => {
 describe("inputRows", () => {
   it("prefills the site's answer, its template filled for this model", () => {
     expect(inputRows([master], site({ [master.key]: "mc-{{model}}:50051" }), "zai-org/GLM-5.3", "glm-5.3")).toEqual([
-      { input: master, answer: "mc-glm-5.3:50051", from: "site" },
+      { input: master, answer: "mc-glm-5.3:50051", from: "site", site: { answer: "mc-glm-5.3:50051", written: "mc-{{model}}:50051" } },
     ]);
     expect(inputRows([port], site({ [port.key]: 8050 }), "a/b", "m")[0].answer).toBe("8050");
   });
@@ -55,7 +55,7 @@ describe("inputRows", () => {
     ]);
     const release = { storageKVOffload: { mooncake: { master: "mine:1" } } };
     expect(inputRows([tuned], site({ [master.key]: "site:1" }), "a/b", "m", undefined, release)[0].choices?.map((c) => c.from)).toEqual(["release", "site", "variant"]);
-    expect(inputRows([tuned], site({ [master.key]: "tuned:1" }), "a/b", "m")[0]).toEqual({ input: tuned, answer: "tuned:1", from: "site" });
+    expect(inputRows([tuned], site({ [master.key]: "tuned:1" }), "a/b", "m")[0]).toEqual({ input: tuned, answer: "tuned:1", from: "site", site: { answer: "tuned:1", written: "tuned:1" } });
     expect(inputRows([master], site({ [master.key]: "site:1" }), "a/b", "m", { storageKVOffload: { mooncake: { master: "" } } })[0].choices).toBeUndefined();
   });
 });
@@ -90,6 +90,26 @@ describe("inputError", () => {
     expect(inputsAnswered(rows, {})).toBe(false);
     expect(inputsAnswered(rows, { [port.key]: "8000" })).toBe(true);
     expect(inputsAnswered([], {})).toBe(true);
+  });
+});
+
+describe("saving an answer to the site profile", () => {
+  const row = { input: master, answer: "mc-m:1", from: "site" as const, site: { answer: "mc-m:1", written: "mc-{{model}}:1" } };
+  it("takes a typed answer the input takes, and not the site's own", () => {
+    expect(rememberable(row, "mine:1")).toBe(true);
+    expect(rememberable(row, " mc-m:1 ")).toBe(false);
+    expect(rememberable(row, "no-port")).toBe(false);
+    expect(rememberable(row, "")).toBe(false);
+    expect(rememberable({ input: master }, "mine:1")).toBe(true);
+  });
+  it("saves the ticked answers, typed as the input, naming what each replaces", () => {
+    const rows = [row, { input: port }, { input: { ...master, key: "other.master" } }];
+    const answers = { [master.key]: " mine:1 ", [port.key]: "8050", "other.master": "x:1" };
+    expect(siteSaves(rows, answers, { [master.key]: true, [port.key]: true })).toEqual([
+      { key: master.key, text: "mine:1", value: "mine:1", replaces: "mc-{{model}}:1" },
+      { key: port.key, text: "8050", value: 8050, replaces: undefined },
+    ]);
+    expect(siteSaves(rows, { [master.key]: "mc-m:1" }, { [master.key]: true })).toEqual([]);
   });
 });
 
