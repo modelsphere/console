@@ -23,7 +23,7 @@ export function answerAt(tree: Record<string, unknown> | undefined, path: string
     if (!node || typeof node !== "object" || Array.isArray(node)) return undefined;
     node = (node as Record<string, unknown>)[key];
   }
-  if (node === undefined || node === null || node === "" || typeof node === "object") return undefined;
+  if (node === undefined || node === null || typeof node === "object") return undefined;
   return String(node);
 }
 

@@ -335,7 +335,7 @@ export function DeploySettings({
                       ? "the site profile's answer, unless you change it"
                       : from === "variant"
                         ? "the variant's default, unless you change it"
-                        : "required: no default, and the site profile has no answer"
+                        : "unanswered: the variant has no default, and the site profile no answer"
                 }
                 hint={input.description ? `${input.description} (${input.path})` : input.path}
               >

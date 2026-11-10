@@ -37,7 +37,6 @@ describe("inputRows", () => {
     const tuned = { storageKVOffload: { mooncake: { master: "tuned:1" } } };
     expect(inputRows([master], site({}), "a/b", "m", tuned)).toEqual([{ input: master, answer: "tuned:1", from: "variant" }]);
     expect(inputRows([master], site({ [master.path]: "site:1" }), "a/b", "m", tuned)[0].from).toBe("site");
-    expect(inputRows([master], site({}), "a/b", "m", { storageKVOffload: { mooncake: { master: "" } } })).toEqual([{ input: master }]);
     expect(inputRows([master], undefined, "a/b", "m")).toEqual([{ input: master }]);
   });
   it("shows an upgrade the release's own answer over the site's", () => {
