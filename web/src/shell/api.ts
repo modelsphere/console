@@ -80,21 +80,31 @@ export interface ChangePasswordInput {
 // login exchanges credentials for a token at the OAuth2 password-grant endpoint
 // (form-encoded, exactly as Rise Global expects) and stores it.
 export async function login(username: string, password: string): Promise<void> {
-  const form = new URLSearchParams({ grant_type: "password", username, password });
+  const form = new URLSearchParams({
+    grant_type: "password",
+    username,
+    password,
+  });
+  const unavailable = getT("shell")("login.serviceUnavailable");
   const res = await fetch("/oauth/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form.toString(),
+  }).catch(() => {
+    throw new ApiError(0, unavailable);
   });
+  const body = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new ApiError(res.status, getT("shell")("login.badCredentials"));
+    const message = res.status === 401 && body?.error === "invalid_grant" ? getT("shell")("login.badCredentials") : unavailable;
+    throw new ApiError(res.status, message);
   }
-  const tok = (await res.json()) as { access_token: string };
-  setToken(tok.access_token);
+  if (typeof body?.access_token !== "string" || !body.access_token) {
+    throw new ApiError(res.status, unavailable);
+  }
+  setToken(body.access_token);
 }
 
 export const api = {
   me: () => request<Me>("GET", "/api/me"),
-  changePassword: (passwords: ChangePasswordInput) =>
-    request<{ status: string }>("POST", "/api/me/password", passwords),
+  changePassword: (passwords: ChangePasswordInput) => request<{ status: string }>("POST", "/api/me/password", passwords),
 };

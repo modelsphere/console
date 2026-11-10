@@ -48,8 +48,8 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 			writeOAuthError(w, http.StatusUnauthorized, "invalid_grant")
 			return
 		}
-		reason = "token issuance failed"
-		s.log.Error("token issue", "err", err)
+		reason = "login service failed"
+		s.log.Error("login", "err", err)
 		writeOAuthError(w, http.StatusInternalServerError, "server_error")
 		return
 	}

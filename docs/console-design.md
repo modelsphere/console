@@ -6,6 +6,14 @@ The ModelSphere community portal. A full-stack BFF that **owns identity** and
 **federates everything else**. It exists because the open-source inference stack
 (swiss and friends) has no user management, login, or unified entry point.
 
+## Login failures
+
+| Failure | Token endpoint | Login page |
+|---|---|---|
+| Missing or invalid credentials, unknown or inactive user | `401 invalid_grant` | Generic incorrect-credentials message |
+| Kubernetes user lookup or token issuance fails | `500 server_error`; cause in server logs, service-failure audit reason | Service-unavailable guidance; check connectivity/VPN or contact an administrator |
+| Browser cannot reach the endpoint, or receives an unusable response | No session is stored | The same service-unavailable guidance |
+
 ## Why a separate service (not part of swiss)
 
 swiss is a deploy control plane: near-stateless, "the cluster is the only source
