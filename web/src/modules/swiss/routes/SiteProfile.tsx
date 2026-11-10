@@ -255,7 +255,7 @@ export function SiteProfile() {
               <CardHeader>
                 <CardTitle className="text-base">Presets</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Named values a deploy may pick one of, merged into its form values. Edit them in the YAML.
+                  Named values a deploy may pick one of, merged into its form values.
                 </p>
               </CardHeader>
               <CardContent className="space-y-3">

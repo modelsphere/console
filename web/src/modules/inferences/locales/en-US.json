@@ -859,7 +859,7 @@
       "catalog": "Where the models come from, and the registries the catalog deliberately does not name.",
       "model": "Built from the catalog's source.hf. Variables: hf (the full repo id), org and name (its halves), model (the catalog entry name); see the field's example for the syntax.",
       "inputs": "Answers to the inputs catalog variants declare, by chart key. Only a variant that declares a key takes its answer, and a deploy can still override it. A string takes the model path variables.",
-      "presets": "Named values a deploy may pick one of, merged into its form values: a list keeps both sides' items. Edit them in the YAML tab.",
+      "presets": "Named values a deploy may pick one of, merged into its form values: a list keeps both sides' items.",
       "routing": "The openresty entrypoint every model publishes a route on.",
       "auth": "Used only by the serving and health checks. This document is a ConfigMap, so it names a Secret rather than holding the key.",
       "pdScale": "swissd's PD slice autoscaler, for releases planned with PD on and the form SLO on. Field names follow the LLMScaler's.",
@@ -973,6 +973,15 @@
       "deferTimeout": "Defer timeout (s)",
       "deferTimeoutHint": "How long a hold may defer a scale before it is applied anyway: a DisaggregatedSet rollout that never lands, a failed release, pods that never get ready. Uninstalling, a missing DisaggregatedSet and an apply in flight still hold. Empty is 600; 0 defers indefinitely",
       "deferTimeoutNever": "Never; defers indefinitely",
+      "presetAdd": "Add preset",
+      "presetEdit": "Edit preset",
+      "presetName": "Name",
+      "presetDescription": "Description",
+      "presetDescriptionHint": "Shown beside the name in the deploy page's picker",
+      "presetValues": "Values",
+      "presetValuesHint": "Chart values as YAML. Not checked against the chart here: a deploy merges them into its form values",
+      "presetNoValues": "No values",
+      "presetsNone": "None: a deploy has no preset to pick",
       "siteName": "Site",
       "siteUrl": "URL",
       "siteAdd": "Add site"
@@ -1006,6 +1015,12 @@
           "format": "An http:// or https:// URL, or an absolute path",
           "duplicate": "Already listed with this schema"
         }
+      },
+      "preset": {
+        "required": "Name is required",
+        "duplicate": "Another preset has this name",
+        "map": "Values must be a map of chart keys",
+        "yaml": "Not valid YAML: {error}"
       },
       "gpu": {
         "required": "Required",

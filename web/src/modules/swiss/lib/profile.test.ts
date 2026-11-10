@@ -10,9 +10,13 @@ import {
   gpuRows,
   gpuTable,
   hasGPUErrors,
+  hasPresetErrors,
   inOrder,
   isVendorDefault,
   makeVendorDefault,
+  presetErrors,
+  presetRow,
+  putPreset,
   vendorGroups,
   withFeature,
   type GPURow,
@@ -128,5 +132,29 @@ describe("feature defaults", () => {
 
   it("keeps an explicit true it did not touch", () => {
     expect(withFeature({ features: { cart: true } }, "scaler", false)).toEqual({ features: { cart: true, scaler: false } });
+  });
+});
+
+describe("presets", () => {
+  const presets = { a: { description: "A", values: { tolerations: [{ key: "x", operator: "Exists" }] } }, b: {} };
+
+  it("round-trips a preset through its row", () => {
+    const row = presetRow("a", presets.a);
+    expect(row.values).toContain("tolerations:");
+    expect(putPreset(presets, "a", row)).toEqual(presets);
+  });
+
+  it("flags a missing or taken name, YAML that does not parse, and values that are not a map", () => {
+    expect(presetErrors(presetRow(" "), [])).toEqual({ name: "required" });
+    expect(presetErrors({ ...presetRow("b"), values: "a: 1" }, ["b"]).name).toBe("duplicate");
+    expect(presetErrors({ ...presetRow("c"), values: "a: [" }, []).values).toBe("yaml");
+    expect(presetErrors({ ...presetRow("c"), values: "- a" }, []).values).toBe("map");
+    expect(hasPresetErrors(presetErrors(presetRow("c"), []))).toBe(false);
+  });
+
+  it("renames, adds and removes", () => {
+    expect(putPreset(presets, "b", { name: "c", description: "", values: "" })).toEqual({ a: presets.a, c: {} });
+    expect(putPreset(presets, undefined, { name: " d ", description: " D ", values: "x: 1" })).toEqual({ ...presets, d: { description: "D", values: { x: 1 } } });
+    expect(putPreset({ a: {} }, "a")).toBeUndefined();
   });
 });
