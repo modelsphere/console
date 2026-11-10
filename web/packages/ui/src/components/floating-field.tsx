@@ -352,6 +352,8 @@ export interface FloatingFieldProps {
   /** 固定后缀（`.svc.cluster.local`）。同 `prefix`，画在框内右侧。 */
   suffix?: React.ReactNode
   action?: React.ReactNode
+  /** 跟在 `?` 后面的一段弱化文字，如字段的示例值。 */
+  aside?: React.ReactNode
   /**
    * 警示条 —— 「什么情况下应该开启/填写这一项」。
    *
@@ -433,6 +435,7 @@ export function FloatingField({
   prefix,
   suffix,
   action,
+  aside,
   error,
   notice,
   expandedContent,
@@ -491,6 +494,7 @@ export function FloatingField({
           <FieldHint>{hint}</FieldHint>
         </span>
       ) : null}
+      {aside ? <span className="text-muted-foreground">{aside}</span> : null}
     </>
   )
 

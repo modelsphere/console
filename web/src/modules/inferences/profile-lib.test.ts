@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SiteProfile } from "@swiss/lib/api";
 import { fromRows, markDefault, profileErrors, toRows, withNodes } from "@/modules/inferences/profile-lib";
+import { answersText, parseAnswers } from "@swiss/lib/inputs";
 
 describe("key-value rows", () => {
   it("round-trips a table and drops rows without a key", () => {
@@ -51,3 +52,12 @@ describe("nodes", () => {
   });
 });
 
+
+describe("input answers", () => {
+  it("maps a profile's answers to rows and back", () => {
+    const inputs = { "a.master": "mc:1", "a.port": 8000, "a.on": true };
+    expect(parseAnswers(answersText(inputs))).toEqual(inputs);
+    expect(parseAnswers(fromRows(toRows(answersText(inputs))))).toEqual(inputs);
+    expect(parseAnswers(fromRows([]))).toBeUndefined();
+  });
+});

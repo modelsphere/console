@@ -19,6 +19,12 @@ import {
   SheetHeader,
   SheetTitle,
   Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@modelsphere/ui";
 import { SlidersHorizontal, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
@@ -30,6 +36,7 @@ import { useT } from "@/modules/inferences/i18n";
 import { ProfileEditorBody, SaveButton, useProfileEditor } from "@/modules/inferences/components/ProfileEditor";
 import { catalogTokenKey, listSecrets } from "@/modules/inferences/catalog-write-api";
 import { markedWritable } from "@/modules/inferences/catalog-write-lib";
+import { answerText } from "@swiss/lib/inputs";
 
 export function SiteProfilePage() {
   const t = useT();
@@ -158,6 +165,28 @@ function ProfileView({ p }: { p: SiteProfile }) {
         { label: f("pathTemplate"), value: mono(p.model?.pathTemplate) },
         { label: f("overrides"), value: kv(p.model?.overrides) },
       ])}
+      <SectionCard title={t("profile.groups.inputs")}>
+        {p.inputs && Object.keys(p.inputs).length ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{f("key")}</TableHead>
+                <TableHead>{f("value")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Object.entries(p.inputs).map(([k, x]) => (
+                <TableRow key={k}>
+                  <TableCell className="font-mono text-xs break-all">{k}</TableCell>
+                  <TableCell className="font-mono text-xs break-all">{answerText(x)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          v(undefined)
+        )}
+      </SectionCard>
       {card("routing", [
         { label: f("routeEnabled"), value: onOff(!!p.route?.enabled) },
         { label: f("gateway"), value: mono(p.route?.gateway) },

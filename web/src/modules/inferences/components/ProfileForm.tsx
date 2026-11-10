@@ -4,6 +4,7 @@ import { Plus, X } from "lucide-react";
 import type { RouteAuth, SiteProfile } from "@swiss/lib/api";
 import { useT } from "@/modules/inferences/i18n";
 import { fromRows, markDefault, toRows, withNodes, type Row } from "@/modules/inferences/profile-lib";
+import { answersText, parseAnswers } from "@swiss/lib/inputs";
 import { GpuTable } from "@/modules/inferences/components/GpuResources";
 import { catalogErrors, FEATURES, featureOn, withFeature, type CatalogError } from "@swiss/lib/profile";
 
@@ -20,7 +21,7 @@ export interface TokenField {
   onChange: (v: string) => void;
 }
 
-const GROUPS = ["placement", "catalog", "model", "routing", "auth", "scaler", "pdScale", "defaults", "sites"] as const;
+const GROUPS = ["placement", "catalog", "model", "inputs", "routing", "auth", "scaler", "pdScale", "defaults", "sites"] as const;
 
 export function ProfileForm({
   value: p,
@@ -124,6 +125,11 @@ export function ProfileForm({
           })}
           <KV label={f("overrides")} hint={f("overridesHint")} value={p.model?.overrides} onChange={(o) => set({ model: { ...p.model, overrides: o } })} />
         </>,
+      )}
+
+      {group(
+        "inputs",
+        <KV label={f("inputs")} hint={f("inputsHint")} value={answersText(p.inputs)} onChange={(o) => set({ inputs: parseAnswers(o) })} />,
       )}
 
       {group(
