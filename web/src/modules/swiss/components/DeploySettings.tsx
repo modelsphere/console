@@ -322,11 +322,11 @@ export function DeploySettings({
           </Row>
 
           {inputs?.map(({ input, answer, from }) => {
-            const value = form.inputs[input.path] ?? "";
+            const value = form.inputs[input.key] ?? "";
             const problem = inputProblem(input, value);
             return (
               <Row
-                key={input.path}
+                key={input.key}
                 label={input.title}
                 note={
                   from === "release"
@@ -337,12 +337,12 @@ export function DeploySettings({
                         ? "the variant's default, unless you change it"
                         : "unanswered: the variant has no default, and the site profile no answer"
                 }
-                hint={input.description ? `${input.description} (${input.path})` : input.path}
+                hint={input.description ? `${input.description} (${input.key})` : input.key}
               >
                 <div className="min-w-0 flex-1">
                   <Suggest
                     value={value}
-                    onChange={(v) => onChange({ inputs: { ...form.inputs, [input.path]: v } })}
+                    onChange={(v) => onChange({ inputs: { ...form.inputs, [input.key]: v } })}
                     suggestion={answer}
                     placeholder={answer ?? `e.g. ${String(input.example)}`}
                   />

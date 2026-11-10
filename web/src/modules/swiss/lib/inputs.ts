@@ -17,11 +17,11 @@ export function fillTemplate(tmpl: string, hf: string, model: string): string | 
   return out.includes("{{") ? undefined : out;
 }
 
-export function answerAt(tree: Record<string, unknown> | undefined, path: string): string | undefined {
+export function answerAt(tree: Record<string, unknown> | undefined, key: string): string | undefined {
   let node: unknown = tree;
-  for (const key of path.split(".")) {
+  for (const k of key.split(".")) {
     if (!node || typeof node !== "object" || Array.isArray(node)) return undefined;
-    node = (node as Record<string, unknown>)[key];
+    node = (node as Record<string, unknown>)[k];
   }
   if (node === undefined || node === null || typeof node === "object") return undefined;
   return String(node);
@@ -37,9 +37,9 @@ export function inputRows(
   release?: Record<string, unknown>,
 ): InputRow[] {
   return (inputs ?? []).map((input) => {
-    const kept = answerAt(release, input.path);
+    const kept = answerAt(release, input.key);
     if (kept !== undefined) return { input, answer: kept, from: "release" };
-    const v = profile?.inputs?.[input.path];
+    const v = profile?.inputs?.[input.key];
     const site = v === undefined || v === null ? undefined : typeof v === "string" ? fillTemplate(v, hf, model) : String(v);
     if (site !== undefined) return { input, answer: site, from: "site" };
     return input.default !== undefined && input.default !== null ? { input, answer: String(input.default), from: "variant" } : { input };
@@ -79,9 +79,9 @@ function typed(input: Input, text: string): unknown {
 // An empty field sends nothing, so its answer stays the site's and follows the profile.
 export function setInputOverrides(overrides: Record<string, unknown>, inputs: Input[] | undefined, answers: Record<string, string>) {
   for (const input of inputs ?? []) {
-    const text = answers[input.path]?.trim();
+    const text = answers[input.key]?.trim();
     if (!text) continue;
-    const keys = input.path.split(".");
+    const keys = input.key.split(".");
     let node = overrides;
     for (const key of keys.slice(0, -1)) {
       const next = node[key];

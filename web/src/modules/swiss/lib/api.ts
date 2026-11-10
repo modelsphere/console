@@ -121,7 +121,8 @@ export interface Requires {
 }
 
 export interface Input {
-  path: string;
+  // The chart value's dotted key: storageKVOffload.mooncake.master.
+  key: string;
   title: string;
   description?: string;
   // Unset is string.

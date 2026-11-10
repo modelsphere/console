@@ -3,12 +3,12 @@ import type { Input, SiteProfile } from "./api";
 import { fillTemplate, inputProblem, inputRows, setInputOverrides } from "./inputs";
 
 const master: Input = {
-  path: "storageKVOffload.mooncake.master",
+  key: "storageKVOffload.mooncake.master",
   title: "Mooncake master",
   pattern: "[^\\s:/]+:[0-9]+",
   example: "mooncake-master.example:50051",
 };
-const port: Input = { path: "service.port", title: "Port", type: "integer", example: 8000 };
+const port: Input = { key: "service.port", title: "Port", type: "integer", example: 8000 };
 const site = (inputs: Record<string, string | number | boolean>): SiteProfile => ({
   name: "prod",
   model: { pathTemplate: "/models/{{name}}" },
@@ -28,21 +28,21 @@ describe("fillTemplate", () => {
 
 describe("inputRows", () => {
   it("prefills the site's answer, its template filled for this model", () => {
-    expect(inputRows([master], site({ [master.path]: "mc-{{model}}:50051" }), "zai-org/GLM-5.3", "glm-5.3")).toEqual([
+    expect(inputRows([master], site({ [master.key]: "mc-{{model}}:50051" }), "zai-org/GLM-5.3", "glm-5.3")).toEqual([
       { input: master, answer: "mc-glm-5.3:50051", from: "site" },
     ]);
-    expect(inputRows([port], site({ [port.path]: 8050 }), "a/b", "m")[0].answer).toBe("8050");
+    expect(inputRows([port], site({ [port.key]: 8050 }), "a/b", "m")[0].answer).toBe("8050");
   });
   it("falls back to the input's default, and leaves an input with none for the deployer", () => {
     const tuned = { ...master, default: "tuned:1" };
     expect(inputRows([tuned], site({}), "a/b", "m")).toEqual([{ input: tuned, answer: "tuned:1", from: "variant" }]);
-    expect(inputRows([tuned], site({ [master.path]: "site:1" }), "a/b", "m")[0].from).toBe("site");
+    expect(inputRows([tuned], site({ [master.key]: "site:1" }), "a/b", "m")[0].from).toBe("site");
     expect(inputRows([{ ...port, default: 8000 }], site({}), "a/b", "m")[0].answer).toBe("8000");
     expect(inputRows([master], undefined, "a/b", "m")).toEqual([{ input: master }]);
   });
   it("shows an upgrade the release's own answer over the site's", () => {
     const release = { storageKVOffload: { mooncake: { master: "mine:1" } } };
-    expect(inputRows([master], site({ [master.path]: "site:1" }), "a/b", "m", release)[0]).toEqual({ input: master, answer: "mine:1", from: "release" });
+    expect(inputRows([master], site({ [master.key]: "site:1" }), "a/b", "m", release)[0]).toEqual({ input: master, answer: "mine:1", from: "release" });
   });
 });
 
@@ -59,9 +59,9 @@ describe("inputProblem", () => {
 describe("setInputOverrides", () => {
   it("sends only typed answers, typed, beside the other overrides in a section", () => {
     const overrides: Record<string, unknown> = { storageKVOffload: { enabled: true }, service: "dropped" };
-    setInputOverrides(overrides, [master, port, { ...master, path: "unset.here" }], {
-      [master.path]: " mc:50051 ",
-      [port.path]: "8050",
+    setInputOverrides(overrides, [master, port, { ...master, key: "unset.here" }], {
+      [master.key]: " mc:50051 ",
+      [port.key]: "8050",
       "unset.here": "  ",
     });
     expect(overrides).toEqual({
