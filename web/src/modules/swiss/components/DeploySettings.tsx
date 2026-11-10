@@ -290,27 +290,6 @@ export function DeploySettings({
             in the box it applies to; the label carries the longer note for the
             rows whose control is a switch and has no box to put it in. */}
         <CardContent className="divide-y pt-0">
-          {presets && Object.keys(presets).length > 0 && (
-            <Row label="Preset" note="site profile values merged into this deploy's: a list keeps both sides' items, a value set here wins">
-              <div className="w-full min-w-0 space-y-1.5 py-1">
-                <select
-                  className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                  value={form.preset}
-                  onChange={(e) => onChange({ preset: e.target.value })}
-                  aria-label="Preset"
-                >
-                  <option value="">none</option>
-                  {Object.keys(presets).sort().map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-                {picked?.description && <p className="text-xs text-muted-foreground">{picked.description}</p>}
-                {picked && <pre className="max-h-56 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-snug">{toYaml(picked.values ?? {})}</pre>}
-              </div>
-            </Row>
-          )}
           {/* Locked on an upgrade, like the namespace: the route, the scaler
               and the SLO are all named after it, and changing it renames none
               of them -- helm renders a second set and orphans the first. The
@@ -830,6 +809,27 @@ export function DeploySettings({
           {capacity && (
             <Row label="On this cluster" note="nodes with this resource and product, and what is free on them">
               <CapacityLine {...capacity} />
+            </Row>
+          )}
+          {presets && Object.keys(presets).length > 0 && (
+            <Row label="Preset" note="site profile values merged into this deploy's: a list keeps both sides' items, a value set here wins">
+              <div className="w-full min-w-0 space-y-1.5 py-1">
+                <select
+                  className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                  value={form.preset}
+                  onChange={(e) => onChange({ preset: e.target.value })}
+                  aria-label="Preset"
+                >
+                  <option value="">none</option>
+                  {Object.keys(presets).sort().map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+                {picked?.description && <p className="text-xs text-muted-foreground">{picked.description}</p>}
+                {picked && <pre className="max-h-56 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-snug">{toYaml(picked.values ?? {})}</pre>}
+              </div>
             </Row>
           )}
           <Row label="Tolerations" note="lets this deploy land on tainted GPU nodes">

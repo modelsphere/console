@@ -113,7 +113,6 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           <FloatingField value={shown(form.serviceId, defaults.serviceId)} label={f("serviceId")} required hint={upgrade ? f("serviceIdLocked") : f("serviceIdHint")} error={idError && t(`deploy.errors.${idError}`)} disabled={upgrade}>
             <Suggest value={form.serviceId} onChange={(serviceId) => onChange({ serviceId })} suggestion={defaults.serviceId} disabled={upgrade} />
           </FloatingField>
-          {presets && Object.keys(presets).length > 0 && <PresetField presets={presets} value={form.preset} onChange={(preset) => onChange({ preset })} />}
           <FloatingField
             layout="inline"
             label={f("modelRoute")}
@@ -151,6 +150,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
             <FieldSelect multiple values={form.gpuProducts} onValuesChange={(v) => onChange({ gpuProducts: v })} options={gpuOptions.map((o) => ({ value: o, label: o, badge: unlistedProducts(gpuListed, [o]).length ? <Badge variant="warning">{f("gpuUnverified")}</Badge> : <Badge variant="success">{f("gpuVerified")}</Badge> }))} placeholder={gpuOptions.length ? undefined : f("gpuProductsEmpty")} disabled={!gpuOptions.length} />
           </FloatingField>
           {capacity && <CapacityHint {...capacity} />}
+          {presets && Object.keys(presets).length > 0 && <PresetField presets={presets} value={form.preset} onChange={(preset) => onChange({ preset })} />}
           <Tolerations rows={form.tolerations} onChange={(v) => onChange({ tolerations: v })} />
           {form.affinity.length > 0 && <AffinityRules rules={form.affinity} onChange={(affinity) => onChange({ affinity })} />}
           <div className="grid grid-cols-2 gap-3">
@@ -428,10 +428,10 @@ function PresetField({ presets, value, onChange }: { presets: Record<string, Pre
   const picked = presets[value];
   return (
     <div className="flex flex-col gap-1.5">
-      <FloatingField value={value || NO_PRESET} label={f("preset")} hint={f("presetHint")}>
-        <DataSelect
+      <FloatingField label={f("preset")} hint={f("presetHint")}>
+        <FieldSelect
           value={value || NO_PRESET}
-          onValueChange={(v) => onChange(v === NO_PRESET ? "" : v)}
+          onValueChange={(v) => v && onChange(v === NO_PRESET ? "" : v)}
           options={[{ value: NO_PRESET, label: f("presetNone") }, ...Object.keys(presets).sort().map((n) => ({ value: n, label: n }))]}
         />
       </FloatingField>
