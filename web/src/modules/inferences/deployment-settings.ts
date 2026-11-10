@@ -1,5 +1,6 @@
 import { EMPTY as SWISS_EMPTY, formFromPlan as swissFormFromPlan, planRequest as swissPlanRequest, type Form } from "@swiss/components/DeploySettings";
 import type { Plan, SiteProfile } from "@swiss/lib/api";
+import { presetValues } from "@swiss/lib/formLayer";
 
 // The site's monitor ConfigMap (modelRoute.monitor.outputConfigMap) turns Monitor on in the form layer.
 // An unknown profile (unread, unparsed) decides nothing: an upgrade keeps its plan's Monitor.
@@ -15,4 +16,4 @@ export const EMPTY: Form = monitorSettings(SWISS_EMPTY, false);
 export const formFromPlan = (plan: Plan): Form => swissFormFromPlan(plan);
 
 export const planRequest = (form: Form, options: Parameters<typeof swissPlanRequest>[1], profile?: SiteProfile) =>
-  swissPlanRequest(profile ? monitorSettings(form, monitorOn(profile)) : form, options);
+  swissPlanRequest(profile ? monitorSettings(form, monitorOn(profile)) : form, { ...options, preset: presetValues(profile, form.preset) });

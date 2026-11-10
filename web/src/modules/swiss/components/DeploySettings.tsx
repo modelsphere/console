@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { ChevronDown, Plus, RefreshCw, TriangleAlert, X } from "lucide-react";
-import type { ApplyFlags, ClusterInfo, Input as CatalogInput, Plan, PlanRequest, ProfileResponse, Variant } from "@swiss/lib/api";
+import type { ApplyFlags, ClusterInfo, Input as CatalogInput, Plan, PlanRequest, Preset, ProfileResponse, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { CHECK_MS, inputError, inputProblem, rememberable, setInputOverrides, type InputChoice, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
+import { PRODUCT_KEY, affinityRules, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
+import { overlay, withPreset } from "@swiss/lib/formLayer";
+import { toYaml } from "@swiss/lib/yaml";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
 import {
@@ -31,6 +34,9 @@ export interface Toleration {
   operator: "Exists" | "Equal";
   value: string;
   effect: string;
+  // The toleration as the release's form layer has it, sent as is while the
+  // fields still match it: keys no field shows, tolerationSeconds, survive.
+  raw?: Record<string, unknown>;
 }
 
 export interface Form {
@@ -39,6 +45,12 @@ export interface Form {
   // The resource picked among the vendor's; empty lets swissd pick.
   gpuResource: string;
   tolerations: Toleration[];
+  // A site profile preset, by name, merged into a deploy's form values. An
+  // upgrade has none: the release's form layer already carries its values.
+  preset: string;
+  // The rules the release's form layer's affinities carry, on an upgrade:
+  // each one edited or removed in place.
+  affinity: AffinityRule[];
   priorityClassName: string;
   schedulerName: string;
   cart: boolean;
@@ -99,6 +111,8 @@ export const EMPTY: Form = {
   gpuProducts: [],
   gpuResource: "",
   tolerations: [],
+  preset: "",
+  affinity: [],
   priorityClassName: "",
   schedulerName: "",
   cart: true,
@@ -202,6 +216,7 @@ export function DeploySettings({
   readOnly = false,
   remember,
   onRemember,
+  presets,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -233,8 +248,11 @@ export function DeploySettings({
   // Which typed answers to save to the site profile once the deploy applies; absent where it cannot be saved.
   remember?: Record<string, boolean>;
   onRemember?: (key: string, on: boolean) => void;
+  // The site profile's presets, on a deploy.
+  presets?: Record<string, Preset>;
 }) {
   const checked = useDebounced(form.inputs, CHECK_MS);
+  const picked = presets?.[form.preset];
   const set =
     (k: keyof Form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -272,6 +290,27 @@ export function DeploySettings({
             in the box it applies to; the label carries the longer note for the
             rows whose control is a switch and has no box to put it in. */}
         <CardContent className="divide-y pt-0">
+          {presets && Object.keys(presets).length > 0 && (
+            <Row label="Preset" note="site profile values merged into this deploy's: a list keeps both sides' items, a value set here wins">
+              <div className="w-full min-w-0 space-y-1.5 py-1">
+                <select
+                  className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                  value={form.preset}
+                  onChange={(e) => onChange({ preset: e.target.value })}
+                  aria-label="Preset"
+                >
+                  <option value="">none</option>
+                  {Object.keys(presets).sort().map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+                {picked?.description && <p className="text-xs text-muted-foreground">{picked.description}</p>}
+                {picked && <pre className="max-h-56 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-snug">{toYaml(picked.values ?? {})}</pre>}
+              </div>
+            </Row>
+          )}
           {/* Locked on an upgrade, like the namespace: the route, the scaler
               and the SLO are all named after it, and changing it renames none
               of them -- helm renders a second set and orphans the first. The
@@ -799,6 +838,11 @@ export function DeploySettings({
               onChange={(v) => onChange({ tolerations: v })}
             />
           </Row>
+          {form.affinity.length > 0 && (
+            <Row label="Affinity" note="exactly as this release's form values set it; edit or remove each rule">
+              <AffinityRules rules={form.affinity} onChange={(affinity) => onChange({ affinity })} />
+            </Row>
+          )}
           <Row label="Priority class">
             <Suggest
               value={form.priorityClassName}
@@ -985,21 +1029,42 @@ function CacheFields({ form, onChange, defaults }: { form: Form; onChange: (patc
   );
 }
 
+const TOLERATION_FIELDS = ["key", "operator", "value", "effect"];
+
+// What a toleration's row shows. An operator left out is Equal, as Kubernetes reads it.
+function tolerationRow(r: Record<string, unknown>): Toleration {
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  return { key: str(r.key), operator: r.operator === "Exists" ? "Exists" : "Equal", value: str(r.value), effect: str(r.effect), raw: r };
+}
+
+// The keys of a deployed toleration no row field shows, as "k: v".
+export function tolerationExtras(t: Toleration): string[] {
+  return Object.entries(t.raw ?? {})
+    .filter(([k]) => !TOLERATION_FIELDS.includes(k))
+    .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`);
+}
+
 function tolerationsOf(o: Record<string, unknown>): Toleration[] {
   if (!Array.isArray(o.tolerations)) return [];
-  return o.tolerations.flatMap((t): Toleration[] => {
-    if (!t || typeof t !== "object") return [];
-    const r = t as Record<string, unknown>;
-    if (typeof r.key !== "string" || !r.key) return [];
-    return [
-      {
-        key: r.key,
-        operator: r.operator === "Equal" ? "Equal" : "Exists",
-        value: typeof r.value === "string" ? r.value : "",
-        effect: typeof r.effect === "string" ? r.effect : "",
-      },
-    ];
-  });
+  return o.tolerations.flatMap((t): Toleration[] => (t && typeof t === "object" && !Array.isArray(t) ? [tolerationRow(t as Record<string, unknown>)] : []));
+}
+
+// A row with no key is a half-typed one, unless it is a deployed toleration
+// that has none: that one tolerates every taint.
+function tolerationValue(t: Toleration): Record<string, unknown> | undefined {
+  const raw = t.raw;
+  if (raw) {
+    const was = tolerationRow(raw);
+    if (TOLERATION_FIELDS.every((k) => was[k as keyof Toleration] === t[k as keyof Toleration])) return raw;
+  }
+  const key = t.key.trim();
+  if (!key && !(raw && !raw.key)) return undefined;
+  const out: Record<string, unknown> = Object.fromEntries(Object.entries(raw ?? {}).filter(([k]) => !TOLERATION_FIELDS.includes(k)));
+  if (key) out.key = key;
+  out.operator = t.operator;
+  if (t.operator === "Equal" && t.value.trim()) out.value = t.value.trim();
+  if (t.effect) out.effect = t.effect;
+  return out;
 }
 
 // The products sit in a required nodeAffinity term under a vendor-specific
@@ -1021,7 +1086,7 @@ function gpuProductsOf(o: Record<string, unknown>): string[] {
       const vals = dig(e, "values");
       if (
         typeof key === "string" &&
-        /\.product$|device-id$|ascend910$/i.test(key) &&
+        PRODUCT_KEY.test(key) &&
         Array.isArray(vals)
       ) {
         return vals.filter((v): v is string => typeof v === "string");
@@ -1214,7 +1279,7 @@ function Tolerations({
             className="w-44"
             value={r.key}
             onChange={(e) => patch(i, { key: e.target.value })}
-            placeholder="taint key"
+            placeholder={r.raw && !r.raw.key ? "every taint" : "taint key"}
             aria-label="taint key"
           />
           <Select
@@ -1239,6 +1304,11 @@ function Tolerations({
             label="effect"
             emptyLabel="any effect"
           />
+          {tolerationExtras(r).map((x) => (
+            <span key={x} className="font-mono text-xs text-muted-foreground">
+              {x}
+            </span>
+          ))}
           <button
             type="button"
             onClick={() => onChange(rows.filter((_, j) => j !== i))}
@@ -1256,6 +1326,36 @@ function Tolerations({
       >
         Add toleration
       </button>
+    </div>
+  );
+}
+
+function AffinityRules({ rules, onChange }: { rules: AffinityRule[]; onChange: (v: AffinityRule[]) => void }) {
+  const patch = (i: number, r: AffinityRule) => onChange(rules.map((x, j) => (i === j ? r : x)));
+  return (
+    <div className="w-full min-w-0 space-y-2 py-1">
+      {rules.map((r, i) => (
+        <div key={i} className={cn("rounded-md border p-2", r.drop && "opacity-50")}>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="min-w-0 truncate font-mono text-muted-foreground">
+              {r.scope} · {listLabel(r.list)}
+            </span>
+            <button type="button" onClick={() => patch(i, { ...r, drop: !r.drop })} className="ms-auto shrink-0 text-muted-foreground hover:text-destructive">
+              {r.drop ? "undo" : "remove"}
+            </button>
+          </div>
+          <textarea
+            value={r.text}
+            onChange={(e) => patch(i, editRule(r, e.target.value))}
+            disabled={r.drop}
+            spellCheck={false}
+            aria-label={`${r.scope} ${listLabel(r.list)} rule`}
+            rows={Math.max(2, r.text.split("\n").length)}
+            className={cn("mt-1 w-full rounded-md border bg-background px-2 py-1 font-mono text-[11px] leading-snug", r.drop && "line-through")}
+          />
+          {r.error && <p className="text-xs text-destructive">{r.error}</p>}
+        </div>
+      ))}
     </div>
   );
 }
@@ -1707,6 +1807,11 @@ export function planRequest(
     cacheUnsupported?: boolean;
     // To send the form's answers typed.
     inputs?: CatalogInput[];
+    // The values of the preset f picks.
+    preset?: Record<string, unknown>;
+    // The release's form layer, on an upgrade: the form's values are put over
+    // it, so the request carries the whole layer rebuilt.
+    formLayer?: Record<string, unknown>;
   },
 ): PlanRequest {
   const overrides: Record<string, unknown> = {};
@@ -1791,16 +1896,8 @@ export function planRequest(
     overrides.cache = cache;
   }
 
-  // A row with no key tolerates nothing; it is a half-typed row, not a value.
-  const tolerations = f.tolerations
-    .filter((t) => t.key.trim())
-    .map((t) => {
-      const out: Record<string, unknown> = { key: t.key.trim(), operator: t.operator };
-      if (t.operator === "Equal" && t.value.trim()) out.value = t.value.trim();
-      if (t.effect) out.effect = t.effect;
-      return out;
-    });
-  if (tolerations.length) overrides.tolerations = tolerations;
+  const tolerations = f.tolerations.flatMap((t) => tolerationValue(t) ?? []);
+  if (tolerations.length || opts.formLayer?.tolerations !== undefined) overrides.tolerations = tolerations;
 
   // Only the repository: the tag and digest are the catalog's, and a form that
   // wrote the whole image section would drop them.
@@ -1813,6 +1910,8 @@ export function planRequest(
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
 
   setInputOverrides(overrides, opts.inputs, f.inputs);
+  const layer = withPreset(opts.formLayer ? overlay(opts.formLayer, overrides) : overrides, opts.preset);
+  setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
 
   return {
     catalog: opts.catalog || undefined,
@@ -1831,7 +1930,7 @@ export function planRequest(
     createNamespace: f.createNamespace || undefined,
     serviceId: f.serviceId.trim() || undefined,
     localPath: f.localPath.trim() || undefined,
-    overrides,
+    overrides: layer,
   };
 }
 
@@ -1884,6 +1983,7 @@ export function formFromPlan(plan: Plan): Form {
     // The resource the release runs on, so an upgrade stays on it.
     gpuResource: String(((plan.layers?.derived?.model ?? {}) as Record<string, unknown>).gpuResource ?? ""),
     tolerations: tolerationsOf(o),
+    affinity: affinityRules(o),
     replicaCount: str("replicaCount"),
     route: str("modelRoute.nginx.route"),
     image: joinImage(str("image.repository"), str("image.tag")),

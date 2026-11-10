@@ -250,6 +250,28 @@ export function SiteProfile() {
             </Section>
           )}
 
+          {p.presets && Object.keys(p.presets).length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Presets</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Named values a deploy may pick one of, merged into its form values. Edit them in the YAML.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {Object.entries(p.presets).map(([name, preset]) => (
+                  <div key={name} className="space-y-1.5">
+                    <div className="text-sm">
+                      <span className="font-mono font-medium">{name}</span>
+                      {preset.description && <span className="ml-2 text-muted-foreground">{preset.description}</span>}
+                    </div>
+                    <Code lang="yaml">{toYaml(preset.values ?? {})}</Code>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
           {p.extra && Object.keys(p.extra).length > 0 && (
             <Card>
               <CardHeader>

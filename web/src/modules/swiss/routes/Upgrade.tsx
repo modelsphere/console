@@ -31,6 +31,7 @@ import { CatalogBadge, SchemaBadge, releaseCatalog as catalogOfRelease } from "@
 import { movableCatalogs } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
 import { CHECK_MS, inputRows, inputsAnswered, siteSaves } from "@swiss/lib/inputs";
+import { affinityInvalid } from "@swiss/lib/affinity";
 import { SiteSaves, useSiteSaver } from "@swiss/components/SiteSaves";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
@@ -170,6 +171,7 @@ export function Upgrade() {
           fromRelease: release,
           cacheUnsupported: !!cache.unsupported,
           inputs: entry.data?.variant.inputs,
+          formLayer: current.data!.layers?.form,
         }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping
@@ -498,7 +500,7 @@ export function Upgrade() {
         onTab={setTab}
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
-        composeDisabled={!rollbackTo && !inputsAnswered(inputs, checkedInputs)}
+        composeDisabled={!rollbackTo && (!inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity))}
         composeLabel={planM.isPending ? "Composing…" : plan ? "Recompose upgrade" : "Compose upgrade"}
         applyFlags={applyFlags(form)}
         onDiff={setDiff}
