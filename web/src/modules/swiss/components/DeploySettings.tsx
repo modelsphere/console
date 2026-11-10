@@ -4,7 +4,7 @@ import type { ApplyFlags, ClusterInfo, Input as CatalogInput, Plan, PlanRequest,
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
-import { inputProblem, setInputOverrides, type InputRow } from "@swiss/lib/inputs";
+import { inputError, inputProblem, setInputOverrides, type InputRow } from "@swiss/lib/inputs";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
 import {
@@ -323,7 +323,8 @@ export function DeploySettings({
 
           {inputs?.map(({ input, answer, from }) => {
             const value = form.inputs[input.key] ?? "";
-            const problem = inputProblem(input, value);
+            const error = inputError({ input, answer }, value);
+            const problem = error === "required" ? "required" : error && inputProblem(input, value.trim() || answer || "");
             return (
               <Row
                 key={input.key}
@@ -338,13 +339,15 @@ export function DeploySettings({
                         : "unanswered: the variant has no default, and the site profile no answer"
                 }
                 hint={input.description ? `${input.description} (${input.key})` : input.key}
+                aside={`e.g. ${String(input.example)}`}
               >
                 <div className="min-w-0 flex-1">
                   <Suggest
                     value={value}
                     onChange={(v) => onChange({ inputs: { ...form.inputs, [input.key]: v } })}
                     suggestion={answer}
-                    placeholder={answer ?? `e.g. ${String(input.example)}`}
+                    placeholder={answer}
+                    invalid={!!error}
                   />
                   {problem && <p className="mt-1 text-[11px] text-destructive">{problem}</p>}
                 </div>
@@ -848,11 +851,14 @@ function Row({
   note,
   hint,
   caption,
+  aside,
   toggle,
   children,
   muted,
 }: {
   label: string;
+  // Muted text after the label's hint icon, e.g. an input's example.
+  aside?: string;
   note?: string;
   // Longer hover text when note stays short (or when note is absent).
   hint?: string;
@@ -879,6 +885,7 @@ function Row({
             {label}
           </span>
         </HoverHint>
+        {aside && <span className="ml-1.5 break-all text-xs text-muted-foreground">{aside}</span>}
         {caption ? (
           <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{caption}</p>
         ) : null}
@@ -1041,12 +1048,14 @@ function Suggest({
   suggestion,
   placeholder,
   disabled,
+  invalid,
 }: {
   value: string;
   onChange: (v: string) => void;
   suggestion?: string;
   placeholder?: string;
   disabled?: boolean;
+  invalid?: boolean;
 }) {
   const s = useSuggestion(value, suggestion, disabled);
   return (
@@ -1057,7 +1066,8 @@ function Suggest({
         onKeyDown={(e) => accept(e, s.offer, onChange)}
         disabled={disabled}
         placeholder={placeholder}
-        className={cn(s.hint && "pr-11")}
+        aria-invalid={invalid || undefined}
+        className={cn(s.hint && "pr-11", invalid && "border-destructive")}
         {...s.focus}
       />
       {s.hint && <TabHint />}

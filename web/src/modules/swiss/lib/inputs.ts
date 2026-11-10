@@ -28,12 +28,13 @@ export function answerAt(tree: Record<string, unknown> | undefined, key: string)
 }
 
 // The order swissd answers in: the release's form layer (carried forward on upgrade),
-// the site profile, then the input's default.
+// the site profile, the input's default, then the variant's own values.
 export function inputRows(
   inputs: Input[] | undefined,
   profile: SiteProfile | undefined,
   hf: string,
   model: string,
+  variantValues?: Record<string, unknown>,
   release?: Record<string, unknown>,
 ): InputRow[] {
   return (inputs ?? []).map((input) => {
@@ -42,14 +43,15 @@ export function inputRows(
     const v = profile?.inputs?.[input.key];
     const site = v === undefined || v === null ? undefined : typeof v === "string" ? fillTemplate(v, hf, model) : String(v);
     if (site !== undefined) return { input, answer: site, from: "site" };
-    return input.default !== undefined && input.default !== null ? { input, answer: String(input.default), from: "variant" } : { input };
+    if (input.default !== undefined && input.default !== null) return { input, answer: String(input.default), from: "variant" };
+    const base = answerAt(variantValues, input.key);
+    return base !== undefined ? { input, answer: base, from: "variant" } : { input };
   });
 }
 
-// What swissd would refuse a typed answer for. Empty is fine: the row's answer applies.
+// What swissd would refuse an answer for.
 export function inputProblem(input: Input, text: string): string | undefined {
   const t = text.trim();
-  if (!t) return undefined;
   switch (input.type ?? "string") {
     case "integer":
       return /^-?\d+$/.test(t) ? undefined : "a whole number";
@@ -64,6 +66,16 @@ export function inputProblem(input: Input, text: string): string | undefined {
       }
   }
 }
+
+// Why a deploy cannot go with the row's answer, the typed one or else the row's own:
+// it has none, or one the input does not take.
+export function inputError(row: InputRow, text = ""): "required" | "invalid" | undefined {
+  const answer = text.trim() || row.answer;
+  if (!answer) return answer === undefined || inputProblem(row.input, "") ? "required" : undefined;
+  return inputProblem(row.input, answer) ? "invalid" : undefined;
+}
+
+export const inputsAnswered = (rows: InputRow[], answers: Record<string, string>) => rows.every((row) => !inputError(row, answers[row.input.key]));
 
 function typed(input: Input, text: string): unknown {
   switch (input.type ?? "string") {

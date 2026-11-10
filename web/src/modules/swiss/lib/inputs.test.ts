@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Input, SiteProfile } from "./api";
-import { fillTemplate, inputProblem, inputRows, setInputOverrides } from "./inputs";
+import { fillTemplate, inputError, inputProblem, inputRows, inputsAnswered, setInputOverrides } from "./inputs";
 
 const master: Input = {
   key: "storageKVOffload.mooncake.master",
@@ -38,21 +38,47 @@ describe("inputRows", () => {
     expect(inputRows([tuned], site({}), "a/b", "m")).toEqual([{ input: tuned, answer: "tuned:1", from: "variant" }]);
     expect(inputRows([tuned], site({ [master.key]: "site:1" }), "a/b", "m")[0].from).toBe("site");
     expect(inputRows([{ ...port, default: 8000 }], site({}), "a/b", "m")[0].answer).toBe("8000");
+    const values = { storageKVOffload: { mooncake: { master: "tuned:1" } } };
+    expect(inputRows([master], site({}), "a/b", "m", values)).toEqual([{ input: master, answer: "tuned:1", from: "variant" }]);
+    expect(inputRows([tuned], site({}), "a/b", "m", { storageKVOffload: { mooncake: { master: "base:1" } } })[0].answer).toBe("tuned:1");
     expect(inputRows([master], undefined, "a/b", "m")).toEqual([{ input: master }]);
   });
   it("shows an upgrade the release's own answer over the site's", () => {
     const release = { storageKVOffload: { mooncake: { master: "mine:1" } } };
-    expect(inputRows([master], site({ [master.key]: "site:1" }), "a/b", "m", release)[0]).toEqual({ input: master, answer: "mine:1", from: "release" });
+    expect(inputRows([master], site({ [master.key]: "site:1" }), "a/b", "m", undefined, release)[0]).toEqual({ input: master, answer: "mine:1", from: "release" });
   });
 });
 
 describe("inputProblem", () => {
-  it("checks a typed answer the way swissd will", () => {
-    expect(inputProblem(master, "")).toBeUndefined();
+  it("checks an answer the way swissd will", () => {
+    expect(inputProblem(master, "")).toBe("must match [^\\s:/]+:[0-9]+");
+    expect(inputProblem({ ...master, pattern: undefined }, "")).toBeUndefined();
     expect(inputProblem(master, "mc:50051")).toBeUndefined();
     expect(inputProblem(master, "no-port")).toBe("must match [^\\s:/]+:[0-9]+");
     expect(inputProblem(port, "80.5")).toBe("a whole number");
     expect(inputProblem({ ...port, type: "boolean" }, "yes")).toBe("true or false");
+  });
+});
+
+describe("inputError", () => {
+  it("is required with no answer, typed or the row's", () => {
+    expect(inputError({ input: master })).toBe("required");
+    expect(inputError({ input: master }, "  ")).toBe("required");
+    expect(inputError({ input: master, answer: "" })).toBe("required");
+    expect(inputError({ input: port, answer: "" })).toBe("required");
+    expect(inputError({ input: { ...master, pattern: undefined }, answer: "" })).toBeUndefined();
+  });
+  it("takes the row's answer when nothing is typed, and the typed one over it", () => {
+    expect(inputError({ input: master, answer: "site:1" })).toBeUndefined();
+    expect(inputError({ input: master }, "mc:50051")).toBeUndefined();
+    expect(inputError({ input: master, answer: "site:1" }, "no-port")).toBe("invalid");
+    expect(inputError({ input: master, answer: "no-port" })).toBe("invalid");
+  });
+  it("answers every row before a compose", () => {
+    const rows = [{ input: master, answer: "site:1" }, { input: port }];
+    expect(inputsAnswered(rows, {})).toBe(false);
+    expect(inputsAnswered(rows, { [port.key]: "8000" })).toBe(true);
+    expect(inputsAnswered([], {})).toBe(true);
   });
 });
 

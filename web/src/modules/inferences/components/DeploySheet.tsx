@@ -34,6 +34,7 @@ import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
 import { deployCapacity, gpuShort, pickableProducts, productChoices, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { isChartRange, movableCatalogs } from "@swiss/lib/upgrade";
+import { inputRows, inputsAnswered } from "@swiss/lib/inputs";
 import { cacheCard } from "@swiss/lib/cache";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { useT } from "@/modules/inferences/i18n";
@@ -195,12 +196,13 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // A product the variant does not list is one swissd takes only as forced.
   const forceGpuProducts = unlistedProducts(v?.requires.gpuProduct, form.gpuProducts).length > 0;
   const change = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
+  const inputs = inputRows(v?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", modelName ?? "", v?.values, upgrade ? current.data?.layers?.form : undefined);
   // What a compose of f sends; the Override YAML editor's preview sends the same.
   const requestFor = (f: Form) => planRequest(
     { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
     upgrade
-      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts }
-      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts },
+      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs }
+      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs },
     profile.data?.profile,
   );
   // The chart's values and swissd's layers for this form, without the
@@ -488,6 +490,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               catalogRoute={catalogRoute}
               idPrefix={ID_PREFIX}
               helmValues={readOnly ? undefined : valuesSource}
+              inputs={inputs}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />
           </>
@@ -516,7 +519,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         {step === "form" ? (
           <>
             <SheetCancelButton />
-            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending}>
+            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || !inputsAnswered(inputs, form.inputs)}>
               {compose.isPending ? t("deploy.review.composing") : t("deploy.review.compose")}
             </Button>
           </>

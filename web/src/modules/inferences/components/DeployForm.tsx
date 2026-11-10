@@ -25,6 +25,7 @@ import { Plus, RefreshCw, X } from "lucide-react";
 import type { ClusterInfo } from "@swiss/lib/api";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
+import { inputError, type InputRow } from "@swiss/lib/inputs";
 import { effective, imageChoices, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
@@ -59,9 +60,11 @@ export interface DeployFormProps {
   // The chart's values and swissd's layers for the Override YAML editor.
   helmValues?: HelmValuesSource;
   recovery?: ReactNode;
+  // The variant's inputs, each with the answer that applies when its field is left empty.
+  inputs?: InputRow[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs }: DeployFormProps) {
   const t = useT();
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
@@ -149,6 +152,23 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           <FloatingField value={shown(form.localPath, defaults.localPath || defaults.localPathTemplate)} label={f("localPath")} hint={f("localPathHint")}>
             <Suggest value={form.localPath} onChange={(localPath) => onChange({ localPath })} suggestion={defaults.localPath} placeholder={defaults.localPath || defaults.localPathTemplate} />
           </FloatingField>
+          {inputs?.map(({ input, answer }) => {
+            const value = form.inputs[input.key] ?? "";
+            const error = inputError({ input, answer }, value);
+            return (
+              <FloatingField
+                key={input.key}
+                value={shown(value, answer)}
+                label={input.title}
+                required
+                hint={input.description ? `${input.description} (${input.key})` : input.key}
+                aside={t("deploy.fields.inputExample", { example: String(input.example) })}
+                error={error && (error === "required" ? t("deploy.fields.inputRequired") : t(`deploy.fields.inputProblem.${input.type ?? "string"}`, { pattern: input.pattern ?? "" }))}
+              >
+                <Suggest value={value} onChange={(v) => onChange({ inputs: { ...form.inputs, [input.key]: v } })} suggestion={answer} placeholder={answer} />
+              </FloatingField>
+            );
+          })}
           {defaults.image && (
             <FloatingField
               layout="inline"

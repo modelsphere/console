@@ -567,6 +567,13 @@
       "scheduler": "调度器",
       "localPath": "模型路径",
       "localPathHint": "覆盖站点配置里的路径模板",
+      "inputExample": "例如 {example}",
+      "inputRequired": "必填：变体没有默认值，站点配置也没有答案",
+      "inputProblem": {
+        "string": "需匹配 {pattern}",
+        "integer": "请输入整数",
+        "boolean": "请输入 true 或 false"
+      },
       "image": "覆盖镜像",
       "imageHint": "关闭时使用目录里的 tag 和站点的镜像仓库",
       "imageValue": "镜像（repository:tag）",

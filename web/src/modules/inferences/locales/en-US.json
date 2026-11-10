@@ -578,6 +578,13 @@
       "scheduler": "Scheduler",
       "localPath": "Model path",
       "localPathHint": "Overrides the site profile's path template",
+      "inputExample": "e.g. {example}",
+      "inputRequired": "Required: no default or site answer",
+      "inputProblem": {
+        "string": "Must match {pattern}",
+        "integer": "Enter a whole number",
+        "boolean": "Enter true or false"
+      },
       "image": "Override image",
       "imageHint": "Off uses the catalog's tag and the site's mirror",
       "imageValue": "Image (repository:tag)",

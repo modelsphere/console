@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { DeployForm } from "./DeployForm";
 import { EMPTY, planRequest, type Form } from "@swiss/components/DeploySettings";
 import type { CacheCard } from "@swiss/lib/cache";
+import type { InputRow } from "@swiss/lib/inputs";
 import type { RouteOptions } from "@/modules/inferences/routeOptions";
 import en from "@/modules/inferences/locales/en-US.json";
 import zh from "@/modules/inferences/locales/zh-CN.json";
@@ -217,5 +218,40 @@ describe("GPU capacity", () => {
     expect(has(html, "gpuCapacityNone")).toBe(false);
     expect(has(html, "gpuCapacityUsageUnknown")).toBe(true);
     expect(html).toContain("24");
+  });
+});
+
+describe("variant inputs", () => {
+  const master = { key: "storageKVOffload.mooncake.master", title: "Mooncake master", description: "host:port of the master", pattern: "[^\\s:/]+:[0-9]+", example: "mooncake-master.example:50051" };
+  const render = (form: Form, inputs: InputRow[]) =>
+    renderToStaticMarkup(
+      <DeployForm
+        form={form} onChange={() => {}} submitted={false} target={null} defaults={{}} gpuOptions={[]} inputs={inputs}
+        expanded={{ basic: false, resources: true, routing: false, advanced: false }}
+        onExpand={() => {}} idPrefix="test-"
+      />,
+    );
+  it("renders each input as its variant declares it", () => {
+    const html = render({ ...EMPTY, serviceId: "model" }, [{ input: master }]);
+    expect(html).toContain("Mooncake master");
+    expect([en, zh].some((l) => html.includes(l.deploy.fields.inputExample.replace("{example}", master.example)))).toBe(true);
+    expect(html).not.toContain(`placeholder="${master.example}"`);
+    expect(html).not.toMatch(/placeholder="[^"]*mooncake-master\.example/);
+    expect([en, zh].some((l) => html.includes(l.deploy.fields.inputRequired))).toBe(true);
+    expect(html).toContain('aria-invalid="true"');
+  });
+  it("shows the answer that applies when the field is left empty", () => {
+    const html = render({ ...EMPTY, serviceId: "model" }, [{ input: master, answer: "site.svc:50051", from: "site" }]);
+    expect(html).toContain('placeholder="site.svc:50051"');
+    expect(html).not.toContain('aria-invalid="true"');
+  });
+  it("says when a typed answer does not match the pattern", () => {
+    const html = render({ ...EMPTY, serviceId: "model", inputs: { [master.key]: "no-port" } }, [{ input: master }]);
+    expect(html).toContain('value="no-port"');
+    expect([en, zh].some((l) => html.includes(l.deploy.fields.inputProblem.string.replace(" {pattern}", "")))).toBe(true);
+  });
+  it("sends a typed answer at the input's key", () => {
+    const form = { ...EMPTY, serviceId: "model", inputs: { [master.key]: "mine.svc:50051" } };
+    expect(planRequest(form, { model: "model", inputs: [master] }).overrides).toMatchObject({ storageKVOffload: { mooncake: { master: "mine.svc:50051" } } });
   });
 });

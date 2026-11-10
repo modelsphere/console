@@ -12,7 +12,7 @@ import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog }
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { isChartRange } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
-import { inputRows } from "@swiss/lib/inputs";
+import { inputRows, inputsAnswered } from "@swiss/lib/inputs";
 import { deployCapacity, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { InstallMethodChoice } from "@swiss/components/InstallMethod";
@@ -160,6 +160,7 @@ export function Deploy() {
     variant,
     { name: variant.chart.name, version: chart.resolved ?? variant.chart.version },
   );
+  const inputs = inputRows(variant.inputs, profile.data?.profile, m.source?.hf ?? "", name, variant.values);
 
   if (!cluster.data?.allowDeploy) {
     return (
@@ -266,7 +267,7 @@ export function Deploy() {
         serviceIdPlaceholder={name}
         localPathDefault={model.data.localPath}
         localPathPlaceholder={model.data.pathTemplate}
-        inputs={inputRows(model.data.variant.inputs, profile.data?.profile, model.data.model.source?.hf ?? "", name)}
+        inputs={inputs}
         image={imageOf(variant, model.data.imageRepository)}
         supportedGPUs={variant?.requires.gpuProduct}
         clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
@@ -289,7 +290,7 @@ export function Deploy() {
         onTab={setTab}
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
-        composeDisabled={!form.serviceId}
+        composeDisabled={!form.serviceId || !inputsAnswered(inputs, form.inputs)}
         applyWith={method}
         applyFlags={applyFlags(form)}
         onDiff={setDiff}

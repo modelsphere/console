@@ -30,7 +30,7 @@ import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, SchemaBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
 import { movableCatalogs } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
-import { inputRows } from "@swiss/lib/inputs";
+import { inputRows, inputsAnswered } from "@swiss/lib/inputs";
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
 import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { VariantCard } from "@swiss/components/VariantCard";
@@ -237,6 +237,7 @@ export function Upgrade() {
   // What the pipeline acts on: a composed plan on an upgrade, the archive on a
   // rollback. Nothing else about the page differs.
   const target = rollbackTo ? (archived.data ?? null) : plan;
+  const inputs = inputRows(pin?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", current.data?.source.model ?? "", pin?.values, current.data?.layers?.form);
 
   if (!cluster.data?.allowDeploy) {
     return (
@@ -470,13 +471,7 @@ export function Upgrade() {
         }
         localPathDefault={entry.data?.localPath}
         localPathPlaceholder={entry.data?.pathTemplate}
-        inputs={inputRows(
-          entry.data?.variant.inputs,
-          profile.data?.profile,
-          entry.data?.model.source?.hf ?? "",
-          current.data?.source.model ?? "",
-          current.data?.layers?.form,
-        )}
+        inputs={inputs}
         image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
         cache={cache}
         lockIdentity
@@ -494,6 +489,7 @@ export function Upgrade() {
         onTab={setTab}
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
+        composeDisabled={!rollbackTo && !inputsAnswered(inputs, form.inputs)}
         composeLabel={planM.isPending ? "Composing…" : plan ? "Recompose upgrade" : "Compose upgrade"}
         applyFlags={applyFlags(form)}
         onDiff={setDiff}
