@@ -78,10 +78,10 @@ describe("affinity rules", () => {
     expect((p as typeof layer).pd.decode.affinityReplace.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution).toEqual([]);
   });
 
-  it("leaves emptied top-level required terms to swissd when products are picked", () => {
+  it("sends emptied top-level required terms as [] when products are picked, for swissd to fill", () => {
     const o = {};
     setAffinity(o, drop((r) => r.scope === "affinity"), true);
-    expect(o).not.toHaveProperty("affinity");
+    expect((o as typeof layer).affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms).toEqual([]);
   });
 
   it("edits a rule as YAML, keeping a string a string", () => {
