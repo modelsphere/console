@@ -170,11 +170,6 @@ export function videoGpus(f: VideoForm): { perPod: Record<Pool, number>; total: 
   return { perPod, total, ceiling };
 }
 
-// effectiveRoute is the path the route publishes on. swissd reports a route it
-// cannot read as the service ID, so an empty field sends exactly that.
-export function effectiveRoute(f: VideoForm): string {
-  return f.route.trim() || f.serviceId.trim();
-}
 
 export type VideoProblem = { code: "serviceId" } | { code: "noPool" } | { code: "maxBelowMin"; pool: Pool };
 
@@ -219,7 +214,8 @@ export function videoOverrides(f: VideoForm): Tree {
   if (f.storageSize.trim()) set(out, KEYS.storageSize, f.storageSize.trim());
   if (f.databaseUrl.trim()) set(out, KEYS.databaseUrl, f.databaseUrl.trim());
   set(out, KEYS.modelRouteEnabled, f.modelRoute);
-  if (f.modelRoute && effectiveRoute(f)) set(out, KEYS.route, effectiveRoute(f));
+  // Empty is the service ID, which already names the route.
+  if (f.modelRoute && f.route.trim()) set(out, KEYS.route, f.route.trim());
   const tolerations = f.tolerations.flatMap((t) => tolerationValue(t) ?? []);
   set(out, KEYS.tolerations, tolerations);
   if (f.priorityClassName.trim()) set(out, KEYS.priorityClassName, f.priorityClassName.trim());
@@ -279,6 +275,7 @@ export function videoFormFromPlan(plan: Plan, editsYAML = ""): VideoForm {
   const products = get(o, KEYS.gpuProduct);
   const route = str(get(o, KEYS.route));
   const serviceId = str(get(o, "serviceId")) || plan.release.name;
+  // Earlier forms wrote the service ID as the route; it reads back as empty.
   return {
     ...VIDEO_EMPTY,
     serviceId,

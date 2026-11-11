@@ -18,9 +18,11 @@ export const KEYS = {
     replicaCount: `pools.${p}.replicaCount`,
     tpSize: `pools.${p}.sglang.args.tpSize`,
     ulyssesDegree: `pools.${p}.sglang.args.ulyssesDegree`,
-    autoscaleMin: `pools.${p}.autoscale.min`,
-    autoscaleMax: `pools.${p}.autoscale.max`,
-    autoscaleMaxDepth: `pools.${p}.autoscale.maxDepth`,
+    // The pool's JobSLORequirement. No maxReplicas is the pool not scaled. The
+    // pool's LLMScaler bounds (pools.<p>.scaler.*) are backstops and keep the chart's.
+    autoscaleMin: `pools.${p}.sloRequirement.minReplicas`,
+    autoscaleMax: `pools.${p}.sloRequirement.maxReplicas`,
+    autoscaleMaxDepth: `pools.${p}.sloRequirement.queue.maxDepth`,
   }),
   turbo: "pools.ref2va.turbo.enabled",
   storageClass: "sharedStorage.storageClass",
@@ -30,8 +32,10 @@ export const KEYS = {
   scaler: "scaler.enabled",
   sloRequirement: "sloRequirement.enabled",
   modelRouteEnabled: "modelRoute.enabled",
-  route: "modelRoute.route",
-  // Scheduling of the GPU pods; the router and a CPU-only server keep their own.
+  // Written only when typed: the chart and swissd both fall back to serviceId.
+  route: "modelRoute.nginx.route",
+  // Scheduling of the GPU pods, which the chart reads over the top-level keys;
+  // the router and a CPU-only server keep their own.
   tolerations: "sglang.tolerations",
   priorityClassName: "sglang.priorityClassName",
   schedulerName: "sglang.schedulerName",
@@ -46,7 +50,6 @@ export const DEFAULTS = {
   autoscaleMaxDepth: { fl2va: 5, ref2va: 2 } as Record<Pool, number>,
   turbo: true,
   storageSize: "500Gi",
-  route: "minimax-h3",
   // The chart's own sglang.tolerations. The form sends the whole list, which
   // replaces the chart's, so it starts from it.
   tolerations: [{ key: "nvidia.com/gpu", operator: "Exists" as const, value: "", effect: "NoSchedule" }],

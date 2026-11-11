@@ -314,8 +314,9 @@ export function VideoSettings({
 const EDITS_PLACEHOLDER = `# last word, any key
 server:
   config:
-    # download links point back at H3; behind the route, give it the route's URL
-    publicBaseUrl: https://gateway.example.com/minimax-h3`;
+    # download links point back at H3; __ROUTE__ is the route name, so a site
+    # profile can set this once for every release
+    publicBaseUrl: https://gateway.example.com/__ROUTE__`;
 
 function problemText(p: VideoProblem): string {
   if (p.code === "noPool") return "Enable at least one pool.";

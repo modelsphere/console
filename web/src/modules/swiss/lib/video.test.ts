@@ -34,22 +34,27 @@ describe("videoOverrides", () => {
     expect(o.scaler).toEqual({ enabled: true });
     expect(o.sloRequirement).toEqual({ enabled: true });
     const pools = o.pools as Record<string, Record<string, unknown>>;
-    expect(pools.fl2va.autoscale).toEqual({ min: 1, max: 6, maxDepth: 5 });
+    expect(pools.fl2va.sloRequirement).toEqual({ minReplicas: 1, maxReplicas: 6, queue: { maxDepth: 5 } });
     // No maximum is the pool not autoscaled: the key is not written.
-    expect(pools.ref2va.autoscale).toEqual({ min: 1, maxDepth: 2 });
+    expect(pools.ref2va.sloRequirement).toEqual({ minReplicas: 1, queue: { maxDepth: 2 } });
+    // The LLMScaler bounds stay the chart's.
+    expect(pools.fl2va.scaler).toBeUndefined();
   });
 
   it("writes no autoscale keys while autoscaling is off", () => {
     const o = videoOverrides(withPool(form(), "fl2va", { autoscaleMax: "6" })) as { pools: Record<string, Record<string, unknown>> };
-    expect(o.pools.fl2va.autoscale).toBeUndefined();
+    expect(o.pools.fl2va.sloRequirement).toBeUndefined();
   });
 
   it("sends the database URL, storage class and route only when given", () => {
     const o = videoOverrides(form({ databaseUrl: " postgresql://u:p@db/x ", storageClass: "cephfs", modelRoute: true })) as Record<string, Record<string, unknown>>;
     expect(o.database).toEqual({ url: "postgresql://u:p@db/x" });
     expect(o.sharedStorage).toEqual({ storageClass: "cephfs", size: "500Gi" });
-    // An empty route field publishes on the service ID, which is what swissd reports.
-    expect(o.modelRoute).toEqual({ enabled: true, route: "h3" });
+    // An empty route field writes no route: the chart and swissd both take the service ID.
+    expect(o.modelRoute).toEqual({ enabled: true });
+    expect(videoOverrides(form({ modelRoute: true, route: "video" })).modelRoute).toEqual({ enabled: true, nginx: { route: "video" } });
+    // A typed route under a disabled switch publishes nothing.
+    expect(videoOverrides(form({ route: "video" })).modelRoute).toEqual({ enabled: false });
   });
 
   it("puts scheduling on the GPU pods", () => {

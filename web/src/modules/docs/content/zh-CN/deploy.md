@@ -47,6 +47,8 @@
 
 视频 release 提供的是任务接口而非对话接口：访问卡片给出提交任务(`POST /v2/video_generation`)、查询状态(`GET /v2/query/video_generation/<task_id>`)和下载结果(`GET /v2/video_generation/<task_id>/content`,无需 key)的示例。它不会出现在 Playground 中，也没有可编辑的 SLO。
 
+下载链接指回 H3 本身，所以经网关对外时，chart 需要把 `server.config.publicBaseUrl` 设为路由的公网地址。值里的 `__ROUTE__` 会被替换成 release 的路由名，运维可以在站点配置的额外值里为整个站点设置一次，例如 `https://gateway.example.com/__ROUTE__`。不设置时，任务完成后返回的 `content.url` 指向客户端访问不到的地址。
+
 ## 生成中断恢复
 
 在部署或升级表单的 **路由 → 生成中断恢复** 中开启，填写权重对应的 **实际模型**，例如 `kimi-k3` 或 `glm-5.3`。它用于选择续写策略，不是客户端调用时使用的服务模型名。

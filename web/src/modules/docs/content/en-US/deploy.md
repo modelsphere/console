@@ -48,6 +48,8 @@ A variant whose engine is `video` (such as MiniMax H3, chart `minimax-h3`) opens
 
 A video release serves a job API rather than chat: its access card shows how to submit a task (`POST /v2/video_generation`), poll it (`GET /v2/query/video_generation/<task_id>`) and download the result (`GET /v2/video_generation/<task_id>/content`, no key needed). It is not offered in the Playground, and it has no SLO to edit.
 
+Download links point back at H3, so behind the gateway the chart needs `server.config.publicBaseUrl` set to the route's public URL. `__ROUTE__` in the value is replaced by the release's route name, so an operator can set it once for the whole site in the site profile's extra values, for example `https://gateway.example.com/__ROUTE__`. Without it, `content.url` in a finished task points at an address clients cannot reach.
+
 ## Generation recovery
 
 Enable **Routing → Generation recovery** in the deploy or upgrade form. Enter the **Actual model** whose weights are deployed, such as `kimi-k3` or `glm-5.3`. This selects the continuation strategy; it is not the client-facing served name.
