@@ -1,4 +1,6 @@
-import type { GPUSpec, SiteProfile } from "@swiss/lib/api";
+import { parse, stringify } from "yaml";
+import type { GPUSpec, Preset, SiteProfile } from "@swiss/lib/api";
+import { isMap } from "@swiss/lib/formLayer";
 
 export type CatalogError = "required" | "format" | "duplicate";
 
@@ -167,5 +169,51 @@ export function withFeature(defaults: SiteProfile["defaults"], key: FeatureKey, 
   else features[key] = false;
   const next = { ...defaults, features: Object.keys(features).length ? features : undefined };
   if (!next.features) delete next.features;
+  return Object.keys(next).length ? next : undefined;
+}
+
+// A preset as its editor holds it, the values as YAML.
+export interface PresetRow {
+  name: string;
+  description: string;
+  values: string;
+}
+
+export interface PresetErrors {
+  name?: "required" | "duplicate";
+  values?: "yaml" | "map";
+  // The YAML parser's message.
+  yaml?: string;
+}
+
+export const presetRow = (name = "", p?: Preset): PresetRow => ({ name, description: p?.description ?? "", values: p?.values ? stringify(p.values) : "" });
+
+// others: the names of the presets this row is not.
+export function presetErrors(row: PresetRow, others: string[]): PresetErrors {
+  const errs: PresetErrors = {};
+  const name = row.name.trim();
+  if (!name) errs.name = "required";
+  else if (others.includes(name)) errs.name = "duplicate";
+  try {
+    const v: unknown = parse(row.values);
+    if (v != null && !isMap(v)) errs.values = "map";
+  } catch (e) {
+    errs.values = "yaml";
+    errs.yaml = e instanceof Error ? e.message.split("\n")[0] : String(e);
+  }
+  return errs;
+}
+
+export const hasPresetErrors = (e: PresetErrors) => !!(e.name || e.values);
+
+// putPreset stores a row that has no errors, under its name, in place of the
+// preset named from; a profile left with none has no presets at all.
+export function putPreset(presets: SiteProfile["presets"], from: string | undefined, row?: PresetRow): SiteProfile["presets"] {
+  const next = { ...presets };
+  if (from !== undefined) delete next[from];
+  if (row) {
+    const values = parse(row.values) as Preset["values"] | null;
+    next[row.name.trim()] = { ...(row.description.trim() && { description: row.description.trim() }), ...(values && { values }) };
+  }
   return Object.keys(next).length ? next : undefined;
 }

@@ -319,6 +319,11 @@ export interface GPUScan {
   unlabelled: { nodes: number; gpus: number };
 }
 
+export interface Preset {
+  description?: string;
+  values?: Record<string, unknown>;
+}
+
 export interface SiteProfile {
   name: string;
   namespace?: string;
@@ -363,6 +368,8 @@ export interface SiteProfile {
   defaults?: { features?: { cart?: boolean; serviceMonitor?: boolean; sloRequirement?: boolean; scaler?: boolean } };
   // Answers a variant's inputs by chart path; strings take pathTemplate's placeholders.
   inputs?: Record<string, string | number | boolean>;
+  // Named values a deploy may pick one of; the console merges it into the form layer.
+  presets?: Record<string, Preset>;
   nodes?: {
     gpusPerNode?: number;
     // Required by swissd; [] is a site without GPUs.

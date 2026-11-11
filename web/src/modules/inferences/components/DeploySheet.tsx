@@ -35,6 +35,7 @@ import { DiffView } from "@swiss/components/DiffView";
 import { deployCapacity, gpuShort, pickableProducts, productChoices, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { isChartRange, movableCatalogs } from "@swiss/lib/upgrade";
 import { CHECK_MS, inputRows, inputsAnswered, siteSaves, type SiteSave } from "@swiss/lib/inputs";
+import { affinityInvalid } from "@swiss/lib/affinity";
 import { saveSiteAnswers } from "@swiss/lib/siteAnswers";
 import { messageOf, useToast } from "@swiss/components/ui/toast";
 import { useDebounced } from "@swiss/lib/useDebounced";
@@ -210,7 +211,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const requestFor = (f: Form) => planRequest(
     { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
     upgrade
-      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs }
+      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, formLayer: seedPlan?.layers?.form }
       : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs },
     profile.data?.profile,
   );
@@ -511,6 +512,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               inputs={inputs}
               remember={canRemember ? remember : undefined}
               onRemember={(key, on) => setRemember((r) => ({ ...r, [key]: on }))}
+              presets={upgrade ? undefined : profile.data?.profile?.presets}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />
           </>
@@ -540,7 +542,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         {step === "form" ? (
           <>
             <SheetCancelButton />
-            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || !inputsAnswered(inputs, checkedInputs)}>
+            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)}>
               {compose.isPending ? t("deploy.review.composing") : t("deploy.review.compose")}
             </Button>
           </>

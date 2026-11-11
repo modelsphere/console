@@ -6,6 +6,7 @@ import { useT } from "@/modules/inferences/i18n";
 import { fromRows, markDefault, toRows, withNodes, type Row } from "@/modules/inferences/profile-lib";
 import { answersText, parseAnswers } from "@swiss/lib/inputs";
 import { GpuTable } from "@/modules/inferences/components/GpuResources";
+import { PresetTable } from "@/modules/inferences/components/PresetTable";
 import { catalogErrors, FEATURES, featureOn, withFeature, type CatalogError } from "@swiss/lib/profile";
 
 // The copied swiss types predate writable.
@@ -21,7 +22,7 @@ export interface TokenField {
   onChange: (v: string) => void;
 }
 
-const GROUPS = ["placement", "catalog", "model", "inputs", "routing", "auth", "scaler", "pdScale", "defaults", "sites"] as const;
+const GROUPS = ["placement", "catalog", "model", "inputs", "presets", "routing", "auth", "scaler", "pdScale", "defaults", "sites"] as const;
 
 export function ProfileForm({
   value: p,
@@ -131,6 +132,8 @@ export function ProfileForm({
         "inputs",
         <KV label={f("inputs")} hint={f("inputsHint")} value={answersText(p.inputs)} onChange={(o) => set({ inputs: parseAnswers(o) })} />,
       )}
+
+      {group("presets", <PresetTable presets={p.presets} onChange={(presets) => set({ presets })} />)}
 
       {group(
         "routing",
