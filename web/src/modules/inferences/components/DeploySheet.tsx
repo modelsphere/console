@@ -47,10 +47,12 @@ import { SECTIONS, chartChoice, defaultServiceId, pipelineState, serviceIdError,
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
 import type { HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
-import { AdaptivePlanChangedError, composeAdaptivePlan, withAdaptiveConcurrency } from "../adaptive-concurrency";
+import { AdaptivePlanChangedError, composeAdaptivePlan, composeReferencedPlan, isAdaptiveOption, withAdaptiveConcurrency } from "../adaptive-concurrency";
 import { composeRecoveryPlan, composeRecoveryValuesRequest, RecoveryPlanChangedError } from "../recovery-compose";
 import { RecoveryFields } from "./RecoveryFields";
 import { mergeValues, planValues, recoveryError, recoveryInputError, recoverySettings, withRecovery } from "../recovery";
+import { serviceRelationship } from "../service-relationship";
+import { assertProductionBinding, ProductionBindingChangedError } from "../production-binding";
 import { readRouteOptions } from "@/modules/inferences/api";
 
 export type DeployTarget =
@@ -198,14 +200,22 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
 
   const release = upgrade ? target.release : form.serviceId || defaultServiceId(target.model);
   const namespace = upgrade ? target.namespace : form.namespace || cluster.data?.namespace || "";
-  const live = useQuery({ queryKey: ["status", namespace, release], queryFn: () => api.status(namespace, release), enabled: step === "review" && !!release && !!namespace });
+  const live = useQuery({ queryKey: ["status", namespace, release], queryFn: () => api.status(namespace, release), enabled: (upgrade || step === "review") && !!release && !!namespace });
 
   // A product the variant does not list is one swissd takes only as forced.
   const forceGpuProducts = unlistedProducts(v?.requires.gpuProduct, form.gpuProducts).length > 0;
-  const change = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
+  const productionReferenced = upgrade && serviceRelationship(live.data ?? {}).productionReferenced;
+  const adaptiveOnly = upgrade && serviceRelationship(live.data ?? {}).adaptiveOnly;
+  const assignmentBlocked = serviceRelationship(live.data ?? {}).owned || serviceRelationship(live.data ?? {}).assignmentLocked && !adaptiveOnly;
+  const change = (patch: Partial<Form>) => setForm((f) => adaptiveOnly ? {
+    ...f,
+    adaptiveCc: patch.adaptiveCc ?? f.adaptiveCc,
+    adaptiveCcMinFrac: patch.adaptiveCcMinFrac ?? f.adaptiveCcMinFrac,
+    nginxExtras: patch.nginxExtras ? [...f.nginxExtras.filter(row => !isAdaptiveOption(row.key, routeOptions.data)), ...patch.nginxExtras.filter(row => row.key.startsWith("adaptive_cc_"))] : f.nginxExtras,
+  } : { ...f, ...patch });
   const inputs = inputRows(v?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", modelName ?? "", v?.values, upgrade ? current.data?.layers?.form : undefined);
   // A profile swissd did not parse is not written to from here.
-  const canRemember = profile.data?.yaml !== undefined && !profile.data.error && !!cluster.data?.allowDeploy;
+  const canRemember = !adaptiveOnly && profile.data?.yaml !== undefined && !profile.data.error && !!cluster.data?.allowDeploy;
   const saves = canRemember ? siteSaves(inputs, form.inputs, remember) : [];
   // What a compose of f sends; the Override YAML editor's preview sends the same.
   const requestFor = (f: Form) => planRequest(
@@ -220,12 +230,13 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // sheet is open, so saving the overrides and editing them again does not
   // read the chart again.
   const compositionError = (error: unknown) => {
+    if (error instanceof ProductionBindingChangedError) return new Error(t("deploy.fields.productionBindingLocked"));
     if (error instanceof RecoveryPlanChangedError) return new Error(t("deploy.recovery.errors.changedPlan"));
     if (error instanceof AdaptivePlanChangedError) return new Error(t("deploy.fields.adaptiveChanged"));
     return error;
   };
   const valuesForm = { ...form, edits: "" };
-  const valuesRequest = upgrade && !recorded ? undefined : withAdaptiveConcurrency(withRecovery(requestFor(valuesForm), recovery), valuesForm, routeOptions.data);
+  const valuesRequest = adaptiveOnly || (upgrade && !recorded) ? undefined : withAdaptiveConcurrency(withRecovery(requestFor(valuesForm), recovery), valuesForm, routeOptions.data);
   const helmValues = useQuery({
     queryKey: ["helmValues", JSON.stringify(valuesRequest ?? null)],
     queryFn: async () => {
@@ -251,11 +262,19 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const compose = useMutation({
     mutationFn: async () => {
       try {
+        if (adaptiveOnly) {
+          if (!current.data) throw new AdaptivePlanChangedError();
+          return await composeReferencedPlan(current.data, form, routeOptions.data, deployApi.plan);
+        }
         const inputError = recoveryInputError(recovery);
         if (inputError) throw new Error(t(`deploy.recovery.errors.${inputError}`));
         const proposed = await composeRecoveryPlan(requestFor(form), recovery, (request) => composeAdaptivePlan(request, form, routeOptions.data, deployApi.plan, catalogName), catalogName);
         const invalid = recoveryError(proposed, recovery);
         if (invalid) throw new Error(t(`deploy.recovery.errors.${invalid}`));
+        if (productionReferenced) {
+          if (!current.data) throw new ProductionBindingChangedError();
+          assertProductionBinding(current.data, proposed);
+        }
         return proposed;
       } catch (error) {
         throw compositionError(error);
@@ -306,10 +325,10 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     compose.mutate();
   };
 
-  const readOnly = cluster.data && !cluster.data.allowDeploy;
+  const readOnly = !cluster.data?.allowDeploy || assignmentBlocked || (upgrade && (live.isPending || !!live.error));
   // An upgrade waits for the profile too: it decides Monitor (planRequest).
-  const loading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
-  const error = cluster.error ?? current.error ?? entry.error;
+  const loading = cluster.isPending || (upgrade && current.isPending) || (!adaptiveOnly && (profile.isPending || entry.isPending));
+  const error = cluster.error ?? current.error ?? (adaptiveOnly ? null : entry.error);
   const keepOption = (label: string) => ({ value: KEEP, label });
 
   const targetFields = (
@@ -471,6 +490,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
             <AlertDescription>{t("deploy.review.readOnly")}</AlertDescription>
           </Alert>
         )}
+        {productionReferenced && <Alert><AlertDescription>{t("deploy.fields.productionBindingLocked")}</AlertDescription></Alert>}
+        {adaptiveOnly && <Alert><AlertDescription>{t("deploy.fields.assignedAdaptiveOnly")}</AlertDescription></Alert>}
         {routeOptions.error && (
           <Alert variant="warning"><TriangleAlert /><AlertDescription>{t("deploy.routeOptions.error", { error: routeOptions.error.message })}</AlertDescription></Alert>
         )}
@@ -490,8 +511,10 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               form={form}
               onChange={change}
               upgrade={upgrade}
+              adaptiveOnly={adaptiveOnly}
+              bindingLocked={productionReferenced}
               submitted={submitted}
-              recovery={<RecoveryFields settings={recovery} onChange={(patch) => setRecoveryPatch((previous) => ({ ...previous, ...patch }))} />}
+              recovery={<RecoveryFields disabled={adaptiveOnly} settings={recovery} onChange={(patch) => setRecoveryPatch((previous) => ({ ...previous, ...patch }))} />}
               target={targetFields}
               cluster={cluster.data}
               defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), cache }}
@@ -508,7 +531,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               routeOptions={routeOptions.isSuccess ? routeOptions.data : undefined}
               catalogRoute={catalogRoute}
               idPrefix={ID_PREFIX}
-              helmValues={readOnly ? undefined : valuesSource}
+              helmValues={readOnly || adaptiveOnly ? undefined : valuesSource}
               inputs={inputs}
               remember={canRemember ? remember : undefined}
               onRemember={(key, on) => setRemember((r) => ({ ...r, [key]: on }))}
@@ -526,7 +549,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               diff={diff}
               diffing={dryRun.isPending}
               diffError={dryRun.error?.message}
-              state={state}
+              state={adaptiveOnly ? { ...state, canForce: false } : state}
               note={note}
               onNote={setNote}
               force={force}
@@ -542,7 +565,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         {step === "form" ? (
           <>
             <SheetCancelButton />
-            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)}>
+            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || (!adaptiveOnly && (!inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)))}>
               {compose.isPending ? t("deploy.review.composing") : t("deploy.review.compose")}
             </Button>
           </>

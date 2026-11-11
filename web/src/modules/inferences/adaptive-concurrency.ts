@@ -50,6 +50,28 @@ export async function composeAdaptivePlan(request: PlanRequest, form: Form, opti
 export function sameAdaptiveBaseline(before: Plan, after: Plan, options?: RouteOptions | null): boolean {
   return samePlanBaseline(before, after, (layers) => {
     const values = routeValues(layers.form ?? {});
-    for (const key of Object.keys(values)) if (isAdaptiveOption(key, options)) delete values[key];
+    for (const key of Object.keys(values)) if (key === "adaptive_cc" || isAdaptiveOption(key, options)) delete values[key];
+    const form = object(layers.form);
+    const route = object(form.modelRoute);
+    const nginx = object(route.nginx);
+    if (!Object.keys(values).length) delete nginx.values;
+    if (!Object.keys(nginx).length) delete route.nginx;
+    if (!Object.keys(route).length) delete form.modelRoute;
+    if (!Object.keys(form).length) delete layers.form;
   });
+}
+
+
+export async function composeReferencedPlan(live: Plan, form: Form, options: RouteOptions | null | undefined, compose: (request: PlanRequest) => Promise<Plan>): Promise<Plan> {
+ const previous = routeValues(live.layers?.form ?? {});
+ const values: Tree = {};
+ for (const key of Object.keys(previous)) if (key === "adaptive_cc" || isAdaptiveOption(key, options)) values[key] = null;
+ values.adaptive_cc = String(form.adaptiveCc);
+ if (form.adaptiveCc) {
+  if (form.adaptiveCcMinFrac.trim()) values.adaptive_cc_min_frac = form.adaptiveCcMinFrac.trim();
+  for (const row of form.nginxExtras) if (isAdaptiveOption(row.key, options) && row.value.trim()) values[row.key] = row.value.trim();
+ }
+ const proposed = await compose({ reuseSource: true, fromRelease: live.release.name, namespace: live.release.namespace, overrides: { modelRoute: { nginx: { values } } } });
+ if (!sameAdaptiveBaseline(live, proposed, options)) throw new AdaptivePlanChangedError();
+ return proposed;
 }

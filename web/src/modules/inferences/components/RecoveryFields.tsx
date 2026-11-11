@@ -2,7 +2,7 @@ import { FieldInput, FloatingField, Switch } from "@modelsphere/ui";
 import { useT } from "../i18n";
 import type { RecoverySettings } from "../recovery";
 
-export function RecoveryFields({ settings, onChange }: { settings: RecoverySettings; onChange: (patch: Partial<RecoverySettings>) => void }) {
+export function RecoveryFields({ settings, onChange, disabled }: { settings: RecoverySettings; disabled?: boolean; onChange: (patch: Partial<RecoverySettings>) => void }) {
   const t = useT();
   return (
     <FloatingField
@@ -20,16 +20,16 @@ export function RecoveryFields({ settings, onChange }: { settings: RecoverySetti
             <FieldInput value={settings.idleTimeout} inputMode="decimal" onChange={(event) => onChange({ idleTimeout: event.target.value })} />
           </FloatingField>
           <FloatingField layout="inline" label={t("deploy.recovery.resume")} hint={t("deploy.recovery.resumeHint")}>
-            <Switch aria-label={t("deploy.recovery.resume")} checked={settings.resumeEnabled} onCheckedChange={(value) => onChange({ resumeEnabled: value })} />
+            <Switch disabled={disabled} aria-label={t("deploy.recovery.resume")} checked={settings.resumeEnabled} onCheckedChange={(value) => onChange({ resumeEnabled: value })} />
           </FloatingField>
           <FloatingField layout="inline" label={t("deploy.recovery.buffer")} hint={t("deploy.recovery.bufferHint")}>
-            <Switch aria-label={t("deploy.recovery.buffer")} checked={settings.bufferToolCalls} onCheckedChange={(value) => onChange({ bufferToolCalls: value })} />
+            <Switch disabled={disabled} aria-label={t("deploy.recovery.buffer")} checked={settings.bufferToolCalls} onCheckedChange={(value) => onChange({ bufferToolCalls: value })} />
           </FloatingField>
           <p className="text-xs text-muted-foreground">{t("deploy.recovery.compatibility")}</p>
         </div>
       }
     >
-      <Switch aria-label={t("deploy.recovery.title")} checked={settings.enabled} onCheckedChange={(value) => onChange({ enabled: value })} />
+      <Switch disabled={disabled} aria-label={t("deploy.recovery.title")} checked={settings.enabled} onCheckedChange={(value) => onChange({ enabled: value })} />
     </FloatingField>
   );
 }

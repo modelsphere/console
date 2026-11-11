@@ -80,7 +80,7 @@
   "capability": {
     "loading": "正在加载功能配置…",
     "failed": "无法加载功能配置。",
-    "unconfigured": "此 Console 尚未配置 Canary。",
+    "unconfigured": "此 Console 尚未配置该模块。",
     "forbidden": "你没有访问此页面的权限。",
     "retry": "重试"
   }
