@@ -41,13 +41,19 @@
 |---|---|
 | 池 | FL2VA(文生视频、首尾帧生视频)与 Ref2VA(参考素材生视频)各自开关，分别设置副本数、TP 并行度和 Ulysses 并行度。每个 Pod 的 GPU 数 = TP × Ulysses,表单会显示总数 |
 | Turbo | 仅 Ref2VA:8 步 Turbo LoRA,关闭则使用基座模型 |
-| 自动扩缩 | 一个开关同时启用扩缩器和 SLO 要求。每个池可设最小副本数、最大副本数、最大队列深度。**最大副本数留空即该池不自动扩缩** |
+| 自动扩缩 / SLO | 一个开关同时启用扩缩器和 SLO 要求。chart 为每个池创建一个 SLO,最小副本数为 1、**没有最大副本数，因此此时还不会扩缩** |
 | 存储 | 共享素材盘：存储类必须支持 ReadWriteMany,留空使用集群默认 |
 | 数据库 URL | 可选，留空使用 chart 默认值；升级时留空保留 release 原有的值 |
 
-视频 release 提供的是任务接口而非对话接口：访问卡片给出提交任务(`POST /v2/video_generation`)、查询状态(`GET /v2/query/video_generation/<task_id>`)和下载结果(`GET /v2/video_generation/<task_id>/content`,无需 key)的示例。它不会出现在 Playground 中，也没有可编辑的 SLO。
+要让某个池自动扩缩，在 release 就绪后打开 **编辑 SLO**,每个池一节：
 
-下载链接指回 H3 本身，所以经网关对外时，chart 需要把 `server.config.publicBaseUrl` 设为路由的公网地址。值里的 `__ROUTE__` 会被替换成 release 的路由名，运维可以在站点配置的额外值里为整个站点设置一次，例如 `https://gateway.example.com/__ROUTE__`。不设置时，任务完成后返回的 `content.url` 指向客户端访问不到的地址。
+- **副本数上下限**:最小值(副本数或并发数)与最大值(副本数)。最大值留空即不自动扩缩。保存只会新增或修改字段，要重新关闭某个池的扩缩，请用 **重置** 恢复该池 SLO 的 chart 默认值。
+- **最大队列深度**:每个副本排队和运行中的任务数超过该值时扩容。
+- **优先级**:高或普通。队列查询(PromQL)只读显示，由 chart 决定。
+
+视频 release 提供的是任务接口而非对话接口：访问卡片给出提交任务(`POST /v2/video_generation`)、查询状态(`GET /v2/query/video_generation/<task_id>`)和下载结果(`GET /v2/video_generation/<task_id>/content`,无需 key)的示例。**检查** 会探测路由的 `/readyz`,只有路由器、server 和后面的数据库都就绪时才会通过。它不会出现在 Playground 中。
+
+下载链接指回 H3 本身。站点配置设置了 `route.gateway` 时，release 路由对应的网关地址会自动传给 chart;在覆盖 YAML 中显式设置的 `server.config.publicBaseUrl` 仍然优先。
 
 ## 生成中断恢复
 

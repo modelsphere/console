@@ -1,4 +1,4 @@
-import type { ApplyFlags, Input as CatalogInput, Plan, PlanRequest } from "@swiss/lib/api";
+import type { ApplyFlags, Input as CatalogInput, JobSLORequirementSpec, ObjectResult, Plan, PlanRequest } from "@swiss/lib/api";
 import { overlay, withPreset } from "@swiss/lib/formLayer";
 import { setInputOverrides } from "@swiss/lib/inputs";
 import { DEFAULTS, KEYS, POOLS, VIDEO_ENGINE, type Pool } from "@swiss/lib/videoChart";
@@ -21,16 +21,34 @@ export function isVideoDeployment(d: { engine?: string; chart?: string }): boole
   return !LLM_CHARTS.includes(name);
 }
 
+export interface JobSLO {
+  serviceId: string;
+  // The pool, when the service id ends in one; a label only.
+  pool?: Pool;
+  spec?: JobSLORequirementSpec;
+  result: ObjectResult;
+}
+
+// jobSLOs is a video release's SLOs, one per pool, as its objects list them.
+// The service id is read off each object rather than built from the release
+// name: it is the chart's to choose.
+export function jobSLOs(objects: ObjectResult[] | undefined): JobSLO[] {
+  return (objects ?? [])
+    .filter((o) => o.ref.kind === "JobSLORequirement")
+    .map((o) => {
+      const spec = o.live?.spec as JobSLORequirementSpec | undefined;
+      const serviceId = spec?.serviceId || o.ref.name;
+      return { serviceId, pool: POOLS.find((p) => serviceId.endsWith(`-${p}`)), spec, result: o };
+    })
+    .sort((a, b) => a.serviceId.localeCompare(b.serviceId));
+}
+
 // Number fields are kept as typed; empty leaves the chart's value.
 export interface PoolForm {
   enabled: boolean;
   replicaCount: string;
   tpSize: string;
   ulyssesDegree: string;
-  autoscaleMin: string;
-  // Empty is the pool not autoscaled: no maximum, no scaling.
-  autoscaleMax: string;
-  autoscaleMaxDepth: string;
 }
 
 export interface VideoForm {
@@ -58,21 +76,18 @@ export interface VideoForm {
   skipSchemaValidation: boolean;
 }
 
-const pool = (p: Pool): PoolForm => ({
+const pool = (): PoolForm => ({
   enabled: true,
   replicaCount: String(DEFAULTS.replicaCount),
   tpSize: String(DEFAULTS.tpSize),
   ulyssesDegree: String(DEFAULTS.ulyssesDegree),
-  autoscaleMin: String(DEFAULTS.autoscaleMin),
-  autoscaleMax: "",
-  autoscaleMaxDepth: String(DEFAULTS.autoscaleMaxDepth[p]),
 });
 
 export const VIDEO_EMPTY: VideoForm = {
   serviceId: "",
   namespace: "",
   createNamespace: false,
-  pools: { fl2va: pool("fl2va"), ref2va: pool("ref2va") },
+  pools: { fl2va: pool(), ref2va: pool() },
   turbo: DEFAULTS.turbo,
   storageClass: "",
   storageSize: DEFAULTS.storageSize,
@@ -119,9 +134,6 @@ function readPool(tree: Tree | undefined, p: Pool, base: PoolForm): PoolForm {
     replicaCount: pick(k.replicaCount, base.replicaCount),
     tpSize: pick(k.tpSize, base.tpSize),
     ulyssesDegree: pick(k.ulyssesDegree, base.ulyssesDegree),
-    autoscaleMin: pick(k.autoscaleMin, base.autoscaleMin),
-    autoscaleMax: pick(k.autoscaleMax, base.autoscaleMax),
-    autoscaleMaxDepth: pick(k.autoscaleMaxDepth, base.autoscaleMaxDepth),
   };
 }
 
@@ -149,40 +161,26 @@ export function podGpus(p: PoolForm): number {
   return tp * u;
 }
 
-// poolScales is whether a pool is autoscaled: only with the switch on and a maximum.
-export function poolScales(f: VideoForm, p: Pool): boolean {
-  return f.autoscale && f.pools[p].enabled && f.pools[p].autoscaleMax.trim() !== "";
-}
-
-// videoGpus is what the release asks for at its replica counts, and the most
-// the autoscaled pools can grow it to.
-export function videoGpus(f: VideoForm): { perPod: Record<Pool, number>; total: number; ceiling: number } {
+// videoGpus is what the release asks for at its replica counts.
+export function videoGpus(f: VideoForm): { perPod: Record<Pool, number>; total: number } {
   const perPod = { fl2va: podGpus(f.pools.fl2va), ref2va: podGpus(f.pools.ref2va) };
   let total = 0;
-  let ceiling = 0;
   for (const p of POOLS) {
     const pf = f.pools[p];
     if (!pf.enabled) continue;
     const replicas = num(pf.replicaCount) ?? DEFAULTS.replicaCount;
     total += perPod[p] * replicas;
-    ceiling += perPod[p] * (poolScales(f, p) ? Math.max(num(pf.autoscaleMax) ?? replicas, replicas) : replicas);
   }
-  return { perPod, total, ceiling };
+  return { perPod, total };
 }
 
 
-export type VideoProblem = { code: "serviceId" } | { code: "noPool" } | { code: "maxBelowMin"; pool: Pool };
+export type VideoProblem = { code: "serviceId" } | { code: "noPool" };
 
 // videoProblem is why the form cannot be composed, or undefined.
 export function videoProblem(f: VideoForm): VideoProblem | undefined {
   if (!f.serviceId.trim()) return { code: "serviceId" };
   if (!POOLS.some((p) => f.pools[p].enabled)) return { code: "noPool" };
-  for (const p of POOLS) {
-    const pf = f.pools[p];
-    if (!pf.enabled || !f.autoscale || !pf.autoscaleMax.trim()) continue;
-    const min = num(pf.autoscaleMin) ?? DEFAULTS.autoscaleMin;
-    if ((num(pf.autoscaleMax) ?? 0) < min) return { code: "maxBelowMin", pool: p };
-  }
   return undefined;
 }
 
@@ -198,14 +196,6 @@ export function videoOverrides(f: VideoForm): Tree {
       const v = num(pf[field]);
       if (v !== undefined) set(out, key, v);
     }
-    if (!f.autoscale) continue;
-    const min = num(pf.autoscaleMin);
-    const max = num(pf.autoscaleMax);
-    const depth = num(pf.autoscaleMaxDepth);
-    if (min !== undefined) set(out, k.autoscaleMin, min);
-    // No maximum is the pool not autoscaled, so the key is left out rather than written empty.
-    if (max !== undefined) set(out, k.autoscaleMax, max);
-    if (depth !== undefined) set(out, k.autoscaleMaxDepth, depth);
   }
   if (f.pools.ref2va.enabled) set(out, KEYS.turbo, f.turbo);
   set(out, KEYS.scaler, f.autoscale);

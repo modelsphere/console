@@ -28,22 +28,17 @@ describe("videoOverrides", () => {
     expect(o.pools.ref2va).toEqual({ enabled: false });
   });
 
-  it("turns the scaler and the SLO requirement on together, and leaves an empty max out", () => {
-    const f = withPool(withPool(form({ autoscale: true }), "fl2va", { autoscaleMax: "6" }), "ref2va", {});
-    const o = videoOverrides(f) as Record<string, Record<string, unknown>>;
+  it("turns the scaler and the SLO requirement on together, and writes nothing per pool", () => {
+    const o = videoOverrides(form({ autoscale: true })) as Record<string, Record<string, unknown>>;
     expect(o.scaler).toEqual({ enabled: true });
     expect(o.sloRequirement).toEqual({ enabled: true });
+    // The chart gives each pool its JobSLO defaults (no maximum: not scaled);
+    // the SLO card sets the rest after the deploy.
     const pools = o.pools as Record<string, Record<string, unknown>>;
-    expect(pools.fl2va.sloRequirement).toEqual({ minReplicas: 1, maxReplicas: 6, queue: { maxDepth: 5 } });
-    // No maximum is the pool not autoscaled: the key is not written.
-    expect(pools.ref2va.sloRequirement).toEqual({ minReplicas: 1, queue: { maxDepth: 2 } });
-    // The LLMScaler bounds stay the chart's.
-    expect(pools.fl2va.scaler).toBeUndefined();
-  });
-
-  it("writes no autoscale keys while autoscaling is off", () => {
-    const o = videoOverrides(withPool(form(), "fl2va", { autoscaleMax: "6" })) as { pools: Record<string, Record<string, unknown>> };
-    expect(o.pools.fl2va.sloRequirement).toBeUndefined();
+    for (const p of ["fl2va", "ref2va"]) {
+      expect(pools[p].sloRequirement).toBeUndefined();
+      expect(pools[p].scaler).toBeUndefined();
+    }
   });
 
   it("sends the database URL, storage class and route only when given", () => {
@@ -80,22 +75,17 @@ describe("videoPlanRequest", () => {
 });
 
 describe("videoGpus", () => {
-  it("sums tp × ulysses × replicas over enabled pools, and the ceiling over autoscaled ones", () => {
-    let f = withPool(form(), "fl2va", { replicaCount: "2", tpSize: "2", ulyssesDegree: "2" });
-    expect(videoGpus(f)).toEqual({ perPod: { fl2va: 4, ref2va: 4 }, total: 12, ceiling: 12 });
-    f = withPool({ ...f, autoscale: true }, "ref2va", { autoscaleMax: "3" });
-    expect(videoGpus(f).ceiling).toBe(20);
+  it("sums tp × ulysses × replicas over enabled pools", () => {
+    const f = withPool(form(), "fl2va", { replicaCount: "2", tpSize: "2", ulyssesDegree: "2" });
+    expect(videoGpus(f)).toEqual({ perPod: { fl2va: 4, ref2va: 4 }, total: 12 });
     expect(videoGpus(withPool(f, "ref2va", { enabled: false })).total).toBe(8);
   });
 });
 
 describe("videoProblem", () => {
-  it("needs a service ID, a pool, and a maximum no lower than the minimum", () => {
+  it("needs a service ID and a pool", () => {
     expect(videoProblem(form({ serviceId: "" }))).toEqual({ code: "serviceId" });
     expect(videoProblem(withPool(withPool(form(), "fl2va", { enabled: false }), "ref2va", { enabled: false }))).toEqual({ code: "noPool" });
-    expect(videoProblem(withPool(form({ autoscale: true }), "fl2va", { autoscaleMin: "3", autoscaleMax: "2" }))).toEqual({ code: "maxBelowMin", pool: "fl2va" });
-    // An empty maximum is no autoscaling, never a range below the minimum.
-    expect(videoProblem(withPool(form({ autoscale: true }), "fl2va", { autoscaleMin: "3" }))).toBeUndefined();
     expect(videoProblem(form())).toBeUndefined();
   });
 });
@@ -106,11 +96,10 @@ describe("videoDefaults and videoFormFromPlan", () => {
     expect(f.pools.fl2va.replicaCount).toBe("3");
     expect(f.pools.ref2va.enabled).toBe(false);
     expect(f.modelRoute).toBe(true);
-    expect(f.pools.fl2va.autoscaleMax).toBe("");
   });
 
   it("round-trips the form layer, and never reads the database URL back into the form", () => {
-    const f = withPool(form({ autoscale: true, modelRoute: true, route: "video", databaseUrl: "postgresql://secret", storageClass: "cephfs", turbo: false }), "fl2va", { replicaCount: "2", autoscaleMax: "4" });
+    const f = withPool(form({ autoscale: true, modelRoute: true, route: "video", databaseUrl: "postgresql://secret", storageClass: "cephfs", turbo: false }), "fl2va", { replicaCount: "2" });
     const plan = { release: { name: "h3", namespace: "video" }, engine: "video", layers: { form: videoOverrides(f) } } as unknown as Plan;
     const back = videoFormFromPlan(plan);
     expect(back.databaseUrl).toBe("");

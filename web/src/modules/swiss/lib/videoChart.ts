@@ -18,17 +18,14 @@ export const KEYS = {
     replicaCount: `pools.${p}.replicaCount`,
     tpSize: `pools.${p}.sglang.args.tpSize`,
     ulyssesDegree: `pools.${p}.sglang.args.ulyssesDegree`,
-    // The pool's JobSLORequirement. No maxReplicas is the pool not scaled. The
-    // pool's LLMScaler bounds (pools.<p>.scaler.*) are backstops and keep the chart's.
-    autoscaleMin: `pools.${p}.sloRequirement.minReplicas`,
-    autoscaleMax: `pools.${p}.sloRequirement.maxReplicas`,
-    autoscaleMaxDepth: `pools.${p}.sloRequirement.queue.maxDepth`,
   }),
   turbo: "pools.ref2va.turbo.enabled",
   storageClass: "sharedStorage.storageClass",
   storageSize: "sharedStorage.size",
   databaseUrl: "database.url",
-  // One "Autoscale" switch turns both on or off.
+  // One "Autoscale / SLO" switch turns both on or off. The chart then gives each
+  // pool a JobSLORequirement with no maximum, which is not scaled until the SLO
+  // card sets one; the deploy form writes no per-pool SLO keys.
   scaler: "scaler.enabled",
   sloRequirement: "sloRequirement.enabled",
   modelRouteEnabled: "modelRoute.enabled",
@@ -46,8 +43,6 @@ export const DEFAULTS = {
   replicaCount: 1,
   tpSize: 4,
   ulyssesDegree: 1,
-  autoscaleMin: 1,
-  autoscaleMaxDepth: { fl2va: 5, ref2va: 2 } as Record<Pool, number>,
   turbo: true,
   storageSize: "500Gi",
   // The chart's own sglang.tolerations. The form sends the whole list, which

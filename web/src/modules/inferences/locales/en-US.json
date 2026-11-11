@@ -248,6 +248,7 @@
   "slo": {
     "title": "SLO of {release}",
     "description": "What the scaler sizes the service by: the latency and throughput to hold, and the replica bounds.",
+    "videoDescription": "Each pool's queue target and replica bounds. A pool with no maximum is not scaled.",
     "setup": "SLO requirement is on for {release}. Configure it here first: the scaler and openresty take their targets from it.",
     "waiting": "Waiting for the install to apply. The form opens once the requirement exists."
   },
@@ -748,7 +749,6 @@
       "databaseKept": "kept",
       "databaseKeptHint": "The release already sets one. Empty keeps it; typing a new one replaces it.",
       "totalGpus": "{n, plural, one {# GPU} other {# GPUs}} in total",
-      "ceilingGpus": "up to {n} when autoscaled",
       "perPod": "{n, plural, one {# GPU} other {# GPUs}} per pod",
       "poolOff": "Off",
       "pools": {
@@ -767,21 +767,12 @@
       "parallelHint": "GPUs per pod = TP size × Ulysses degree.",
       "turbo": "Turbo",
       "turboHint": "The 8-step Turbo LoRA and its sampling settings. Off serves the base model.",
-      "autoscale": "Autoscale",
-      "autoscaleHint": "Deploys the scaler and the SLO requirement. A pool scales only once it has a maximum.",
-      "scaled": "autoscaled",
-      "notScaled": "not autoscaled",
-      "min": "Min replicas",
-      "max": "Max replicas",
-      "maxEmpty": "empty = autoscaling off",
-      "maxHint": "Empty leaves this pool unscaled at its replica count.",
-      "maxDepth": "Max queue depth",
-      "maxDepthHint": "Queued tasks per replica before the pool scales up.",
+      "autoscale": "Autoscale / SLO",
+      "autoscaleHint": "Deploys a scaler and an SLO requirement for each pool. A pool is not scaled until its SLO has a maximum: set it, and the queue depth that scales the pool, with Edit SLO once the release is up.",
       "gpuProductsHint": "Restricts the GPU pods to these products; any one will do.",
       "problems": {
         "serviceId": "A service ID is required.",
-        "noPool": "Enable at least one pool.",
-        "maxBelowMin": "{pool}: the autoscale maximum is below the minimum."
+        "noPool": "Enable at least one pool."
       }
     }
   },

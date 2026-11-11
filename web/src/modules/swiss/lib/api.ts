@@ -888,6 +888,21 @@ export interface SLOObjective {
   ranges?: SLORange[];
 }
 
+// A video pool's requirement: its backlog, not latency, is what scales it.
+export interface SLOQueue {
+  maxDepth?: number;
+  promql?: string;
+}
+
+export interface JobSLORequirementSpec {
+  serviceId: string;
+  priority?: number;
+  minimumDeployment?: { type?: string; value?: number };
+  // Absent: the decision server leaves the pool unscaled.
+  maximumDeployment?: { type?: string; value?: number };
+  queue?: SLOQueue;
+}
+
 export interface LLMSLORequirementSpec {
   serviceId: string;
   priority?: number;
@@ -1029,6 +1044,11 @@ export interface HelmValues {
   overrides: string;
 }
 
+export function sloPath(ns: string, release: string, serviceId?: string): string {
+  const base = `/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/slo`;
+  return serviceId ? `${base}?serviceId=${encodeURIComponent(serviceId)}` : base;
+}
+
 export const deployApi = {
   plan: (req: PlanRequest) => post<Plan>("/api/plans", req),
   // v2 compose's dry run: nothing is stored.
@@ -1079,12 +1099,14 @@ export const deployApi = {
     ),
   uninstall: (ns: string, release: string) =>
     del<UninstallResult>(`/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}`),
-  slo: (ns: string, release: string) =>
-    get<SLOConfig>(`/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/slo`),
-  saveSLO: (ns: string, release: string, body: SLOEdit) =>
-    put<SLOConfig>(`/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/slo`, body),
-  resetSLO: (ns: string, release: string) =>
-    del<SLOConfig>(`/api/releases/${encodeURIComponent(ns)}/${encodeURIComponent(release)}/slo`),
+  // serviceId picks one of the release's SLO objects, such as a video pool's
+  // JobSLORequirement; without it swissd takes the release name.
+  slo: (ns: string, release: string, serviceId?: string) =>
+    get<SLOConfig>(sloPath(ns, release, serviceId)),
+  saveSLO: (ns: string, release: string, body: SLOEdit, serviceId?: string) =>
+    put<SLOConfig>(sloPath(ns, release, serviceId), body),
+  resetSLO: (ns: string, release: string, serviceId?: string) =>
+    del<SLOConfig>(sloPath(ns, release, serviceId)),
 };
 
 // One coverage row. TTFT thresholds are seconds; OTPS thresholds are tok/s.
@@ -1118,6 +1140,8 @@ export interface SLOConfig {
   maximumDeployment?: SLOBound;
   ttft?: SLOSection;
   otps?: SLOSection;
+  // A JobSLO's (video pools).
+  queue?: SLOQueue;
 }
 
 // A save merges: fields left out keep their stored value, and only a reset
@@ -1131,4 +1155,5 @@ export interface SLOEdit {
   maximumDeployment?: SLOBound;
   ttft?: SLOSection;
   otps?: SLOSection;
+  queue?: SLOQueue;
 }

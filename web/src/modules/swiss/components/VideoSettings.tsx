@@ -3,7 +3,7 @@ import type { ClusterInfo, Preset } from "@swiss/lib/api";
 import { productChoices } from "@swiss/lib/gpu";
 import type { InputRow } from "@swiss/lib/inputs";
 import { toYaml } from "@swiss/lib/yaml";
-import { poolScales, videoGpus, videoProblem, type PoolForm, type VideoForm, type VideoProblem } from "@swiss/lib/video";
+import { videoGpus, videoProblem, type PoolForm, type VideoForm, type VideoProblem } from "@swiss/lib/video";
 import { DEFAULTS, KEYS, POOL_LABELS, POOLS, type Pool } from "@swiss/lib/videoChart";
 import { InputFields, PathInput, Products, Row, Suggest, Tolerations } from "@swiss/components/DeploySettings";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
@@ -115,7 +115,6 @@ export function VideoSettings({
             Pools
             <span className="text-sm font-normal text-muted-foreground" data-testid="video-total-gpus">
               {gpus.total} GPU{gpus.total === 1 ? "" : "s"} in total
-              {gpus.ceiling > gpus.total && `, up to ${gpus.ceiling} autoscaled`}
             </span>
           </CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -166,40 +165,16 @@ export function VideoSettings({
         <CardHeader>
           <CardTitle className="text-base">Autoscaling</CardTitle>
           <p className="text-sm text-muted-foreground">
-            On deploys the scaler and the SLO requirement. A pool scales only once it has a maximum; with the
-            maximum empty it keeps its replica count.
+            Deploys a scaler and an SLO requirement for each pool. A pool is not scaled until its SLO has a maximum:
+            set that, and the queue depth that scales it, in the SLO card once the release is up.
           </p>
         </CardHeader>
         <CardContent className="divide-y pt-0">
           <Row
-            label="Autoscale"
+            label="Autoscale / SLO"
             note={`${KEYS.scaler} and ${KEYS.sloRequirement}`}
             toggle={<Switch checked={form.autoscale} onChange={(v) => onChange({ autoscale: v })} label="autoscale" />}
           />
-          {form.autoscale &&
-            POOLS.filter((p) => form.pools[p].enabled).map((p) => {
-              const pf = form.pools[p];
-              return (
-                <Row
-                  key={p}
-                  label={POOL_LABELS[p].title}
-                  note="min and max replicas, and the queue depth per replica that scales it up"
-                  caption={poolScales(form, p) ? "autoscaled" : "not autoscaled: no maximum"}
-                >
-                  <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
-                    <Labeled label="min">
-                      <Input value={pf.autoscaleMin} onChange={digits(p, "autoscaleMin")} inputMode="numeric" aria-label={`${p} minimum replicas`} placeholder={String(DEFAULTS.autoscaleMin)} />
-                    </Labeled>
-                    <Labeled label="max">
-                      <Input value={pf.autoscaleMax} onChange={digits(p, "autoscaleMax")} inputMode="numeric" aria-label={`${p} maximum replicas`} placeholder="empty = autoscaling off" />
-                    </Labeled>
-                    <Labeled label="max depth">
-                      <Input value={pf.autoscaleMaxDepth} onChange={digits(p, "autoscaleMaxDepth")} inputMode="numeric" aria-label={`${p} max queue depth`} placeholder={String(DEFAULTS.autoscaleMaxDepth[p])} />
-                    </Labeled>
-                  </div>
-                </Row>
-              );
-            })}
         </CardContent>
       </Card>
 
@@ -314,13 +289,10 @@ export function VideoSettings({
 const EDITS_PLACEHOLDER = `# last word, any key
 server:
   config:
-    # download links point back at H3; __ROUTE__ is the route name, so a site
-    # profile can set this once for every release
-    publicBaseUrl: https://gateway.example.com/__ROUTE__`;
+    queueTimeoutSeconds: 3600`;
 
 function problemText(p: VideoProblem): string {
   if (p.code === "noPool") return "Enable at least one pool.";
-  if (p.code === "maxBelowMin") return `${POOL_LABELS[p.pool].title}: the autoscale maximum is below the minimum.`;
   return "A service ID is required.";
 }
 

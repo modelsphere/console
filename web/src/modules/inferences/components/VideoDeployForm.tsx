@@ -3,7 +3,7 @@ import { Badge, FieldInput, FieldSelect, FloatingField, FormSection, Switch, cn 
 import type { ClusterInfo, Preset } from "@swiss/lib/api";
 import { unlistedProducts } from "@swiss/lib/gpu";
 import type { InputRow } from "@swiss/lib/inputs";
-import { poolScales, videoGpus, videoProblem, type PoolForm, type VideoForm } from "@swiss/lib/video";
+import { videoGpus, videoProblem, type PoolForm, type VideoForm } from "@swiss/lib/video";
 import { DEFAULTS, POOLS, type Pool } from "@swiss/lib/videoChart";
 import { useT } from "@/modules/inferences/i18n";
 import { serviceIdError, type Section } from "@/modules/inferences/deploy-lib";
@@ -104,9 +104,8 @@ export function VideoDeployForm({ form, onChange, upgrade, submitted, target, cl
         <>
           <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="video-total-gpus">
             <span className="font-medium">{f("totalGpus", { n: gpus.total })}</span>
-            {gpus.ceiling > gpus.total && <span className="text-muted-foreground">{f("ceilingGpus", { n: gpus.ceiling })}</span>}
           </div>
-          {problem && problem.code !== "serviceId" && <p className="text-sm text-destructive">{f(`problems.${problem.code}`, { pool: problem.code === "maxBelowMin" ? f(`pools.${problem.pool}.title`) : "" })}</p>}
+          {problem && problem.code !== "serviceId" && <p className="text-sm text-destructive">{f(`problems.${problem.code}`)}</p>}
           {POOLS.map((p) => {
             const pf = form.pools[p];
             return (
@@ -138,29 +137,6 @@ export function VideoDeployForm({ form, onChange, upgrade, submitted, target, cl
           <FloatingField layout="inline" label={f("autoscale")} hint={f("autoscaleHint")}>
             <Switch aria-label={f("autoscale")} checked={form.autoscale} onCheckedChange={(autoscale) => onChange({ autoscale })} />
           </FloatingField>
-          {form.autoscale &&
-            POOLS.filter((p) => form.pools[p].enabled).map((p) => {
-              const pf = form.pools[p];
-              return (
-                <div key={p} className="flex flex-col gap-2 rounded-lg border bg-background p-3">
-                  <div className="flex items-center gap-2 text-sm">
-                    {f(`pools.${p}.title`)}
-                    <Badge variant={poolScales(form, p) ? "success" : "secondary"}>{poolScales(form, p) ? f("scaled") : f("notScaled")}</Badge>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <FloatingField value={shown(pf.autoscaleMin, String(DEFAULTS.autoscaleMin))} label={f("min")}>
-                      <FieldInput {...digits(p, "autoscaleMin")} placeholder={String(DEFAULTS.autoscaleMin)} />
-                    </FloatingField>
-                    <FloatingField value={shown(pf.autoscaleMax, f("maxEmpty"))} label={f("max")} hint={f("maxHint")}>
-                      <FieldInput {...digits(p, "autoscaleMax")} placeholder={f("maxEmpty")} />
-                    </FloatingField>
-                    <FloatingField value={shown(pf.autoscaleMaxDepth, String(DEFAULTS.autoscaleMaxDepth[p]))} label={f("maxDepth")} hint={f("maxDepthHint")}>
-                      <FieldInput {...digits(p, "autoscaleMaxDepth")} placeholder={String(DEFAULTS.autoscaleMaxDepth[p])} />
-                    </FloatingField>
-                  </div>
-                </div>
-              );
-            })}
           <FloatingField label={g("gpuProducts")} hint={f("gpuProductsHint")} notice={forced.length > 0 ? t("deploy.fields.gpuForced", { products: forced.join(", ") }) : undefined}>
             <FieldSelect multiple values={form.gpuProducts} onValuesChange={(v) => onChange({ gpuProducts: v })} options={gpuOptions.map((o) => ({ value: o, label: o, badge: unlistedProducts(gpuListed, [o]).length ? <Badge variant="warning">{g("gpuUnverified")}</Badge> : <Badge variant="success">{g("gpuVerified")}</Badge> }))} placeholder={gpuOptions.length ? undefined : g("gpuProductsEmpty")} disabled={!gpuOptions.length} />
           </FloatingField>

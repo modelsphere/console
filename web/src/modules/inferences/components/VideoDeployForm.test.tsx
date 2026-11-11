@@ -47,15 +47,17 @@ describe("VideoDeployForm", () => {
 
   it("shows the pools, storage, database and autoscaling, and none of the LLM settings", () => {
     const html = video({ autoscale: true });
-    for (const want of [v.pools.fl2va.title, v.pools.ref2va.title, v.turbo, v.storageClass, v.database, v.autoscale, v.maxEmpty, "共 8 张 GPU", "每个 Pod 4 张 GPU"]) {
+    for (const want of [v.pools.fl2va.title, v.pools.ref2va.title, v.turbo, v.storageClass, v.database, v.autoscale, "共 8 张 GPU", "每个 Pod 4 张 GPU"]) {
       expect(html).toContain(want);
     }
     for (const llmOnly of [f.cart, f.slo, f.cache, f.localPath, f.exposeRoutedPeer, f.adaptiveCc]) expect(html).not.toContain(llmOnly);
     expect(html).toContain('type="password"');
   });
 
-  it("hides the per-pool autoscale fields while autoscaling is off", () => {
-    expect(video().includes(v.maxEmpty)).toBe(false);
+  it("has one autoscale switch and no per-pool SLO fields: those are the SLO sheet's", () => {
+    const html = video({ autoscale: true });
+    expect(html.split(v.autoscale).length - 1).toBeGreaterThan(0);
+    for (const none of ["最大副本数", "最大队列深度"]) expect(html).not.toContain(none);
   });
 
   it("leaves the LLM form as it was", () => {

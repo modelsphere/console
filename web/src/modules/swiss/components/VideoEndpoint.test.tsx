@@ -39,6 +39,9 @@ describe("Endpoint", () => {
     expect(html).toContain("/v2/video_generation");
     expect(html).not.toContain("/v1/chat/completions");
     expect(html).not.toContain("Health check");
+    // The readiness probe stands in for the serving check.
+    expect(html).toContain("Readiness check");
+    expect(html).toContain("/readyz");
   });
 
   it("keeps the chat example and checks for an LLM release", () => {

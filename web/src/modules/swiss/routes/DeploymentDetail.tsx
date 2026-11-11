@@ -38,6 +38,7 @@ import { enginesMove, scalerFailing, scalerHold } from "@swiss/lib/scaler";
 import { AccessPoint } from "@swiss/components/Endpoint";
 import { ReleaseStatus } from "@swiss/components/ReleaseStatus";
 import { SLODialog } from "@swiss/components/SLOCard";
+import { VideoSLODialog } from "@swiss/components/VideoSLOCard";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { METHODS } from "@swiss/components/InstallMethod";
 import { isUninstalling } from "@swiss/lib/phase";
@@ -85,9 +86,9 @@ export function DeploymentDetail() {
 
   const s = status.data;
   const removing = isUninstalling(s);
-  // A video release's SLO is not the LLM one this dialog edits.
+  // A video release has one SLO per pool, edited in a dialog of its own.
   const video = isVideo(plan.data?.engine);
-  const showSLO = !video && !removing && s.planStatus?.phase === "applied" && sloEnabled(plan.data);
+  const showSLO = !removing && s.planStatus?.phase === "applied" && sloEnabled(plan.data);
   const openSLO = () => setSloOpen(true);
 
   return (
@@ -175,11 +176,15 @@ export function DeploymentDetail() {
       <InstallStatus namespace={namespace} release={release} status={s} objects={objects.data?.objects} video={video} />
 
       <ReleaseObjects namespace={namespace} release={release} onConfigureSLO={showSLO ? openSLO : undefined} video={video} />
-      <SLODialog
-        target={sloOpen && showSLO ? { namespace, release } : null}
-        canEdit={!!cluster.data?.allowDeploy}
-        onClose={() => setSloOpen(false)}
-      />
+      {video ? (
+        <VideoSLODialog target={sloOpen && showSLO ? { namespace, release } : null} canEdit={!!cluster.data?.allowDeploy} onClose={() => setSloOpen(false)} />
+      ) : (
+        <SLODialog
+          target={sloOpen && showSLO ? { namespace, release } : null}
+          canEdit={!!cluster.data?.allowDeploy}
+          onClose={() => setSloOpen(false)}
+        />
+      )}
 
       <ReleaseStatus namespace={namespace} release={release} stats={false} access={false} poll={false} />
 

@@ -366,7 +366,7 @@ function SLOFields({ f, canEdit }: { f: SLOForm; canEdit: boolean }) {
 // alignment axis rather than one per control shape. Every control fills the
 // column, so the boxes share a left and a right edge down the card, and the
 // guidance hides behind the label's mark instead of sitting under it.
-function Row({ label, hint, children }: { label: string; hint: string; children: React.ReactNode }) {
+export function Row({ label, hint, children }: { label: string; hint: string; children: React.ReactNode }) {
   return (
     <div className="grid gap-x-4 gap-y-1 py-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-start">
       <div className="flex min-h-9 min-w-0 items-center">
@@ -456,7 +456,7 @@ function canSave(form: Draft): boolean {
   return rows.every((r) => r.threshold.trim() === "" || (TYPES.includes(r.type) && Number(r.threshold) >= 0));
 }
 
-function Select({
+export function Select({
   value,
   options,
   disabled,

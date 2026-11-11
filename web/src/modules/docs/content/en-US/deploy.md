@@ -42,13 +42,19 @@ A variant whose engine is `video` (such as MiniMax H3, chart `minimax-h3`) opens
 |---|---|
 | Pools | FL2VA (text and first/last frame to video) and Ref2VA (reference media to video), each on or off with its own replicas, TP size and Ulysses degree. GPUs per pod = TP × Ulysses; the form shows the total |
 | Turbo | Ref2VA only: the 8-step Turbo LoRA; off serves the base model |
-| Autoscale | One switch for the scaler and the SLO requirement. Per pool: min replicas, max replicas, max queue depth. **An empty max leaves that pool unscaled** |
+| Autoscale / SLO | One switch for the scaler and the SLO requirements. The chart creates one SLO per pool with a minimum of 1 replica and **no maximum, so nothing is scaled yet** |
 | Storage | The shared asset volume: its storage class must support ReadWriteMany; empty uses the cluster default |
 | Database URL | Optional; empty uses the chart's default. On an upgrade, empty keeps the release's own |
 
-A video release serves a job API rather than chat: its access card shows how to submit a task (`POST /v2/video_generation`), poll it (`GET /v2/query/video_generation/<task_id>`) and download the result (`GET /v2/video_generation/<task_id>/content`, no key needed). It is not offered in the Playground, and it has no SLO to edit.
+To scale a pool, open **Edit SLO** on the release once it is up. There is one section per pool:
 
-Download links point back at H3, so behind the gateway the chart needs `server.config.publicBaseUrl` set to the route's public URL. `__ROUTE__` in the value is replaced by the release's route name, so an operator can set it once for the whole site in the site profile's extra values, for example `https://gateway.example.com/__ROUTE__`. Without it, `content.url` in a finished task points at an address clients cannot reach.
+- **Bounds**: the minimum (replicas or concurrency) and the maximum (replicas). An empty maximum is autoscaling off. A save only adds or changes values, so to turn a pool's scaling off again use **Reset**, which returns its SLO to the chart's defaults.
+- **Max queue depth**: queued and running tasks per replica before the pool gets another replica.
+- **Priority**: high or normal. The queue query is shown read-only; it comes from the chart.
+
+A video release serves a job API rather than chat. Its access card shows how to submit a task (`POST /v2/video_generation`), poll it (`GET /v2/query/video_generation/<task_id>`) and download the result (`GET /v2/video_generation/<task_id>/content`, no key needed). Its **Check** runs a readiness probe of the route's `/readyz`, which answers only when the router, a server and the database behind it are all up. It is not offered in the Playground.
+
+Download links point back at H3. When the site profile names a `route.gateway`, the gateway URL for the release's route is filled in for the chart automatically. An explicit `server.config.publicBaseUrl` in the Override YAML still wins.
 
 ## Generation recovery
 

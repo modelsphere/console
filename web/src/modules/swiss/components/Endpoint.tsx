@@ -60,9 +60,17 @@ export function Endpoint({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {/* The serving and health checks speak the OpenAI API, which a video release does not
-              serve: its check is the job API itself. */}
           {access ? <AccessPoint status={s} video /> : s.url ? <VideoExamples status={s} /> : <AccessPoint status={s} video />}
+
+          {/* No chat to send: swissd probes the route's /readyz, which answers only when the
+              router, a server and the database behind it all do. */}
+          <Check
+            open={!access}
+            title="Readiness check"
+            hint="Asks the entrypoint for this route's /readyz: route → router → server → database. It does not run a generation."
+          >
+            <ServingCheck namespace={namespace} release={release} video />
+          </Check>
         </CardContent>
       </Card>
     );
@@ -199,7 +207,7 @@ function Check({
 
 // ServingCheck asks the entrypoint for /v1/models: it proves the route resolves
 // and something is behind it.
-function ServingCheck({ namespace, release }: { namespace: string; release: string }) {
+function ServingCheck({ namespace, release, video = false }: { namespace: string; release: string; video?: boolean }) {
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [auth, setAuth] = useState<EntrypointAuth>({});
 
@@ -229,15 +237,15 @@ function ServingCheck({ namespace, release }: { namespace: string; release: stri
       {probe && (
         <div className="space-y-2 text-sm">
           <div className="flex flex-wrap items-center gap-2">
-            {probe.ok && probe.models?.length ? (
+            {probe.ok && (video || probe.models?.length) ? (
               <>
                 <CircleCheck className="size-4 text-success" />
-                <span className="font-medium">Serving</span>
+                <span className="font-medium">{video ? "Ready" : "Serving"}</span>
               </>
             ) : (
               <>
                 <CircleX className="size-4 text-destructive" />
-                <span className="font-medium">Not serving yet</span>
+                <span className="font-medium">{video ? "Not ready yet" : "Not serving yet"}</span>
               </>
             )}
             {probe.status ? <Badge variant="muted">HTTP {probe.status}</Badge> : null}

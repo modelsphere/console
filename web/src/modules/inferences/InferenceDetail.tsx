@@ -109,9 +109,9 @@ export function InferenceDetail() {
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
   const blocked = sloBlocked(s, plan.data);
-  // A video release has no LLM SLO for the sheet to edit.
+  // A video release has one SLO per pool; the sheet edits each.
   const video = isVideo(plan.data?.engine);
-  const sloOpen = !video && !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
+  const sloOpen = !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
   const closeSLO = () => {
     setEditingSLO(false);
     if (!sloSetup) return;
@@ -131,16 +131,12 @@ export function InferenceDetail() {
           notice={!plan.data && plan.isError ? { tone: "warning", title: t("detail.untracked") } : undefined}
           actions={[
             { key: "check", label: t("actions.check"), onClick: () => setTab("check") },
-            ...(video
-              ? []
-              : [
-                  {
-                    key: "slo",
-                    label: t("actions.slo"),
-                    disabled: blockedWrite || (blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
-                    onClick: () => setEditingSLO(true),
-                  },
-                ]),
+            {
+              key: "slo",
+              label: t("actions.slo"),
+              disabled: blockedWrite || (blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
+              onClick: () => setEditingSLO(true),
+            },
             {
               key: "upgrade",
               label: t("actions.upgrade"),
@@ -198,7 +194,7 @@ export function InferenceDetail() {
         )}
       </Tabs>
 
-      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
+      <SLOSheet target={sloOpen ? { namespace, release } : null} video={video} canEdit={!readOnly && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
       <DeploySheet target={upgrading ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
         target={uninstalling ? { namespace, release } : null}
