@@ -12,8 +12,8 @@ describe("videoOverrides", () => {
   it("writes both pools, turbo, storage and the autoscale switches explicitly", () => {
     expect(videoOverrides(form())).toEqual({
       pools: {
-        fl2va: { enabled: true, replicaCount: 1, sglang: { args: { tpSize: 4, ulyssesDegree: 1 } } },
-        ref2va: { enabled: true, replicaCount: 1, sglang: { args: { tpSize: 4, ulyssesDegree: 1 } }, turbo: { enabled: true } },
+        fl2va: { enabled: true, replicaCount: 1, sglang: { args: { tpSize: 4, ulyssesDegree: 1 }, gpuCount: 4 } },
+        ref2va: { enabled: true, replicaCount: 1, sglang: { args: { tpSize: 4, ulyssesDegree: 1 }, gpuCount: 4 }, turbo: { enabled: true } },
       },
       scaler: { enabled: false },
       sloRequirement: { enabled: false },
@@ -21,6 +21,14 @@ describe("videoOverrides", () => {
       modelRoute: { enabled: false },
       sglang: { tolerations: [{ key: "nvidia.com/gpu", operator: "Exists", effect: "NoSchedule" }] },
     });
+  });
+
+  it("writes each pool's GPU count as tp × ulysses, which the chart checks against the args", () => {
+    const o = videoOverrides(withPool(withPool(form(), "fl2va", { tpSize: "2", ulyssesDegree: "1" }), "ref2va", { tpSize: "2", ulyssesDegree: "4" })) as { pools: Record<string, { sglang: Record<string, unknown> }> };
+    expect(o.pools.fl2va.sglang.gpuCount).toBe(2);
+    expect(o.pools.ref2va.sglang.gpuCount).toBe(8);
+    // Empty boxes are the chart's 4 × 1.
+    expect((videoOverrides(withPool(form(), "fl2va", { tpSize: "", ulyssesDegree: "" })) as { pools: Record<string, { sglang: Record<string, unknown> }> }).pools.fl2va.sglang).toEqual({ gpuCount: 4 });
   });
 
   it("writes only enabled: false for a disabled pool, and no turbo without ref2va", () => {
@@ -55,6 +63,42 @@ describe("videoOverrides", () => {
   it("puts scheduling on the GPU pods", () => {
     const o = videoOverrides(form({ tolerations: [], priorityClassName: "inference", schedulerName: "volcano", gpuProducts: ["H100"] }));
     expect(o.sglang).toEqual({ tolerations: [], priorityClassName: "inference", schedulerName: "volcano", gpuProduct: ["H100"] });
+  });
+});
+
+describe("clearing on upgrade", () => {
+  const layer = {
+    modelRoute: { enabled: true, nginx: { route: "old-route" } },
+    sharedStorage: { storageClass: "cephfs", size: "1Ti" },
+    sglang: { priorityClassName: "inference", schedulerName: "volcano", gpuProduct: ["H100"] },
+    database: { url: "postgresql://kept" },
+  };
+
+  it("sends an emptied field the release had set as cleared, so the overlay drops it", () => {
+    const f = form({ modelRoute: true, route: "", storageClass: "", storageSize: "", priorityClassName: "", schedulerName: "", gpuProducts: [] });
+    const o = videoOverrides(f, layer) as Record<string, Record<string, unknown>>;
+    expect(o.modelRoute).toEqual({ enabled: true, nginx: { route: "" } });
+    expect(o.sharedStorage).toEqual({ storageClass: "", size: "" });
+    expect(o.sglang).toMatchObject({ priorityClassName: "", schedulerName: "", gpuProduct: [] });
+    // Empty is "keep" for the database URL, never a clear.
+    expect(o.database).toBeUndefined();
+    const req = videoPlanRequest(f, { model: "minimax-h3", formLayer: layer });
+    expect(req.overrides).toMatchObject({ modelRoute: { nginx: { route: "" } }, sglang: { gpuProduct: [] }, database: { url: "postgresql://kept" } });
+  });
+
+  it("leaves a field alone when the release never set it, or when the form still has a value", () => {
+    const o = videoOverrides(form({ storageClass: "", priorityClassName: "" }), {}) as Record<string, Record<string, unknown>>;
+    expect(o.sharedStorage).toEqual({ size: "500Gi" });
+    expect(o.sglang).not.toHaveProperty("priorityClassName");
+    expect(o.sglang).not.toHaveProperty("gpuProduct");
+    expect(o.modelRoute).toEqual({ enabled: false });
+    const kept = videoOverrides(form({ modelRoute: true, route: "old-route", storageClass: "cephfs", storageSize: "1Ti", priorityClassName: "inference", schedulerName: "volcano", gpuProducts: ["H100"] }), layer);
+    expect(kept).toMatchObject({ modelRoute: { nginx: { route: "old-route" } }, sharedStorage: { storageClass: "cephfs", size: "1Ti" }, sglang: { priorityClassName: "inference", schedulerName: "volcano", gpuProduct: ["H100"] } });
+  });
+
+  it("does not clear anything on a fresh deploy", () => {
+    expect(videoOverrides(form({ storageClass: "", priorityClassName: "" }))).toEqual(videoOverrides(form({ storageClass: "", priorityClassName: "" }), undefined));
+    expect(JSON.stringify(videoOverrides(form()))).not.toContain('""');
   });
 });
 

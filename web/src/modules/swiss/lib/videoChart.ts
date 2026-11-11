@@ -18,6 +18,9 @@ export const KEYS = {
     replicaCount: `pools.${p}.replicaCount`,
     tpSize: `pools.${p}.sglang.args.tpSize`,
     ulyssesDegree: `pools.${p}.sglang.args.ulyssesDegree`,
+    // GPUs per pod. The chart takes it over model.gpus (the variant's
+    // requires.gpus) and refuses a render where it is not tp × ulysses.
+    gpuCount: `pools.${p}.sglang.gpuCount`,
   }),
   turbo: "pools.ref2va.turbo.enabled",
   storageClass: "sharedStorage.storageClass",

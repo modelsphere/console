@@ -184,7 +184,23 @@ export function videoProblem(f: VideoForm): VideoProblem | undefined {
   return undefined;
 }
 
-export function videoOverrides(f: VideoForm): Tree {
+// The optional fields an empty box leaves out, and what clears each one: on an
+// upgrade the form is laid over the release's form layer, so leaving a key out
+// keeps the old value. database.url is not here: empty there means keep.
+const CLEARABLE: [path: string, empty: unknown][] = [
+  [KEYS.route, ""],
+  [KEYS.storageClass, ""],
+  [KEYS.storageSize, ""],
+  [KEYS.priorityClassName, ""],
+  [KEYS.schedulerName, ""],
+  [KEYS.gpuProduct, []],
+];
+
+const isSet = (v: unknown) => v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0);
+
+// videoOverrides is the form layer the form writes. With formLayer, the
+// release's, a field emptied here that the release had set is sent cleared.
+export function videoOverrides(f: VideoForm, formLayer?: Tree): Tree {
   const out: Tree = {};
   // Every switch is written, so no decision is left to a chart default.
   for (const p of POOLS) {
@@ -196,6 +212,7 @@ export function videoOverrides(f: VideoForm): Tree {
       const v = num(pf[field]);
       if (v !== undefined) set(out, key, v);
     }
+    set(out, k.gpuCount, podGpus(pf));
   }
   if (f.pools.ref2va.enabled) set(out, KEYS.turbo, f.turbo);
   set(out, KEYS.scaler, f.autoscale);
@@ -211,6 +228,9 @@ export function videoOverrides(f: VideoForm): Tree {
   if (f.priorityClassName.trim()) set(out, KEYS.priorityClassName, f.priorityClassName.trim());
   if (f.schedulerName.trim()) set(out, KEYS.schedulerName, f.schedulerName.trim());
   if (f.gpuProducts.length) set(out, KEYS.gpuProduct, f.gpuProducts);
+  for (const [path, empty] of CLEARABLE) {
+    if (get(out, path) === undefined && isSet(get(formLayer, path))) set(out, path, empty);
+  }
   return out;
 }
 
@@ -228,7 +248,7 @@ export function videoPlanRequest(
     formLayer?: Tree;
   },
 ): PlanRequest {
-  const overrides = videoOverrides(f);
+  const overrides = videoOverrides(f, opts.formLayer);
   setInputOverrides(overrides, opts.inputs, f.inputs);
   const layer = withPreset(opts.formLayer ? overlay(opts.formLayer, overrides) : overrides, opts.preset);
   return {
