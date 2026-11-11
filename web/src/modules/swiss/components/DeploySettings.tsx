@@ -251,7 +251,6 @@ export function DeploySettings({
   // The site profile's presets, on a deploy.
   presets?: Record<string, Preset>;
 }) {
-  const checked = useDebounced(form.inputs, CHECK_MS);
   const picked = presets?.[form.preset];
   const set =
     (k: keyof Form) =>
@@ -346,51 +345,7 @@ export function DeploySettings({
             />
           </Row>
 
-          {inputs?.map((row) => {
-            const { input, answer, from, choices, site } = row;
-            const value = form.inputs[input.key] ?? "";
-            const typed = checked[input.key] ?? "";
-            const error = inputError({ input, answer }, typed);
-            const problem = error === "required" ? "required" : error && inputProblem(input, typed.trim() || answer || "");
-            return (
-              <Row
-                key={input.key}
-                label={input.title}
-                note={
-                  from === "release"
-                    ? "the release's answer, kept unless you change it"
-                    : from === "site"
-                      ? "the site profile's answer, unless you change it"
-                      : from === "variant"
-                        ? "the variant's default, unless you change it"
-                        : "unanswered: the variant has no default, and the site profile no answer"
-                }
-                hint={input.description ? `${input.description} (${input.key})` : input.key}
-                aside={`e.g. ${String(input.example)}`}
-              >
-                <div className="min-w-0 flex-1">
-                  <Suggest
-                    value={value}
-                    onChange={(v) => onChange({ inputs: { ...form.inputs, [input.key]: v } })}
-                    suggestion={answer}
-                    placeholder={answer}
-                    invalid={!!error}
-                    choices={choices?.map((c) => ({ value: c.answer, label: FROM[c.from] }))}
-                  />
-                  {problem && <p className="mt-1 text-[11px] text-destructive">{problem}</p>}
-                  {remember && onRemember && rememberable(row, typed) && (
-                    <label className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <input type="checkbox" className="size-3.5 accent-primary" checked={!!remember[input.key]} onChange={(e) => onRemember(input.key, e.target.checked)} />
-                      <HoverHint text="Every variant that declares this key, for any model, will take it.">
-                        <span>Save to the site profile</span>
-                      </HoverHint>
-                      {site && <span className="break-all">· replaces the site's answer {site.written}</span>}
-                    </label>
-                  )}
-                </div>
-              </Row>
-            );
-          })}
+          {inputs && <InputFields inputs={inputs} values={form.inputs} onChange={(v) => onChange({ inputs: v })} remember={remember} onRemember={onRemember} />}
 
           <Row
             label="Autoscale"
@@ -906,10 +861,76 @@ export function DeploySettings({
   );
 }
 
+// The variant's catalog inputs, one row each. Shared with the video form.
+export function InputFields({
+  inputs,
+  values,
+  onChange,
+  remember,
+  onRemember,
+}: {
+  inputs: InputRow[];
+  values: Record<string, string>;
+  onChange: (v: Record<string, string>) => void;
+  remember?: Record<string, boolean>;
+  onRemember?: (key: string, on: boolean) => void;
+}) {
+  const checked = useDebounced(values, CHECK_MS);
+  return (
+    <>
+      {inputs.map((row) => {
+        const { input, answer, from, choices, site } = row;
+        const value = values[input.key] ?? "";
+        const typed = checked[input.key] ?? "";
+        const error = inputError({ input, answer }, typed);
+        const problem = error === "required" ? "required" : error && inputProblem(input, typed.trim() || answer || "");
+        return (
+          <Row
+            key={input.key}
+            label={input.title}
+            note={
+              from === "release"
+                ? "the release's answer, kept unless you change it"
+                : from === "site"
+                  ? "the site profile's answer, unless you change it"
+                  : from === "variant"
+                    ? "the variant's default, unless you change it"
+                    : "unanswered: the variant has no default, and the site profile no answer"
+            }
+            hint={input.description ? `${input.description} (${input.key})` : input.key}
+            aside={`e.g. ${String(input.example)}`}
+          >
+            <div className="min-w-0 flex-1">
+              <Suggest
+                value={value}
+                onChange={(v) => onChange({ ...values, [input.key]: v })}
+                suggestion={answer}
+                placeholder={answer}
+                invalid={!!error}
+                choices={choices?.map((c) => ({ value: c.answer, label: FROM[c.from] }))}
+              />
+              {problem && <p className="mt-1 text-[11px] text-destructive">{problem}</p>}
+              {remember && onRemember && rememberable(row, typed) && (
+                <label className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <input type="checkbox" className="size-3.5 accent-primary" checked={!!remember[input.key]} onChange={(e) => onRemember(input.key, e.target.checked)} />
+                  <HoverHint text="Every variant that declares this key, for any model, will take it.">
+                    <span>Save to the site profile</span>
+                  </HoverHint>
+                  {site && <span className="break-all">· replaces the site's answer {site.written}</span>}
+                </label>
+              )}
+            </div>
+          </Row>
+        );
+      })}
+    </>
+  );
+}
+
 // Three columns: label, switch, control. The switch column is reserved so a
 // switch beside an input never shoves that input sideways. Every box fills
 // the control column, so they share one left edge and one right edge.
-function Row({
+export function Row({
   label,
   note,
   hint,
@@ -1032,7 +1053,7 @@ function CacheFields({ form, onChange, defaults }: { form: Form; onChange: (patc
 const TOLERATION_FIELDS = ["key", "operator", "value", "effect"];
 
 // What a toleration's row shows. An operator left out is Equal, as Kubernetes reads it.
-function tolerationRow(r: Record<string, unknown>): Toleration {
+export function tolerationRow(r: Record<string, unknown>): Toleration {
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   return { key: str(r.key), operator: r.operator === "Exists" ? "Exists" : "Equal", value: str(r.value), effect: str(r.effect), raw: r };
 }
@@ -1051,7 +1072,7 @@ function tolerationsOf(o: Record<string, unknown>): Toleration[] {
 
 // A row with no key is a half-typed one, unless it is a deployed toleration
 // that has none: that one tolerates every taint.
-function tolerationValue(t: Toleration): Record<string, unknown> | undefined {
+export function tolerationValue(t: Toleration): Record<string, unknown> | undefined {
   const raw = t.raw;
   if (raw) {
     const was = tolerationRow(raw);
@@ -1129,7 +1150,7 @@ function TabHint() {
 const FROM: Record<InputChoice["from"], string> = { release: "Release", site: "Site profile", variant: "Variant default" };
 
 // choices list under the field when the empty field is clicked; typing closes the list.
-function Suggest({
+export function Suggest({
   value,
   onChange,
   suggestion,
@@ -1198,7 +1219,7 @@ function Suggest({
 
 // The slash is drawn, never stored: the chart wants the path without it, and a
 // leading one typed or pasted here is stripped rather than sent.
-function PathInput({
+export function PathInput({
   value,
   onChange,
   suggestion,
@@ -1261,7 +1282,7 @@ const EFFECTS = ["", "NoSchedule", "PreferNoSchedule", "NoExecute"];
 
 // Structured rows rather than a YAML box: a toleration is four fields, and
 // three of them are closed sets.
-function Tolerations({
+export function Tolerations({
   rows,
   onChange,
 }: {
@@ -1444,7 +1465,7 @@ function CapacityLine({ value, perPod, needNodes, refreshing, onRefresh }: Capac
   );
 }
 
-function Products({
+export function Products({
   selected,
   onChange,
   options,
@@ -2017,11 +2038,13 @@ export function formFromPlan(plan: Plan): Form {
     cacheMaxSlots: str("cache.maxSlotsPerNode"),
     // Per apply, so not on the plan: an upgrade that needs it asks again.
     skipSchemaValidation: false,
-    edits:
-      plan.layers?.edit && Object.keys(plan.layers.edit).length > 0
-        ? toYamlish(plan.layers.edit)
-        : "",
+    edits: editsOf(plan),
   };
+}
+
+// The plan's edit layer as the editor's text.
+export function editsOf(plan: Plan): string {
+  return plan.layers?.edit && Object.keys(plan.layers.edit).length > 0 ? toYamlish(plan.layers.edit) : "";
 }
 
 function cacheOn(plan: Plan): boolean {

@@ -20,6 +20,7 @@ import {
   applyFlags,
   DeploySettings,
   EMPTY,
+  editsOf,
   formFromPlan,
   imageOf,
   planRequest,
@@ -38,6 +39,8 @@ import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVe
 import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { VariantCard } from "@swiss/components/VariantCard";
 import { Dialog } from "@swiss/components/ui/dialog";
+import { VideoSettings } from "@swiss/components/VideoSettings";
+import { isVideo, VIDEO_EMPTY, videoApplyFlags, videoFormFromPlan, videoPlanRequest, videoProblem, type VideoForm } from "@swiss/lib/video";
 import { deployCapacity, gpuCount, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { Button } from "@swiss/components/ui/button";
 import { comparison, formatUplift, reportLink, sharedVersion, variantKind, workloadSummary } from "@swiss/lib/catalog";
@@ -129,6 +132,10 @@ export function Upgrade() {
 
   const [form, setForm] = useState<Form>(EMPTY);
   const checkedInputs = useDebounced(form.inputs, CHECK_MS);
+  // A video release is upgraded with the video form, as it was deployed.
+  const video = isVideo(current.data?.engine);
+  const [vform, setVform] = useState<VideoForm>(VIDEO_EMPTY);
+  const checkedVideoInputs = useDebounced(vform.inputs, CHECK_MS);
   const siteSaver = useSiteSaver(profile.data);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [diff, setDiff] = useState<DiffResult | null>(null);
@@ -141,7 +148,9 @@ export function Upgrade() {
   // setting.
   useEffect(() => {
     const from = rollbackTo ? archived.data : current.data;
-    if (from) setForm(formFromPlan(from));
+    if (!from) return;
+    if (isVideo(from.engine)) setVform(videoFormFromPlan(from, editsOf(from)));
+    else setForm(formFromPlan(from));
   }, [current.data, archived.data, rollbackTo]);
 
   const reset = () => {
@@ -154,25 +163,40 @@ export function Upgrade() {
     setForm({ ...form, ...patch });
     reset();
   };
+  const updateVideo = (patch: Partial<VideoForm>) => {
+    setVform({ ...vform, ...patch });
+    reset();
+  };
 
   const planM = useMutation({
     mutationFn: () =>
       deployApi.plan(
-        planRequest(form, {
-          model: current.data!.source.model,
-          version: version || undefined,
-          variant: variant || undefined,
-          catalog: moving ? targetCatalog : undefined,
-          chartVersion: chartVersion || undefined,
-          forceGpuProducts: unlistedProducts(keptPin?.requires.gpuProduct, form.gpuProducts).length > 0,
-          // The server carries forward anything the form does not cover, so a
-          // value set once from a flag survives the upgrade instead of being
-          // dropped by a form that never knew about it.
-          fromRelease: release,
-          cacheUnsupported: !!cache.unsupported,
-          inputs: entry.data?.variant.inputs,
-          formLayer: current.data!.layers?.form,
-        }),
+        video
+          ? videoPlanRequest(vform, {
+              model: current.data!.source.model,
+              version: version || undefined,
+              variant: variant || undefined,
+              catalog: moving ? targetCatalog : undefined,
+              chartVersion: chartVersion || undefined,
+              fromRelease: release,
+              inputs: entry.data?.variant.inputs,
+              formLayer: current.data!.layers?.form,
+            })
+          : planRequest(form, {
+              model: current.data!.source.model,
+              version: version || undefined,
+              variant: variant || undefined,
+              catalog: moving ? targetCatalog : undefined,
+              chartVersion: chartVersion || undefined,
+              forceGpuProducts: unlistedProducts(keptPin?.requires.gpuProduct, form.gpuProducts).length > 0,
+              // The server carries forward anything the form does not cover, so a
+              // value set once from a flag survives the upgrade instead of being
+              // dropped by a form that never knew about it.
+              fromRelease: release,
+              cacheUnsupported: !!cache.unsupported,
+              inputs: entry.data?.variant.inputs,
+              formLayer: current.data!.layers?.form,
+            })
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping
     // it here rather than on the way back means a failed compose leaves
@@ -246,7 +270,7 @@ export function Upgrade() {
   const inputs = inputRows(pin?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", current.data?.source.model ?? "", pin?.values, current.data?.layers?.form);
   // A rollback re-applies an archived plan: nothing typed, nothing to save.
   const remember = rollbackTo ? undefined : siteSaver.remember;
-  const saves = remember ? siteSaves(inputs, form.inputs, remember) : [];
+  const saves = remember ? siteSaves(inputs, video ? vform.inputs : form.inputs, remember) : [];
 
   if (!cluster.data?.allowDeploy) {
     return (
@@ -466,28 +490,43 @@ export function Upgrade() {
           On a rollback it is the same form with nothing editable: the archived
           plan is re-applied as it ran, so a field that could be typed into
           would promise a change the rollback would not make. */}
-      <DeploySettings
-        form={form}
-        onChange={update}
-        cluster={cluster.data}
-        supportedGPUs={keptPin?.requires.gpuProduct}
-        clusterGPUs={pickableProducts(nodes.data?.nodes, keptPin?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
-        gpuResources={keptPin?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, keptPin.requires.vendor) : undefined}
-        capacity={
-          keptPin?.requires.gpus
-            ? { ...deployCapacity(keptPin.requires, form, nodes.data?.nodes, profile.data?.profile?.nodes?.gpus), refreshing: nodes.isFetching, onRefresh: () => nodes.refetch() }
-            : undefined
-        }
-        localPathDefault={entry.data?.localPath}
-        localPathPlaceholder={entry.data?.pathTemplate}
-        inputs={inputs}
-        remember={remember}
-        onRemember={siteSaver.onRemember}
-        image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
-        cache={cache}
-        lockIdentity
-        readOnly={rollbackTo > 0}
-      />
+      {video ? (
+        <VideoSettings
+          form={vform}
+          onChange={updateVideo}
+          cluster={cluster.data}
+          inputs={inputs}
+          remember={remember}
+          onRemember={siteSaver.onRemember}
+          supportedGPUs={keptPin?.requires.gpuProduct}
+          clusterGPUs={pickableProducts(nodes.data?.nodes, keptPin?.requires.vendor, profile.data?.profile?.nodes?.gpus, "")}
+          lockIdentity
+          readOnly={rollbackTo > 0}
+        />
+      ) : (
+        <DeploySettings
+          form={form}
+          onChange={update}
+          cluster={cluster.data}
+          supportedGPUs={keptPin?.requires.gpuProduct}
+          clusterGPUs={pickableProducts(nodes.data?.nodes, keptPin?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
+          gpuResources={keptPin?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, keptPin.requires.vendor) : undefined}
+          capacity={
+            keptPin?.requires.gpus
+              ? { ...deployCapacity(keptPin.requires, form, nodes.data?.nodes, profile.data?.profile?.nodes?.gpus), refreshing: nodes.isFetching, onRefresh: () => nodes.refetch() }
+              : undefined
+          }
+          localPathDefault={entry.data?.localPath}
+          localPathPlaceholder={entry.data?.pathTemplate}
+          inputs={inputs}
+          remember={remember}
+          onRemember={siteSaver.onRemember}
+          image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
+          cache={cache}
+          lockIdentity
+          readOnly={rollbackTo > 0}
+        />
+      )}
 
       <Pipeline
         namespace={namespace}
@@ -500,9 +539,14 @@ export function Upgrade() {
         onTab={setTab}
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
-        composeDisabled={!rollbackTo && (!inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity))}
+        composeDisabled={
+          !rollbackTo &&
+          (video
+            ? !!videoProblem(vform) || !inputsAnswered(inputs, checkedVideoInputs)
+            : !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity))
+        }
         composeLabel={planM.isPending ? "Composing…" : plan ? "Recompose upgrade" : "Compose upgrade"}
-        applyFlags={applyFlags(form)}
+        applyFlags={video ? videoApplyFlags(vform) : applyFlags(form)}
         onDiff={setDiff}
         onApplied={(r) => {
           setApplied(r);

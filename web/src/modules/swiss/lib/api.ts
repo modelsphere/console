@@ -69,6 +69,8 @@ export interface Deployment {
   release: string;
   namespace: string;
   chart?: string;
+  // The plan's engine. Not sent by swissd yet; isVideoDeployment falls back to the chart.
+  engine?: string;
   status?: string;
   // Missing while a helm release is uninstalling: the release record is already gone.
   revision?: number;

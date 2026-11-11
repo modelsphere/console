@@ -34,6 +34,20 @@ Most fields can stay empty and take the site profile's and chart's defaults.
 
 **Adaptive concurrency** groups the master switch, floor fraction, absolute floor, start point, idle hold, and TTFT decisions together; its internal knobs are available under **Advanced adaptive options**. Turning the switch off hides and clears the group's entered values; turning it back on does not restore them. **Default peer maximum** stays in **Capacity & failover** and still applies when adaptive concurrency is off; it also influences the static maximum used for adaptive bounds. Review the diff before confirming an upgrade.
 
+## Video models
+
+A variant whose engine is `video` (such as MiniMax H3, chart `minimax-h3`) opens a form of its own: none of the LLM settings (SLO thresholds, CART, compile cache, image override, route tuning) apply.
+
+| Field | Notes |
+|---|---|
+| Pools | FL2VA (text and first/last frame to video) and Ref2VA (reference media to video), each on or off with its own replicas, TP size and Ulysses degree. GPUs per pod = TP × Ulysses; the form shows the total |
+| Turbo | Ref2VA only: the 8-step Turbo LoRA; off serves the base model |
+| Autoscale | One switch for the scaler and the SLO requirement. Per pool: min replicas, max replicas, max queue depth. **An empty max leaves that pool unscaled** |
+| Storage | The shared asset volume: its storage class must support ReadWriteMany; empty uses the cluster default |
+| Database URL | Optional; empty uses the chart's default. On an upgrade, empty keeps the release's own |
+
+A video release serves a job API rather than chat: its access card shows how to submit a task (`POST /v2/video_generation`), poll it (`GET /v2/query/video_generation/<task_id>`) and download the result (`GET /v2/video_generation/<task_id>/content`, no key needed). It is not offered in the Playground, and it has no SLO to edit.
+
 ## Generation recovery
 
 Enable **Routing → Generation recovery** in the deploy or upgrade form. Enter the **Actual model** whose weights are deployed, such as `kimi-k3` or `glm-5.3`. This selects the continuation strategy; it is not the client-facing served name.

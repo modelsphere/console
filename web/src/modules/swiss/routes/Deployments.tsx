@@ -10,6 +10,7 @@ import { Card, CardContent } from "@swiss/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@swiss/components/ui/table";
 import { SLODialog, type SLOTarget } from "@swiss/components/SLOCard";
 import { Empty, ErrorState, Loading } from "@swiss/components/States";
+import { isVideoDeployment } from "@swiss/lib/video";
 
 const PER_PAGE = 25;
 
@@ -150,7 +151,7 @@ function Row({ d, onConfigureSLO }: { d: Deployment; onConfigureSLO: () => void 
         <div className="flex items-center justify-end gap-2">
           {/* Applied is when the chart has created the requirement; whether
               this release has one at all, the popup asks slo-api. */}
-          {rowPhase(d.phase) === "applied" && !isUninstalling(d) && (
+          {rowPhase(d.phase) === "applied" && !isUninstalling(d) && !isVideoDeployment(d) && (
             <Button size="sm" variant="outline" title="Configure SLO" onClick={onConfigureSLO}>
               <Settings2 className="size-4" /> SLO
             </Button>

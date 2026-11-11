@@ -19,6 +19,8 @@ import { presetValues } from "@swiss/lib/formLayer";
 import { deployCapacity, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { InstallMethodChoice } from "@swiss/components/InstallMethod";
+import { VideoSettings } from "@swiss/components/VideoSettings";
+import { isVideo, videoApplyFlags, videoDefaults, videoPlanRequest, videoProblem, type VideoForm } from "@swiss/lib/video";
 
 export function Deploy() {
   const { name = "" } = useParams();
@@ -72,11 +74,15 @@ export function Deploy() {
   const [picked, setPicked] = useState<ApplyWith>();
 
   const [form, setForm] = useState<Form>({ ...EMPTY, serviceId: name });
+  // A video variant has a form of its own: none of the LLM form's sections apply to its chart.
+  const video = isVideo(model.data?.variant.engine);
+  const [vform, setVform] = useState<VideoForm>(() => videoDefaults(undefined));
+  const checkedVideoInputs = useDebounced(vform.inputs, CHECK_MS);
   const checkedInputs = useDebounced(form.inputs, CHECK_MS);
   const siteSaver = useSiteSaver(profile.data);
   // serviceId is the identity everything else is named after: the helm release,
   // the openresty route, the LLMScaler and the LLMSLORequirement.
-  const release = form.serviceId;
+  const release = video ? vform.serviceId : form.serviceId;
 
   const [plan, setPlan] = useState<Plan | null>(null);
   const [diff, setDiff] = useState<DiffResult | null>(null);
@@ -90,8 +96,21 @@ export function Deploy() {
   const siteDefaults = useMemo(() => siteSwitchDefaults(profile.data), [profile.data]);
   const variantValues = model.data?.variant.values;
   const seeded = useRef<SwitchDefaults | null>(null);
+  const seededVideo = useRef("");
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || !video) return;
+    const key = JSON.stringify([variantValues ?? null, siteDefaults?.modelRoute ?? null]);
+    if (seededVideo.current === key) return;
+    const first = !seededVideo.current;
+    seededVideo.current = key;
+    setVform((f) => ({ ...videoDefaults(variantValues, siteDefaults), serviceId: first ? name : f.serviceId, namespace: f.namespace }));
+    if (!first) {
+      setPlan(null);
+      setDiff(null);
+    }
+  }, [loaded, video, siteDefaults, variantValues, name]);
+  useEffect(() => {
+    if (!loaded || video) return;
     const next = switchDefaults(siteDefaults, variantValues);
     const prev = seeded.current;
     seeded.current = next;
@@ -101,33 +120,50 @@ export function Deploy() {
       setPlan(null);
       setDiff(null);
     }
-  }, [loaded, siteDefaults, variantValues]);
+  }, [loaded, video, siteDefaults, variantValues]);
 
   // A diff is bound to the plan it was computed from, so touching the form
   // invalidates both, and the pipeline walks back to Plan rather than leaving a
   // pane open over a plan that no longer exists.
-  const update = (patch: Partial<Form>) => {
-    setForm({ ...form, ...patch });
+  const invalidate = () => {
     setPlan(null);
     setDiff(null);
     setApplied(null);
     setTab((t) => (t === "status" ? t : "plan"));
   };
+  const update = (patch: Partial<Form>) => {
+    setForm({ ...form, ...patch });
+    invalidate();
+  };
+  const updateVideo = (patch: Partial<VideoForm>) => {
+    setVform({ ...vform, ...patch });
+    invalidate();
+  };
 
   const planM = useMutation({
     mutationFn: () =>
       deployApi.plan(
-        planRequest(form, {
-          model: name,
-          version,
-          variant: variantId,
-          catalog,
-          chartVersion: chartVersion || undefined,
-          forceGpuProducts: unlistedProducts(model.data?.variant.requires.gpuProduct, form.gpuProducts).length > 0,
-          cacheUnsupported: !!cache.unsupported,
-          inputs: model.data?.variant.inputs,
-          preset: presetValues(profile.data?.profile, form.preset),
-        }),
+        video
+          ? videoPlanRequest(vform, {
+              model: name,
+              version,
+              variant: variantId,
+              catalog,
+              chartVersion: chartVersion || undefined,
+              inputs: model.data?.variant.inputs,
+              preset: presetValues(profile.data?.profile, vform.preset),
+            })
+          : planRequest(form, {
+              model: name,
+              version,
+              variant: variantId,
+              catalog,
+              chartVersion: chartVersion || undefined,
+              forceGpuProducts: unlistedProducts(model.data?.variant.requires.gpuProduct, form.gpuProducts).length > 0,
+              cacheUnsupported: !!cache.unsupported,
+              inputs: model.data?.variant.inputs,
+              preset: presetValues(profile.data?.profile, form.preset),
+            })
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping
     // it here rather than on the way back means a failed compose leaves
@@ -167,7 +203,7 @@ export function Deploy() {
     { name: variant.chart.name, version: chart.resolved ?? variant.chart.version },
   );
   const inputs = inputRows(variant.inputs, profile.data?.profile, m.source?.hf ?? "", name, variant.values);
-  const saves = siteSaver.remember ? siteSaves(inputs, form.inputs, siteSaver.remember) : [];
+  const saves = siteSaver.remember ? siteSaves(inputs, video ? vform.inputs : form.inputs, siteSaver.remember) : [];
 
   if (!cluster.data?.allowDeploy) {
     return (
@@ -267,31 +303,46 @@ export function Deploy() {
       {/* The settings are the page. Plan, diff and apply are what is done with
           them, so they sit below as tabs rather than holding the form inside
           one of them. */}
-      <DeploySettings
-        form={form}
-        onChange={update}
-        cluster={cluster.data}
-        serviceIdPlaceholder={name}
-        localPathDefault={model.data.localPath}
-        localPathPlaceholder={model.data.pathTemplate}
-        inputs={inputs}
-        remember={siteSaver.remember}
-        onRemember={siteSaver.onRemember}
-        image={imageOf(variant, model.data.imageRepository)}
-        supportedGPUs={variant?.requires.gpuProduct}
-        clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
-        gpuResources={variant?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, variant.requires.vendor) : undefined}
-        capacity={
-          variant?.requires.gpus
-            ? { ...deployCapacity(variant.requires, form, nodes.data?.nodes, profile.data?.profile?.nodes?.gpus), refreshing: nodes.isFetching, onRefresh: () => nodes.refetch() }
-            : undefined
-        }
-        cache={cache}
-        presets={profile.data?.profile?.presets}
-      />
+      {video ? (
+        <VideoSettings
+          form={vform}
+          onChange={updateVideo}
+          cluster={cluster.data}
+          serviceIdPlaceholder={name}
+          inputs={inputs}
+          remember={siteSaver.remember}
+          onRemember={siteSaver.onRemember}
+          supportedGPUs={variant?.requires.gpuProduct}
+          clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, "")}
+          presets={profile.data?.profile?.presets}
+        />
+      ) : (
+        <DeploySettings
+          form={form}
+          onChange={update}
+          cluster={cluster.data}
+          serviceIdPlaceholder={name}
+          localPathDefault={model.data.localPath}
+          localPathPlaceholder={model.data.pathTemplate}
+          inputs={inputs}
+          remember={siteSaver.remember}
+          onRemember={siteSaver.onRemember}
+          image={imageOf(variant, model.data.imageRepository)}
+          supportedGPUs={variant?.requires.gpuProduct}
+          clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
+          gpuResources={variant?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, variant.requires.vendor) : undefined}
+          capacity={
+            variant?.requires.gpus
+              ? { ...deployCapacity(variant.requires, form, nodes.data?.nodes, profile.data?.profile?.nodes?.gpus), refreshing: nodes.isFetching, onRefresh: () => nodes.refetch() }
+              : undefined
+          }
+          cache={cache}
+          presets={profile.data?.profile?.presets}
+        />
+      )}
 
       <Pipeline
-        namespace={form.namespace || cluster.data.namespace || ""}
+        namespace={(video ? vform.namespace : form.namespace) || cluster.data.namespace || ""}
         release={release}
         plan={plan}
         diff={diff}
@@ -300,9 +351,9 @@ export function Deploy() {
         onTab={setTab}
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
-        composeDisabled={!form.serviceId || !inputsAnswered(inputs, checkedInputs)}
+        composeDisabled={video ? !!videoProblem(vform) || !inputsAnswered(inputs, checkedVideoInputs) : !form.serviceId || !inputsAnswered(inputs, checkedInputs)}
         applyWith={method}
-        applyFlags={applyFlags(form)}
+        applyFlags={video ? videoApplyFlags(vform) : applyFlags(form)}
         onDiff={setDiff}
         onApplied={(r) => {
           setApplied(r);

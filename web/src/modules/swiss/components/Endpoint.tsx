@@ -18,6 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/c
 import { Code } from "@swiss/components/ui/code";
 import { Field, Input } from "@swiss/components/ui/input";
 import { ErrorState } from "@swiss/components/States";
+import { VideoExamples } from "@swiss/components/VideoEndpoint";
+import { isVideo } from "@swiss/lib/video";
 
 // Endpoint is where this release is called and the two ways of asking whether
 // calling it works. One card, because an operator arrives with one question --
@@ -41,6 +43,30 @@ export function Endpoint({
   status: Status;
   access?: boolean;
 }) {
+  // Shared with HealthCheck's query: one read of the plan says which API this release serves.
+  const plan = useQuery({
+    queryKey: ["releasePlan", namespace, release],
+    queryFn: () => api.releasePlan(namespace, release),
+    retry: false,
+  });
+  if (isVideo(plan.data?.engine)) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+            Endpoint
+            {s.route && <Badge variant="outline">{s.route}</Badge>}
+            <Badge variant="muted">video</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* The serving and health checks speak the OpenAI API, which a video release does not
+              serve: its check is the job API itself. */}
+          {access ? <AccessPoint status={s} video /> : s.url ? <VideoExamples status={s} /> : <AccessPoint status={s} video />}
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <Card>
       <CardHeader>
@@ -74,7 +100,7 @@ export function Endpoint({
 
 // AccessPoint is the address and a request that works against it, with the key
 // left to fill in. Names the auth header but never holds the key.
-export function AccessPoint({ status: s }: { status: Status }) {
+export function AccessPoint({ status: s, video = false }: { status: Status; video?: boolean }) {
   if (!s.url) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -89,7 +115,7 @@ export function AccessPoint({ status: s }: { status: Status }) {
       </p>
     );
   }
-  const curl = curlFor(s);
+  const curl = video ? "" : curlFor(s);
   return (
     <div className="space-y-3">
       <div className="flex min-w-0 items-center gap-2 rounded-lg border bg-muted/30 py-1.5 pr-1.5 pl-3">
@@ -116,7 +142,7 @@ export function AccessPoint({ status: s }: { status: Status }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
-        {s.model && (
+        {!video && s.model && (
           <Badge variant="outline" className="gap-1">
             <span className="text-muted-foreground">model</span>
             <span className="font-mono">{s.model}</span>
@@ -131,13 +157,17 @@ export function AccessPoint({ status: s }: { status: Status }) {
         </Badge>
       </div>
 
-      <div>
-        <div className="mb-1 flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">Example request — fill in the key</span>
-          <IconCopy value={curl} label="copy the request" />
+      {video ? (
+        <VideoExamples status={s} />
+      ) : (
+        <div>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">Example request — fill in the key</span>
+            <IconCopy value={curl} label="copy the request" />
+          </div>
+          <Code lang="sh">{curl}</Code>
         </div>
-        <Code lang="sh">{curl}</Code>
-      </div>
+      )}
     </div>
   );
 }

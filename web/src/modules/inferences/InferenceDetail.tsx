@@ -10,6 +10,7 @@ import { useReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { ReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { Endpoint } from "@swiss/components/Endpoint";
 import { Provenance } from "@swiss/components/Provenance";
+import { isVideo } from "@swiss/lib/video";
 import { useT } from "@/modules/inferences/i18n";
 import { modelLine, parseTab, releaseState, sloBlocked, visibleTabs, type Tab } from "@/modules/inferences/lib";
 import { statusOf } from "@/modules/inferences/components/StatusDot";
@@ -108,7 +109,9 @@ export function InferenceDetail() {
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
   const blocked = sloBlocked(s, plan.data);
-  const sloOpen = !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
+  // A video release has no LLM SLO for the sheet to edit.
+  const video = isVideo(plan.data?.engine);
+  const sloOpen = !video && !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
   const closeSLO = () => {
     setEditingSLO(false);
     if (!sloSetup) return;
@@ -128,12 +131,16 @@ export function InferenceDetail() {
           notice={!plan.data && plan.isError ? { tone: "warning", title: t("detail.untracked") } : undefined}
           actions={[
             { key: "check", label: t("actions.check"), onClick: () => setTab("check") },
-            {
-              key: "slo",
-              label: t("actions.slo"),
-              disabled: blockedWrite || (blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
-              onClick: () => setEditingSLO(true),
-            },
+            ...(video
+              ? []
+              : [
+                  {
+                    key: "slo",
+                    label: t("actions.slo"),
+                    disabled: blockedWrite || (blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
+                    onClick: () => setEditingSLO(true),
+                  },
+                ]),
             {
               key: "upgrade",
               label: t("actions.upgrade"),
@@ -171,7 +178,7 @@ export function InferenceDetail() {
           <Events namespace={namespace} release={release} pods={pods} />
         </TabsContent>
         <TabsContent value="resources">
-          <ReleaseObjects namespace={namespace} release={release} />
+          <ReleaseObjects namespace={namespace} release={release} video={video} />
         </TabsContent>
         <TabsContent value="check">
           <Endpoint namespace={namespace} release={release} status={s} access={false} />

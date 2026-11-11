@@ -42,6 +42,7 @@ import { ErrorState, Loading } from "@swiss/components/States";
 import { METHODS } from "@swiss/components/InstallMethod";
 import { isUninstalling } from "@swiss/lib/phase";
 import { cn, timeAgo } from "@swiss/lib/utils";
+import { isVideo } from "@swiss/lib/video";
 
 export function DeploymentDetail() {
   const { namespace = "", release = "" } = useParams();
@@ -84,7 +85,9 @@ export function DeploymentDetail() {
 
   const s = status.data;
   const removing = isUninstalling(s);
-  const showSLO = !removing && s.planStatus?.phase === "applied" && sloEnabled(plan.data);
+  // A video release's SLO is not the LLM one this dialog edits.
+  const video = isVideo(plan.data?.engine);
+  const showSLO = !video && !removing && s.planStatus?.phase === "applied" && sloEnabled(plan.data);
   const openSLO = () => setSloOpen(true);
 
   return (
@@ -169,9 +172,9 @@ export function DeploymentDetail() {
         deployed={plan.data?.layers.catalog}
       />
 
-      <InstallStatus namespace={namespace} release={release} status={s} objects={objects.data?.objects} />
+      <InstallStatus namespace={namespace} release={release} status={s} objects={objects.data?.objects} video={video} />
 
-      <ReleaseObjects namespace={namespace} release={release} onConfigureSLO={showSLO ? openSLO : undefined} />
+      <ReleaseObjects namespace={namespace} release={release} onConfigureSLO={showSLO ? openSLO : undefined} video={video} />
       <SLODialog
         target={sloOpen && showSLO ? { namespace, release } : null}
         canEdit={!!cluster.data?.allowDeploy}
@@ -206,7 +209,7 @@ export function DeploymentDetail() {
 // helm's own status describes the last apply that returned. The track under it
 // adds what the controllers say: a release can be applied with ready pods and
 // still serve nobody, because nothing routed to it.
-function InstallStatus({ namespace, release, status, objects }: { namespace: string; release: string; status: Status; objects?: ObjectResult[] }) {
+function InstallStatus({ namespace, release, status, objects, video = false }: { namespace: string; release: string; status: Status; objects?: ObjectResult[]; video?: boolean }) {
   const p: PlanStatus | undefined = status.planStatus;
   const autoscale = useAutoscaling(namespace, release).data;
 
@@ -299,7 +302,7 @@ function InstallStatus({ namespace, release, status, objects }: { namespace: str
               </Badge>
             )}
           </div>
-          <AccessPoint status={status} />
+          <AccessPoint status={status} video={video} />
         </div>
       </CardContent>
     </Card>

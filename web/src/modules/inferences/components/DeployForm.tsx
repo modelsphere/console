@@ -76,7 +76,6 @@ export interface DeployFormProps {
 
 export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember, presets }: DeployFormProps) {
   const t = useT();
-  const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
   const forced = unlistedProducts(gpuListed, form.gpuProducts);
@@ -165,34 +164,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           <FloatingField value={shown(form.localPath, defaults.localPath || defaults.localPathTemplate)} label={f("localPath")} hint={f("localPathHint")}>
             <Suggest value={form.localPath} onChange={(localPath) => onChange({ localPath })} suggestion={defaults.localPath} placeholder={defaults.localPath || defaults.localPathTemplate} />
           </FloatingField>
-          {inputs?.map((row) => {
-            const { input, answer, choices, site } = row;
-            const value = form.inputs[input.key] ?? "";
-            const error = inputError({ input, answer }, checked[input.key]);
-            const set = (v: string) => onChange({ inputs: { ...form.inputs, [input.key]: v } });
-            return (
-              <div key={input.key} className="flex flex-col gap-1.5">
-                <FloatingField
-                  value={shown(value, answer)}
-                  label={input.title}
-                  required
-                  hint={input.description ? `${input.description} (${input.key})` : input.key}
-                  aside={t("deploy.fields.inputExample", { example: String(input.example) })}
-                  error={error && (error === "required" ? t("deploy.fields.inputRequired") : t(`deploy.fields.inputProblem.${input.type ?? "string"}`, { pattern: input.pattern ?? "" }))}
-                >
-                  <Suggest value={value} onChange={set} suggestion={answer} placeholder={answer} choices={choices?.map((c) => ({ value: c.answer, label: f(`inputFrom.${c.from}`) }))} />
-                </FloatingField>
-                {remember && onRemember && rememberable(row, checked[input.key]) && (
-                  <label className="flex flex-wrap items-center gap-1.5 px-1 text-xs text-muted-foreground">
-                    <Checkbox checked={!!remember[input.key]} onCheckedChange={(on) => onRemember(input.key, !!on)} />
-                    {f("inputRemember")}
-                    <FieldHint>{f("inputRememberHint")}</FieldHint>
-                    {site && <span className="break-all">· {t("deploy.fields.inputReplaces", { answer: site.written })}</span>}
-                  </label>
-                )}
-              </div>
-            );
-          })}
+          {inputs && <InputFields inputs={inputs} values={form.inputs} onChange={(v) => onChange({ inputs: v })} remember={remember} onRemember={onRemember} />}
           {defaults.image && (
             <FloatingField
               layout="inline"
@@ -302,6 +274,46 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
   );
 }
 
+// The variant's catalog inputs, one field each. Shared with the video form.
+export function InputFields({ inputs, values, onChange, remember, onRemember }: { inputs: InputRow[]; values: Record<string, string>; onChange: (v: Record<string, string>) => void; remember?: Record<string, boolean>; onRemember?: (key: string, on: boolean) => void }) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+  const checked = useDebounced(values, CHECK_MS);
+  const shown = (value: string, fallback?: string) => value || fallback || "";
+  return (
+    <>
+      {inputs.map((row) => {
+        const { input, answer, choices, site } = row;
+        const value = values[input.key] ?? "";
+        const error = inputError({ input, answer }, checked[input.key]);
+        const set = (v: string) => onChange({ ...values, [input.key]: v });
+        return (
+          <div key={input.key} className="flex flex-col gap-1.5">
+            <FloatingField
+              value={shown(value, answer)}
+              label={input.title}
+              required
+              hint={input.description ? `${input.description} (${input.key})` : input.key}
+              aside={t("deploy.fields.inputExample", { example: String(input.example) })}
+              error={error && (error === "required" ? t("deploy.fields.inputRequired") : t(`deploy.fields.inputProblem.${input.type ?? "string"}`, { pattern: input.pattern ?? "" }))}
+            >
+              <Suggest value={value} onChange={set} suggestion={answer} placeholder={answer} choices={choices?.map((c) => ({ value: c.answer, label: f(`inputFrom.${c.from}`) }))} />
+            </FloatingField>
+            {remember && onRemember && rememberable(row, checked[input.key]) && (
+              <label className="flex flex-wrap items-center gap-1.5 px-1 text-xs text-muted-foreground">
+                <Checkbox checked={!!remember[input.key]} onCheckedChange={(on) => onRemember(input.key, !!on)} />
+                {f("inputRemember")}
+                <FieldHint>{f("inputRememberHint")}</FieldHint>
+                {site && <span className="break-all">· {t("deploy.fields.inputReplaces", { answer: site.written })}</span>}
+              </label>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function CacheFields({ form, onChange, defaults }: { form: Form; onChange: (patch: Partial<Form>) => void; defaults: CacheDefaults }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
@@ -395,7 +407,7 @@ function GpuResource({ resources, value, onChange }: { resources: string[]; valu
   );
 }
 
-function Tolerations({ rows, onChange }: { rows: Toleration[]; onChange: (v: Toleration[]) => void }) {
+export function Tolerations({ rows, onChange }: { rows: Toleration[]; onChange: (v: Toleration[]) => void }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
   const patch = (i: number, p: Partial<Toleration>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
@@ -422,7 +434,7 @@ function Tolerations({ rows, onChange }: { rows: Toleration[]; onChange: (v: Tol
 
 const NO_PRESET = "__none";
 
-function PresetField({ presets, value, onChange }: { presets: Record<string, Preset>; value: string; onChange: (v: string) => void }) {
+export function PresetField({ presets, value, onChange }: { presets: Record<string, Preset>; value: string; onChange: (v: string) => void }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
   const picked = presets[value];
@@ -573,7 +585,7 @@ export function RouteExtras({ form, onChange, options, showRuntime = false, mode
 
 // Tab fills an empty field with the default it shows, as swiss's own form does.
 // choices list under the field when the empty field is clicked; typing closes the list.
-function Suggest({ value, onChange, suggestion, bare, placeholder, className, choices, ...props }: Omit<React.ComponentProps<typeof Input>, "value" | "onChange"> & { value: string; onChange: (v: string) => void; suggestion?: string; bare?: boolean; choices?: { value: string; label: string }[] }) {
+export function Suggest({ value, onChange, suggestion, bare, placeholder, className, choices, ...props }: Omit<React.ComponentProps<typeof Input>, "value" | "onChange"> & { value: string; onChange: (v: string) => void; suggestion?: string; bare?: boolean; choices?: { value: string; label: string }[] }) {
   const [focused, setFocused] = useState(false);
   const [listed, setListed] = useState(false);
   const offer = !value && !props.disabled ? suggestion : undefined;

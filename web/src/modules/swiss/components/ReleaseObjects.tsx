@@ -64,10 +64,13 @@ export function ReleaseObjects({
   namespace,
   release,
   onConfigureSLO,
+  video = false,
 }: {
   namespace: string;
   release: string;
   onConfigureSLO?: () => void;
+  // A video release has no LLMSLORequirement, so its SLO panel would only report one missing.
+  video?: boolean;
 }) {
   const q = useReleaseObjects(namespace, release, false);
   if (q.error)
@@ -90,7 +93,7 @@ export function ReleaseObjects({
       <div className="grid gap-4 lg:grid-cols-3">
         <RoutePanel objects={objects} loading={q.isPending} />
         <ScalerPanel objects={objects} loading={q.isPending} />
-        <SLOPanel namespace={namespace} release={release} objects={objects} loading={q.isPending} onConfigure={onConfigureSLO} />
+        {!video && <SLOPanel namespace={namespace} release={release} objects={objects} loading={q.isPending} onConfigure={onConfigureSLO} />}
       </div>
     </section>
   );

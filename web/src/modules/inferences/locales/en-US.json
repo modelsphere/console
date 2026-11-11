@@ -733,6 +733,56 @@
     "rollbackSheet": {
       "title": "Roll back {release} to revision {revision}",
       "description": "Re-applies that revision's plan exactly as it ran; to change settings, upgrade instead."
+    },
+    "video": {
+      "serviceIdHint": "Names the helm release and the route.",
+      "routeHint": "Publishes a video ModelRoute on the shared openresty. Empty uses the service ID.",
+      "storageClass": "Storage class",
+      "storageClassDefault": "cluster default",
+      "storageClassHint": "Of the shared asset volume. It must support ReadWriteMany (CephFS, NFS): a task can be generated on one replica and downloaded from another.",
+      "storageSize": "Storage size",
+      "storageSizeHint": "A quota, not a reservation. A CephFS volume grows in place but never shrinks.",
+      "database": "Database URL",
+      "databaseDefault": "chart default",
+      "databaseHint": "PostgreSQL connection string. Empty uses the chart's default, the platform's PostgreSQL.",
+      "databaseKept": "kept",
+      "databaseKeptHint": "The release already sets one. Empty keeps it; typing a new one replaces it.",
+      "totalGpus": "{n, plural, one {# GPU} other {# GPUs}} in total",
+      "ceilingGpus": "up to {n} when autoscaled",
+      "perPod": "{n, plural, one {# GPU} other {# GPUs}} per pod",
+      "poolOff": "Off",
+      "pools": {
+        "fl2va": {
+          "title": "FL2VA pool",
+          "hint": "Text and first/last frame to video. Each pod is one server and one SGLang running one generation at a time."
+        },
+        "ref2va": {
+          "title": "Ref2VA pool",
+          "hint": "Reference images, video and audio to video. Each pod is one server and one SGLang running one generation at a time."
+        }
+      },
+      "replicas": "Replicas",
+      "tpSize": "TP size",
+      "ulyssesDegree": "Ulysses degree",
+      "parallelHint": "GPUs per pod = TP size × Ulysses degree.",
+      "turbo": "Turbo",
+      "turboHint": "The 8-step Turbo LoRA and its sampling settings. Off serves the base model.",
+      "autoscale": "Autoscale",
+      "autoscaleHint": "Deploys the scaler and the SLO requirement. A pool scales only once it has a maximum.",
+      "scaled": "autoscaled",
+      "notScaled": "not autoscaled",
+      "min": "Min replicas",
+      "max": "Max replicas",
+      "maxEmpty": "empty = autoscaling off",
+      "maxHint": "Empty leaves this pool unscaled at its replica count.",
+      "maxDepth": "Max queue depth",
+      "maxDepthHint": "Queued tasks per replica before the pool scales up.",
+      "gpuProductsHint": "Restricts the GPU pods to these products; any one will do.",
+      "problems": {
+        "serviceId": "A service ID is required.",
+        "noPool": "Enable at least one pool.",
+        "maxBelowMin": "{pool}: the autoscale maximum is below the minimum."
+      }
     }
   },
   "runsPage": {

@@ -17,6 +17,7 @@ import { pick, useAutoscaling } from "@swiss/components/ReleaseObjects";
 import { isUninstalling } from "@swiss/lib/phase";
 import { AccessPoint } from "@swiss/components/Endpoint";
 import { useT } from "@/modules/inferences/i18n";
+import { isVideo } from "@swiss/lib/video";
 import { installSteps, modelLine, releaseState, type Step, type StepState } from "@/modules/inferences/lib";
 import { StatusDot } from "@/modules/inferences/components/StatusDot";
 import { InstallMethodLabel } from "@/modules/inferences/components/InstallMethodLabel";
@@ -116,7 +117,7 @@ export function Overview({
         </SectionCard>
 
         <SectionCard title={t("overview.access")} summary={s.route && <code className="font-mono">/{s.route}/</code>}>
-          <AccessPoint status={s} />
+          <AccessPoint status={s} video={isVideo(plan?.engine)} />
         </SectionCard>
       </div>
 

@@ -27,6 +27,11 @@ describe("joinTargets", () => {
     expect(got[2].id).toBe("ns/off");
   });
 
+  it("leaves video releases out: they serve no chat", () => {
+    const video = { ...dep("h3", "minimax-h3"), chart: "minimax-h3-0.3.0" };
+    expect(joinTargets([video, { ...dep("a", "qwen-a"), chart: "sglang-0.8.6" }], [...routes, { route: "minimax-h3", models: [] }]).map((t) => t.id)).toEqual(["qwen-a"]);
+  });
+
   it("is empty with no deployment, whatever the gateway serves", () => {
     expect(joinTargets([], routes)).toEqual([]);
   });

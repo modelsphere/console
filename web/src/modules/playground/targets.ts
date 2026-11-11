@@ -1,4 +1,5 @@
 import type { Deployment } from "@swiss/lib/api";
+import { isVideoDeployment } from "@swiss/lib/video";
 
 // RouteModels is one gateway route as console's /api/llm/routes reports it: the
 // models it lists, or why it listed none.
@@ -36,9 +37,10 @@ export type NotReady =
 // joinTargets lists the deployments the deployment pages list, each with what
 // the gateway says about its route. Routes no deployment owns are left out: the
 // Playground tries what was deployed here, nothing else. Ready ones come first.
+// A video release has no chat to try, so it is not offered.
 export function joinTargets(deployments: Deployment[], routes: RouteModels[]): Target[] {
   const byRoute = new Map(routes.map((r) => [r.route, r]));
-  const out = deployments.map((d): Target => {
+  const out = deployments.filter((d) => !isVideoDeployment(d)).map((d): Target => {
     const base = {
       release: d.release,
       namespace: d.namespace,
