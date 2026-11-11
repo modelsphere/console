@@ -60,6 +60,18 @@ describe("VideoDeployForm", () => {
     for (const none of ["最大副本数", "最大队列深度"]) expect(html).not.toContain(none);
   });
 
+  it("locks the storage class on an upgrade and says the size can only grow", () => {
+    const html = renderToStaticMarkup(
+      <VideoDeployForm form={{ ...VIDEO_EMPTY, serviceId: "h3", storageClass: "" }} onChange={() => {}} upgrade submitted={false} target={null} gpuOptions={[]} expanded={expanded} onExpand={() => {}} idPrefix="t-" />,
+    );
+    const inputs = html.match(/<input[^>]*>/g) ?? [];
+    const kept = inputs.filter((i) => i.includes(`placeholder="${v.databaseKept}"`));
+    // Class, size and the database URL all read "kept"; only the class is locked.
+    expect(kept.filter((i) => /\sdisabled=""/.test(i))).toHaveLength(1);
+    expect(kept.length).toBeGreaterThanOrEqual(2);
+    expect((video().match(/<input[^>]*>/g) ?? []).some((i) => i.includes(`placeholder="${v.storageClassDefault}"`) && /\sdisabled=""/.test(i))).toBe(false);
+  });
+
   it("leaves the LLM form as it was", () => {
     const html = llm();
     for (const want of [f.cart, f.slo]) expect(html).toContain(want);

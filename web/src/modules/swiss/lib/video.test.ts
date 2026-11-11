@@ -78,12 +78,13 @@ describe("clearing on upgrade", () => {
     const f = form({ modelRoute: true, route: "", storageClass: "", storageSize: "", priorityClassName: "", schedulerName: "", gpuProducts: [] });
     const o = videoOverrides(f, layer) as Record<string, Record<string, unknown>>;
     expect(o.modelRoute).toEqual({ enabled: true, nginx: { route: "" } });
-    expect(o.sharedStorage).toEqual({ storageClass: "", size: "" });
     expect(o.sglang).toMatchObject({ priorityClassName: "", schedulerName: "", gpuProduct: [] });
-    // Empty is "keep" for the database URL, never a clear.
+    // Empty is "keep" for the database URL and the shared volume, never a clear:
+    // an existing PVC's class cannot change, and an empty size is an invalid PVC.
     expect(o.database).toBeUndefined();
+    expect(o.sharedStorage).toBeUndefined();
     const req = videoPlanRequest(f, { model: "minimax-h3", formLayer: layer });
-    expect(req.overrides).toMatchObject({ modelRoute: { nginx: { route: "" } }, sglang: { gpuProduct: [] }, database: { url: "postgresql://kept" } });
+    expect(req.overrides).toMatchObject({ modelRoute: { nginx: { route: "" } }, sglang: { gpuProduct: [] }, database: { url: "postgresql://kept" }, sharedStorage: { storageClass: "cephfs", size: "1Ti" } });
   });
 
   it("leaves a field alone when the release never set it, or when the form still has a value", () => {

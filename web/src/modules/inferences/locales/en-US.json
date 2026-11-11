@@ -743,6 +743,8 @@
       "storageClassHint": "Of the shared asset volume. It must support ReadWriteMany (CephFS, NFS): a task can be generated on one replica and downloaded from another.",
       "storageSize": "Storage size",
       "storageSizeHint": "A quota, not a reservation. A CephFS volume grows in place but never shrinks.",
+      "storageClassLocked": "Fixed: the shared volume already exists, and a PVC's storage class cannot change.",
+      "storageSizeGrowOnly": "Can only grow: the volume is kept across upgrades and uninstalls, and a PVC never shrinks. Empty keeps it.",
       "database": "Database URL",
       "databaseDefault": "chart default",
       "databaseHint": "PostgreSQL connection string. Empty uses the chart's default, the platform's PostgreSQL.",

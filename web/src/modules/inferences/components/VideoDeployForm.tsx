@@ -86,11 +86,11 @@ export function VideoDeployForm({ form, onChange, upgrade, submitted, target, cl
               </FloatingField>
             )}
           </div>
-          <FloatingField value={shown(form.storageClass, f("storageClassDefault"))} label={f("storageClass")} hint={f("storageClassHint")}>
-            <FieldInput value={form.storageClass} onChange={(e) => onChange({ storageClass: e.target.value })} placeholder={f("storageClassDefault")} />
+          <FloatingField value={shown(form.storageClass, upgrade ? f("databaseKept") : f("storageClassDefault"))} label={f("storageClass")} hint={upgrade ? f("storageClassLocked") : f("storageClassHint")} disabled={upgrade}>
+            <FieldInput value={form.storageClass} onChange={(e) => onChange({ storageClass: e.target.value })} placeholder={upgrade ? f("databaseKept") : f("storageClassDefault")} disabled={upgrade} />
           </FloatingField>
-          <FloatingField value={shown(form.storageSize, DEFAULTS.storageSize)} label={f("storageSize")} hint={f("storageSizeHint")}>
-            <FieldInput value={form.storageSize} onChange={(e) => onChange({ storageSize: e.target.value })} placeholder={DEFAULTS.storageSize} />
+          <FloatingField value={shown(form.storageSize, upgrade ? f("databaseKept") : DEFAULTS.storageSize)} label={f("storageSize")} hint={upgrade ? f("storageSizeGrowOnly") : f("storageSizeHint")}>
+            <FieldInput value={form.storageSize} onChange={(e) => onChange({ storageSize: e.target.value })} placeholder={upgrade ? f("databaseKept") : DEFAULTS.storageSize} />
           </FloatingField>
           <FloatingField value={shown(form.databaseUrl, form.databaseKept ? f("databaseKept") : f("databaseDefault"))} label={f("database")} hint={form.databaseKept ? f("databaseKeptHint") : f("databaseHint")}>
             <FieldInput type="password" autoComplete="off" value={form.databaseUrl} onChange={(e) => onChange({ databaseUrl: e.target.value })} placeholder={form.databaseKept ? f("databaseKept") : f("databaseDefault")} />

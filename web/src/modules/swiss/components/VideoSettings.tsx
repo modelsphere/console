@@ -183,11 +183,25 @@ export function VideoSettings({
           <CardTitle className="text-base">Storage and database</CardTitle>
         </CardHeader>
         <CardContent className="divide-y pt-0">
-          <Row label="Storage class" note="the shared asset volume; must support ReadWriteMany (CephFS, NFS). Empty uses the cluster default">
-            <Input value={form.storageClass} onChange={(e) => onChange({ storageClass: e.target.value })} aria-label="storage class" placeholder="cluster default" />
+          <Row
+            label="Storage class"
+            note={
+              lockIdentity
+                ? "fixed: the shared volume already exists, and a PVC's storage class cannot change"
+                : "the shared asset volume; must support ReadWriteMany (CephFS, NFS). Empty uses the cluster default"
+            }
+          >
+            <Input value={form.storageClass} onChange={(e) => onChange({ storageClass: e.target.value })} disabled={lockIdentity} aria-label="storage class" placeholder={lockIdentity ? "kept" : "cluster default"} />
           </Row>
-          <Row label="Storage size" note="a quota, not a reservation; a CephFS volume grows in place but never shrinks">
-            <Input value={form.storageSize} onChange={(e) => onChange({ storageSize: e.target.value })} aria-label="storage size" placeholder={DEFAULTS.storageSize} />
+          <Row
+            label="Storage size"
+            note={
+              lockIdentity
+                ? "can only grow: the volume is kept across upgrades and uninstalls, and a PVC never shrinks. Empty keeps it"
+                : "a quota, not a reservation; a CephFS volume grows in place but never shrinks"
+            }
+          >
+            <Input value={form.storageSize} onChange={(e) => onChange({ storageSize: e.target.value })} aria-label="storage size" placeholder={lockIdentity ? "kept" : DEFAULTS.storageSize} />
           </Row>
           <Row
             label="Database URL"

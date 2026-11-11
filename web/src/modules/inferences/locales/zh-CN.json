@@ -732,6 +732,8 @@
       "storageClassHint": "共享素材盘的存储类，必须支持 ReadWriteMany(CephFS、NFS):任务可能在一个副本生成、从另一个副本下载。",
       "storageSize": "存储容量",
       "storageSizeHint": "是配额而非预占。CephFS 卷可在线扩容，但不能缩小。",
+      "storageClassLocked": "不可修改：共享盘已创建,PVC 的存储类无法变更。",
+      "storageSizeGrowOnly": "只能扩大：共享盘在升级和卸载后都会保留,PVC 无法缩小。留空保留原值。",
       "database": "数据库 URL",
       "databaseDefault": "chart 默认",
       "databaseHint": "PostgreSQL 连接串。留空则使用 chart 默认值，即平台的 PostgreSQL。",

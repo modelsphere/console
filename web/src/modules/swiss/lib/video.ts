@@ -186,11 +186,11 @@ export function videoProblem(f: VideoForm): VideoProblem | undefined {
 
 // The optional fields an empty box leaves out, and what clears each one: on an
 // upgrade the form is laid over the release's form layer, so leaving a key out
-// keeps the old value. database.url is not here: empty there means keep.
+// keeps the old value. Not here, so empty means keep: database.url, and the
+// shared volume's class and size (an existing PVC's class cannot change and
+// its size cannot shrink; an empty size is an invalid PVC).
 const CLEARABLE: [path: string, empty: unknown][] = [
   [KEYS.route, ""],
-  [KEYS.storageClass, ""],
-  [KEYS.storageSize, ""],
   [KEYS.priorityClassName, ""],
   [KEYS.schedulerName, ""],
   [KEYS.gpuProduct, []],
