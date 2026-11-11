@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FolderTree, Gauge, Globe, KeyRound, Library, ListChecks, MapPin, Plus, Route, Scaling, ToggleRight, TriangleAlert, X, type LucideIcon } from "lucide-react";
+import { FolderTree, Gauge, Globe, KeyRound, Layers, Library, ListChecks, MapPin, Plus, Route, Scaling, ToggleRight, TriangleAlert, X, type LucideIcon } from "lucide-react";
 import { api, type Site, type SiteProfile } from "@swiss/lib/api";
 import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent, CardHeader } from "@swiss/components/ui/card";
@@ -9,6 +9,7 @@ import { Input } from "@swiss/components/ui/input";
 import { Switch } from "@swiss/components/ui/switch";
 import { catalogErrors, FEATURES, featureOn, withFeature, type FeatureKey } from "@swiss/lib/profile";
 import { GpuTable } from "@swiss/components/GpuResources";
+import { PresetTable } from "@swiss/components/PresetTable";
 import { answersText, parseAnswers } from "@swiss/lib/inputs";
 import { cn } from "@swiss/lib/utils";
 
@@ -133,6 +134,16 @@ export function ProfileForm({
       >
         <Row top label="Answers" hint="8000 reads as a number and true as a boolean; quote one to keep it a string.">
           <Pairs keyLabel="chart key" valueLabel="answer" value={answersText(value.inputs)} onChange={(inputs) => set("inputs", parseAnswers(inputs))} />
+        </Row>
+      </Section>
+
+      <Section
+        icon={Layers}
+        title="Presets"
+        hint="Named values a deploy may pick one of, merged into its form values: a list keeps both sides' items. An upgrade does not pick one again."
+      >
+        <Row top label="Presets">
+          <PresetTable presets={value.presets} onChange={(presets) => set("presets", presets)} />
         </Row>
       </Section>
 

@@ -227,6 +227,20 @@ function ProfileView({ p }: { p: SiteProfile }) {
           "sites",
           p.sites.map((s) => ({ label: s.name, value: mono(s.url) })),
         )}
+      {p.presets && Object.keys(p.presets).length > 0 && (
+        <SectionCard title={t("profile.groups.presets")}>
+          <p className="text-sm text-muted-foreground">{t("profile.hints.presets")}</p>
+          {Object.entries(p.presets).map(([name, preset]) => (
+            <div key={name} className="flex flex-col gap-1.5">
+              <div className="text-sm">
+                <span className="font-mono font-medium">{name}</span>
+                {preset.description && <span className="ms-2 text-muted-foreground">{preset.description}</span>}
+              </div>
+              <CodeBlock language="yaml" value={toYaml(preset.values ?? {})} />
+            </div>
+          ))}
+        </SectionCard>
+      )}
       {p.extra && Object.keys(p.extra).length > 0 && (
         <SectionCard title={t("profile.groups.extra")}>
           <CodeBlock language="yaml" value={toYaml(p.extra)} />

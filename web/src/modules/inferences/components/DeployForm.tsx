@@ -3,6 +3,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  CodeBlock,
   DataSelect,
   DropdownMenu,
   DropdownMenuContent,
@@ -23,12 +24,14 @@ import {
   cn,
 } from "@modelsphere/ui";
 import { Plus, RefreshCw, X } from "lucide-react";
-import type { ClusterInfo } from "@swiss/lib/api";
+import type { ClusterInfo, Preset } from "@swiss/lib/api";
+import { editRule, listLabel, type AffinityRule } from "@swiss/lib/affinity";
+import { toYaml } from "@swiss/lib/yaml";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { CHECK_MS, inputError, rememberable, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
-import { effective, imageChoices, type Form, type Toleration } from "@swiss/components/DeploySettings";
+import { effective, imageChoices, tolerationExtras, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
 import { useT } from "@/modules/inferences/i18n";
@@ -67,9 +70,11 @@ export interface DeployFormProps {
   // Which typed answers to save to the site profile once the deploy applies; absent where it cannot be saved.
   remember?: Record<string, boolean>;
   onRemember?: (key: string, on: boolean) => void;
+  // The site profile's presets, on a deploy.
+  presets?: Record<string, Preset>;
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember, presets }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -145,7 +150,9 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
             <FieldSelect multiple values={form.gpuProducts} onValuesChange={(v) => onChange({ gpuProducts: v })} options={gpuOptions.map((o) => ({ value: o, label: o, badge: unlistedProducts(gpuListed, [o]).length ? <Badge variant="warning">{f("gpuUnverified")}</Badge> : <Badge variant="success">{f("gpuVerified")}</Badge> }))} placeholder={gpuOptions.length ? undefined : f("gpuProductsEmpty")} disabled={!gpuOptions.length} />
           </FloatingField>
           {capacity && <CapacityHint {...capacity} />}
+          {presets && Object.keys(presets).length > 0 && <PresetField presets={presets} value={form.preset} onChange={(preset) => onChange({ preset })} />}
           <Tolerations rows={form.tolerations} onChange={(v) => onChange({ tolerations: v })} />
+          {form.affinity.length > 0 && <AffinityRules rules={form.affinity} onChange={(affinity) => onChange({ affinity })} />}
           <div className="grid grid-cols-2 gap-3">
             <FloatingField value={shown(form.priorityClassName, cluster?.priorityClassName)} label={f("priorityClass")}>
               <Suggest value={form.priorityClassName} onChange={(priorityClassName) => onChange({ priorityClassName })} suggestion={cluster?.priorityClassName} />
@@ -396,18 +403,73 @@ function Tolerations({ rows, onChange }: { rows: Toleration[]; onChange: (v: Tol
     <Group label={f("tolerations")} hint={f("tolerationsHint")}>
         {rows.map((r, i) => (
           <div key={i} className="grid grid-cols-[1fr_7rem_1fr_9rem_auto] items-center gap-2">
-            <Input value={r.key} onChange={(e) => patch(i, { key: e.target.value })} placeholder={f("tolKey")} aria-label={f("tolKey")} />
+            <Input value={r.key} onChange={(e) => patch(i, { key: e.target.value })} placeholder={r.raw && !r.raw.key ? f("tolAny") : f("tolKey")} aria-label={f("tolKey")} />
             <DataSelect value={r.operator} onValueChange={(v) => patch(i, { operator: v as Toleration["operator"], value: v === "Exists" ? "" : r.value })} options={["Equal", "Exists"].map((o) => ({ value: o, label: o }))} />
             <Input value={r.value} onChange={(e) => patch(i, { value: e.target.value })} placeholder={f("tolValue")} aria-label={f("tolValue")} disabled={r.operator === "Exists"} />
             <DataSelect value={r.effect} onValueChange={(v) => patch(i, { effect: v })} options={EFFECTS.map((e) => ({ value: e, label: e || f("anyEffect") }))} />
             <Button variant="ghost" size="icon" className="size-8" aria-label={t("common:actions.delete")} onClick={() => onChange(rows.filter((_, j) => j !== i))}>
               <X className="size-4" />
             </Button>
+            {tolerationExtras(r).length > 0 && <span className="col-span-5 font-mono text-xs text-muted-foreground">{tolerationExtras(r).join(" · ")}</span>}
           </div>
         ))}
         <Button variant="ghost" size="sm" className="w-fit" onClick={() => onChange([...rows, { key: "", operator: "Equal", value: "", effect: "" }])}>
           <Plus className="size-3.5" /> {f("tolAdd")}
         </Button>
+    </Group>
+  );
+}
+
+const NO_PRESET = "__none";
+
+function PresetField({ presets, value, onChange }: { presets: Record<string, Preset>; value: string; onChange: (v: string) => void }) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+  const picked = presets[value];
+  return (
+    <div className="flex flex-col gap-1.5">
+      <FloatingField label={f("preset")} hint={f("presetHint")}>
+        <FieldSelect
+          value={value || NO_PRESET}
+          onValueChange={(v) => v && onChange(v === NO_PRESET ? "" : v)}
+          options={[{ value: NO_PRESET, label: f("presetNone") }, ...Object.keys(presets).sort().map((n) => ({ value: n, label: n }))]}
+        />
+      </FloatingField>
+      {picked?.description && <p className="text-xs text-muted-foreground">{picked.description}</p>}
+      {picked && <CodeBlock language="yaml" value={toYaml(picked.values ?? {})} />}
+    </div>
+  );
+}
+
+function AffinityRules({ rules, onChange }: { rules: AffinityRule[]; onChange: (v: AffinityRule[]) => void }) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+  const patch = (i: number, r: AffinityRule) => onChange(rules.map((x, j) => (i === j ? r : x)));
+  return (
+    <Group label={f("affinity")} hint={f("affinityHint")}>
+      {rules.map((r, i) => (
+        <div key={i} className={cn("flex flex-col gap-1 rounded-md border p-2", r.drop && "opacity-50")}>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="min-w-0 truncate font-mono text-muted-foreground">
+              {r.scope} · {listLabel(r.list)}
+            </span>
+            <Button variant="ghost" size="sm" className="ms-auto h-7" onClick={() => patch(i, { ...r, drop: !r.drop })}>
+              {r.drop ? f("affinityUndo") : f("affinityRemove")}
+            </Button>
+          </div>
+          <textarea
+            value={r.text}
+            onChange={(e) => patch(i, editRule(r, e.target.value))}
+            disabled={r.drop}
+            spellCheck={false}
+            aria-label={`${r.scope} ${listLabel(r.list)}`}
+            aria-invalid={!!r.error}
+            rows={Math.max(2, r.text.split("\n").length)}
+            className={cn("w-full rounded-md border bg-background px-2 py-1 font-mono text-[11px] leading-snug", r.drop && "line-through", r.error && "border-destructive")}
+          />
+          {r.error && <p className="text-xs text-destructive">{t("deploy.fields.affinityInvalid", { error: r.error })}</p>}
+        </div>
+      ))}
     </Group>
   );
 }

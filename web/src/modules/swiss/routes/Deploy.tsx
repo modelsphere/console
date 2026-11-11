@@ -15,6 +15,7 @@ import { cacheCard } from "@swiss/lib/cache";
 import { CHECK_MS, inputRows, inputsAnswered, siteSaves } from "@swiss/lib/inputs";
 import { SiteSaves, useSiteSaver } from "@swiss/components/SiteSaves";
 import { useDebounced } from "@swiss/lib/useDebounced";
+import { presetValues } from "@swiss/lib/formLayer";
 import { deployCapacity, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { InstallMethodChoice } from "@swiss/components/InstallMethod";
@@ -125,6 +126,7 @@ export function Deploy() {
           forceGpuProducts: unlistedProducts(model.data?.variant.requires.gpuProduct, form.gpuProducts).length > 0,
           cacheUnsupported: !!cache.unsupported,
           inputs: model.data?.variant.inputs,
+          preset: presetValues(profile.data?.profile, form.preset),
         }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping
@@ -285,6 +287,7 @@ export function Deploy() {
             : undefined
         }
         cache={cache}
+        presets={profile.data?.profile?.presets}
       />
 
       <Pipeline
