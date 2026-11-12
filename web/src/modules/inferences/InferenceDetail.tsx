@@ -10,7 +10,7 @@ import { useReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { ReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { Endpoint } from "@swiss/components/Endpoint";
 import { Provenance } from "@swiss/components/Provenance";
-import { isVideo } from "@swiss/lib/video";
+import { isVideo, jobSLOs } from "@swiss/lib/video";
 import { useT } from "@/modules/inferences/i18n";
 import { modelLine, parseTab, releaseState, sloBlocked, visibleTabs, type Tab } from "@/modules/inferences/lib";
 import { statusOf } from "@/modules/inferences/components/StatusDot";
@@ -108,9 +108,9 @@ export function InferenceDetail() {
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
-  const blocked = sloBlocked(s, plan.data);
   // A video release has one SLO per pool; the sheet edits each.
   const video = isVideo(plan.data?.engine);
+  const blocked = sloBlocked(s, plan.data, video && objects.data ? jobSLOs(objects.data.objects).length > 0 : undefined);
   const sloOpen = !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
   const closeSLO = () => {
     setEditingSLO(false);

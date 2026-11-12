@@ -1,3 +1,4 @@
+import { jobSLOs } from "@swiss/lib/video";
 import type {
   AutoscaleState,
   Deployment,
@@ -74,9 +75,11 @@ export function sloEnabled(plan?: Plan): boolean {
 }
 
 // Why editing the SLO is greyed out, or undefined when it can be edited: swiss's
-// own page shows the SLO card for an applied plan with SLO on.
-export function sloBlocked(status: ReleaseStatus, plan?: Plan): "off" | "pending" | undefined {
-  if (!sloEnabled(plan)) return "off";
+// own page shows the SLO card for an applied plan with SLO on. live, when
+// given, is whether the release's SLO objects exist: a video release's JobSLOs
+// come from the chart's default even when its form layer never named the switch.
+export function sloBlocked(status: ReleaseStatus, plan?: Plan, live?: boolean): "off" | "pending" | undefined {
+  if (!(live ?? sloEnabled(plan))) return "off";
   if (status.planStatus?.phase !== "applied") return "pending";
   return undefined;
 }
@@ -129,8 +132,10 @@ export function installSteps(
   scaler: Picked<LLMScalerSpec, LLMScalerStatus>,
   objectsUnreadable = false,
   autoscale?: AutoscaleState,
+  // A video release's scaler step (videoScalerStep), which reads every pool's.
+  videoScaler?: Step,
 ): Step[] {
-  const pd = autoscale?.enabled ? pdScaleStep(autoscale) : undefined;
+  const pd = autoscale?.enabled ? pdScaleStep(autoscale) : videoScaler;
   if (objectsUnreadable) {
     return [
       appliedStep(s, s.planStatus),
@@ -184,6 +189,23 @@ function scalerStep({ result, status }: Picked<LLMScalerSpec, LLMScalerStatus>):
   if (want !== undefined && want !== cur && !scalerHold(status?.conditions))
     return { key, state: "wait", detail: "scaling", params: { cur, want } };
   return { key, state: "ok", detail: "steady", params: { n: cur } };
+}
+
+// videoScalerStep is a video release's scaler step: it has an LLMScaler per pool.
+// A pool whose JobSLO has no maximum is not scaled by design -- the decision
+// server publishes nothing for it, and its scaler reports that as unavailable --
+// so it is left out. The step is the worst of the scaled pools', or off when no
+// pool is scaled.
+export function videoScalerStep(objects: ObjectResult[] | undefined): Step {
+  const scaled = new Set(jobSLOs(objects).filter((j) => j.spec?.maximumDeployment).map((j) => j.serviceId));
+  const scalers = (objects ?? []).filter((o) => o.ref.kind === "LLMScaler");
+  if (!scalers.length) return scalerStep({});
+  const steps = scalers
+    .filter((o) => scaled.has((o.live?.spec as LLMScalerSpec | undefined)?.customProvider?.serviceId ?? ""))
+    .map((o) => scalerStep({ result: o, spec: o.live?.spec as LLMScalerSpec | undefined, status: o.live?.status as LLMScalerStatus | undefined }));
+  if (!steps.length) return { key: "scaler", state: "off", detail: "unmanaged" };
+  const rank: Record<StepState, number> = { bad: 0, wait: 1, ok: 2, off: 3 };
+  return steps.reduce((worst, s) => (rank[s.state] < rank[worst.state] ? s : worst));
 }
 
 function pdScaleStep(st: AutoscaleState): Step {
