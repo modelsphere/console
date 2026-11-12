@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, RotateCcw, Save, X } from "lucide-react";
-import { deployApi, type ObjectResult, type SLOBound, type SLOConfig, type SLOMetric, type SLOSection } from "@swiss/lib/api";
+import { deployApi, type ObjectResult, type Plan, type SLOBound, type SLOConfig, type SLOMetric, type SLOSection } from "@swiss/lib/api";
+import { layersOf } from "@swiss/components/Provenance";
 import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
@@ -104,11 +105,14 @@ export function SLOCard({
   namespace,
   release,
   canEdit,
+  pd = false,
   onSaved,
 }: {
   namespace: string;
   release: string;
   canEdit: boolean;
+  // pd.enabled from the release plan the caller already loaded.
+  pd?: boolean;
   onSaved?: () => void;
 }) {
   const f = useSLOForm(namespace, release, onSaved);
@@ -136,7 +140,7 @@ export function SLOCard({
       </CardHeader>
 
       <CardContent className="divide-y pt-0">
-        <SLOFields f={f} canEdit={canEdit} />
+        <SLOFields f={f} canEdit={canEdit} pd={pd} />
       </CardContent>
     </Card>
   );
@@ -153,22 +157,25 @@ export interface SLOTarget {
 export function SLODialog({
   target,
   canEdit,
+  pd = false,
   onClose,
 }: {
   target: SLOTarget | null;
   canEdit: boolean;
+  pd?: boolean;
   onClose: () => void;
 }) {
   if (!target) return null;
-  return <SLODialogBody key={`${target.namespace}/${target.release}`} {...target} canEdit={canEdit} onClose={onClose} />;
+  return <SLODialogBody key={`${target.namespace}/${target.release}`} {...target} canEdit={canEdit} pd={pd} onClose={onClose} />;
 }
 
 function SLODialogBody({
   namespace,
   release,
   canEdit,
+  pd,
   onClose,
-}: SLOTarget & { canEdit: boolean; onClose: () => void }) {
+}: SLOTarget & { canEdit: boolean; pd: boolean; onClose: () => void }) {
   const f = useSLOForm(namespace, release, onClose);
   const { slo, form } = f;
   const ready = !!form;
@@ -206,7 +213,7 @@ function SLODialogBody({
         slo.error ? <ErrorState what="SLO" error={slo.error} /> : <Loading what="SLO" />
       ) : (
         <div className="-my-3 divide-y">
-          <SLOFields f={f} canEdit={canEdit} />
+          <SLOFields f={f} canEdit={canEdit} pd={pd} />
         </div>
       )}
     </Dialog>
@@ -273,7 +280,7 @@ function SaveButton({ f, canEdit }: { f: SLOForm; canEdit: boolean }) {
   );
 }
 
-function SLOFields({ f, canEdit }: { f: SLOForm; canEdit: boolean }) {
+function SLOFields({ f, canEdit, pd }: { f: SLOForm; canEdit: boolean; pd: boolean }) {
   const form = f.form!;
   const setForm = f.setForm;
   const found = !!f.slo.data?.found;
@@ -303,13 +310,13 @@ function SLOFields({ f, canEdit }: { f: SLOForm; canEdit: boolean }) {
 
       <Row
         label="Bounds"
-        hint="The floor the scaler never goes below and the ceiling it never passes. The floor counts replicas or concurrency; the ceiling counts replicas. A pd release counts engines for both, and the two types have to match. An empty ceiling leaves the stored value alone — only Reset clears it."
+        hint="The floor the scaler never goes below and the ceiling it never passes. Replica and pdengine bounds share one type; a concurrency floor still caps replicas. On a pd release the floor can count engines. An empty ceiling leaves the stored value alone — only Reset clears it."
       >
         <div className="flex items-center gap-2">
           <Select
             value={form.minType}
             disabled={!editable}
-            options={form.minType === "pdengine" ? ["pdengine"] : ["replica", "concurrency"]}
+            options={boundTypes(pd)}
             className="w-32"
             onChange={(minType) => setForm({ ...form, minType })}
           />
@@ -393,6 +400,26 @@ interface Draft {
   otps: MetricRow[];
 }
 
+// pd.enabled on the release plan, merged the way helm merges values: maps key
+// by key, last writer wins. The chart's SLO object never records the mode.
+export function pdEnabled(plan?: Plan): boolean {
+  if (!plan) return false;
+  let on = false;
+  for (const name of layersOf(plan)) {
+    const pd = plan.layers[name]?.pd;
+    if (!pd || typeof pd !== "object") continue;
+    const enabled = (pd as { enabled?: unknown }).enabled;
+    if (typeof enabled === "boolean") on = enabled;
+  }
+  return on;
+}
+
+// The CRD's bound types are replica and pdengine, for any service. Concurrency
+// is a floor the non-pd form already offered; a pd release has no such unit.
+export function boundTypes(pd: boolean): string[] {
+  return pd ? ["pdengine", "replica"] : ["replica", "concurrency"];
+}
+
 export function draftOf(data: SLOConfig): Draft {
   // swissd sends both; highPriority is what the SLO server actually stored.
   return {
@@ -423,9 +450,9 @@ export function editOf(form: Draft) {
   const min = intOf(form.minValue);
   if (min != null) body.minimumDeployment = { type: form.minType, value: min };
   const max = intOf(form.maxValue);
-  // The ceiling counts replicas, including under a concurrency floor. pd mode
-  // counts engines on both bounds; a replica ceiling there is refused.
-  if (max != null) body.maximumDeployment = { type: form.minType === "pdengine" ? form.minType : "replica", value: max };
+  // Concurrency is a floor unit only, so its ceiling stays replicas. replica
+  // and pdengine are the CRD's bound types, and the two bounds share one.
+  if (max != null) body.maximumDeployment = { type: form.minType === "concurrency" ? "replica" : form.minType, value: max };
   const ttft = metricsOf(form.ttft);
   const otps = metricsOf(form.otps);
   if (ttft) body.ttft = { default: { metrics: ttft } };
