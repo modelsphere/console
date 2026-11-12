@@ -83,6 +83,9 @@ export interface VideoFields {
   databaseUrl: string;
   // The release's form layer already sets database.url, so an empty field keeps it.
   databaseKept: boolean;
+  // On an upgrade, what the release runs with now, read from every plan layer:
+  // shown beside the empty fields, never written.
+  current?: { storageSize: string; storageClass: string };
 }
 
 const pool = (): PoolForm => ({

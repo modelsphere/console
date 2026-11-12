@@ -2085,7 +2085,11 @@ export function formFromPlan(plan: Plan): Form {
       // Earlier forms wrote these under sglang; the chart reads either.
       priorityClassName: str("priorityClassName") || str("sglang.priorityClassName"),
       schedulerName: str("schedulerName") || str("sglang.schedulerName"),
-      video: videoFields(o, { release: true }),
+      video: {
+        ...videoFields(o, { release: true }),
+        // The chart's own default when no layer names a size.
+        current: { storageSize: effectiveString(plan, VIDEO_KEYS.storageSize) || VIDEO_DEFAULTS.storageSize, storageClass: effectiveString(plan, VIDEO_KEYS.storageClass) },
+      },
       edits: editsOf(plan),
     };
   }
@@ -2145,6 +2149,17 @@ export function formFromPlan(plan: Plan): Form {
 // The plan's edit layer as the editor's text.
 export function editsOf(plan: Plan): string {
   return plan.layers?.edit && Object.keys(plan.layers.edit).length > 0 ? toYamlish(plan.layers.edit) : "";
+}
+
+// effectiveString is the non-empty string at path in the last plan layer that
+// sets one; "" when none does.
+function effectiveString(plan: Plan, path: string): string {
+  let s = "";
+  for (const layer of layersOf(plan)) {
+    const v = at(plan.layers[layer] as Record<string, unknown> | undefined, path);
+    if (typeof v === "string" && v.trim()) s = v.trim();
+  }
+  return s;
 }
 
 // effectiveBool is the boolean at path in the last plan layer that sets one,

@@ -65,12 +65,16 @@ describe("DeployForm for a video variant", () => {
     expect(html).not.toContain(`>${v.storageClass}<`);
   });
 
-  it("locks the storage class on an upgrade and says the size can only grow", () => {
-    const html = render({ video: true, upgrade: true });
+  it("on an upgrade, locks the storage class and says what the release has now", () => {
+    const html = render({ video: true, upgrade: true, form: { video: { ...EMPTY.video, storageSize: "", databaseKept: true, current: { storageSize: "1Ti", storageClass: "ceph-filesystem" } } } });
     const inputs = html.match(/<input[^>]*>/g) ?? [];
-    const kept = inputs.filter((i) => i.includes(`placeholder="${v.databaseKept}"`));
-    expect(kept.filter((i) => /\sdisabled=""/.test(i))).toHaveLength(1);
-    expect(kept.length).toBeGreaterThanOrEqual(2);
+    const placeholder = (p: string) => inputs.filter((i) => i.includes(`placeholder="${p}"`));
+    // The class is the release's, and cannot change.
+    expect(placeholder("ceph-filesystem").filter((i) => /\sdisabled=""/.test(i))).toHaveLength(1);
+    // The size and the database name what an empty field keeps.
+    expect(placeholder(v.storageSizeCurrent.replace("{size}", "1Ti"))).toHaveLength(1);
+    expect(placeholder(v.databaseKept)).toHaveLength(1);
+    expect(html).not.toContain('placeholder="保留"');
   });
 
   it("leaves the LLM form as it was", () => {
