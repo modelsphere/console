@@ -160,17 +160,17 @@ describe("image override", () => {
   const selected = (html: string, label: string) => new RegExp(`<option[^>]*selected[^>]*>${label}</option>`).test(html);
 
   it("offers both the site's mirror and the catalog's own image, marking the one in the field", () => {
-    const mirrored = render({ ...EMPTY, serviceId: "model", image: image.site });
+    const mirrored = render({ ...EMPTY, serviceId: "model", images: { image: image.site } });
     expect(mirrored).toContain("站点镜像仓库");
     expect(mirrored).toContain("目录原始镜像");
     expect(selected(mirrored, "站点镜像仓库")).toBe(true);
-    expect(selected(render({ ...EMPTY, serviceId: "model", image: image.catalog }), "目录原始镜像")).toBe(true);
-    const typed = render({ ...EMPTY, serviceId: "model", image: "ghcr.io/me/sglang:rc1" });
+    expect(selected(render({ ...EMPTY, serviceId: "model", images: { image: image.catalog } }), "目录原始镜像")).toBe(true);
+    const typed = render({ ...EMPTY, serviceId: "model", images: { image: "ghcr.io/me/sglang:rc1" } });
     expect(selected(typed, "站点镜像仓库") || selected(typed, "目录原始镜像")).toBe(false);
   });
 
   it("offers nothing to pick between without a mirror", () => {
-    const html = render({ ...EMPTY, serviceId: "model", image: image.catalog }, { catalog: image.catalog, site: image.catalog });
+    const html = render({ ...EMPTY, serviceId: "model", images: { image: image.catalog } }, { catalog: image.catalog, site: image.catalog });
     expect(html).not.toContain("目录原始镜像");
   });
 });

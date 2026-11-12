@@ -8,7 +8,7 @@ import { CHECK_MS, inputError, inputProblem, rememberable, setInputOverrides, ty
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, affinityRules, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
 import { envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
-import { applyImageEdits, dropClearedImages, imageEditsFromLayer, imageRows, joinImage, type ImageSlot, type ImageSlotKind } from "@swiss/lib/imageSlots";
+import { applyImageEdits, dropClearedImages, imageEditsFromLayer, imagePatch, imageRows, imageText, joinImage, type ImageEdit, type ImageSlot } from "@swiss/lib/imageSlots";
 import { toYaml } from "@swiss/lib/yaml";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
@@ -74,12 +74,10 @@ export interface Form {
   scalerMax: string;
   replicaCount: string;
   route: string;
-  // image is repository:tag for the engine on this deploy alone. Empty leaves
-  // the catalog's tag and the site's mirror.
-  image: string;
-  // Other image slots, by values path. "" is an explicit clear: on an upgrade
-  // that drops the form-layer override. A path that is absent was not edited.
-  images: Record<string, string>;
+  // Image overrides by values path. The engine is "image": a map slot stores
+  // {repository, tag}, a string slot stores the string. formFromPlan seeds every
+  // image the release's form layer set; an empty value drops that override.
+  images: Record<string, ImageEdit>;
   // Named model-route knobs. Empty number fields leave chart defaults.
   exposeRoutedPeer: boolean;
   backendMaxConcurrency: string;
@@ -133,7 +131,6 @@ export const EMPTY: Form = {
   scalerMax: "",
   replicaCount: "",
   route: "",
-  image: "",
   images: {},
   exposeRoutedPeer: true,
   backendMaxConcurrency: "",
@@ -942,12 +939,9 @@ function Row({
   );
 }
 
-function imagePatch(form: Form, path: string, value: string): Partial<Form> {
-  const images = { ...form.images, [path]: value };
-  return path === "image" ? { image: value, images } : { images };
-}
+const IMAGE_SOURCE_LABELS = { aria: "engine image source", site: "site mirror", catalog: "catalog original", custom: "custom", inherited: "inherited" };
 
-// One row per chart image. Empty leaves the value to whichever layer set it;
+// One row per chart image. Empty keeps the image shown as the placeholder;
 // a typed ref is the form layer. The engine row keeps the mirror choice.
 function ImagesSection({
   form,
@@ -962,39 +956,32 @@ function ImagesSection({
   slots?: ImageSlot[];
   error?: string;
 }) {
-  const rows = imageRows(slots, image);
+  const rows = imageRows(slots, image, form.images);
   if (!rows.length && !error) return null;
-  const edited = (path: string) => (path === "image" ? form.image : (form.images[path] ?? ""));
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Images</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Each row is a values path. Empty leaves that image to the layer named beside it; a value is written on the form layer.
+          Each row is a values path. Empty keeps the image in the placeholder; a value is written on the form layer.
         </p>
       </CardHeader>
       <CardContent className="divide-y pt-0">
         {error && <p className="py-2 text-xs text-warning">{error}</p>}
         {rows.map((slot) => {
-          const value = edited(slot.path);
+          const value = imageText(form.images[slot.path]);
+          const set = (raw: string) => onChange({ images: imagePatch(form.images, slot.path, slot.kind, raw) });
           return (
-            <Row key={slot.path} label={slot.path} caption={`set by ${slot.layer}`}>
+            <Row key={slot.path} label={slot.path}>
               <div className="w-full min-w-0 space-y-1.5 py-1">
-                {slot.value && slot.value !== value.trim() && (
-                  <div className="truncate font-mono text-xs text-muted-foreground" title={slot.value}>
-                    {slot.value}
-                  </div>
-                )}
                 <Input
                   value={value}
-                  onChange={(e) => onChange(imagePatch(form, slot.path, e.target.value))}
+                  onChange={(e) => set(e.target.value)}
                   placeholder={slot.value || "repository:tag"}
                   aria-label={slot.path}
                   className="font-mono text-xs"
                 />
-                {slot.path === "image" && image && (
-                  <ImageSource image={image} value={value} onPick={(v) => onChange(imagePatch(form, "image", v))} />
-                )}
+                {slot.path === "image" && image && <ImageSource image={image} value={value} onPick={set} />}
               </div>
             </Row>
           );
@@ -1004,17 +991,27 @@ function ImagesSection({
   );
 }
 
-function ImageSource({ image, value, onPick }: { image: { catalog: string; site: string }; value: string; onPick: (ref: string) => void }) {
+export function ImageSource({
+  image,
+  value,
+  onPick,
+  labels = IMAGE_SOURCE_LABELS,
+}: {
+  image: { catalog: string; site: string };
+  value: string;
+  onPick: (ref: string) => void;
+  labels?: { aria: string; site: string; catalog: string; custom: string; inherited: string };
+}) {
   const choices = imageChoices(image);
   if (!choices.length) return null;
   const selected = choices.find((c) => c.ref === value.trim())?.ref ?? "";
   return (
     <SourceSelect
-      ariaLabel="engine image source"
+      ariaLabel={labels.aria}
       value={selected}
       onChange={onPick}
-      options={choices.map((c) => ({ value: c.ref, label: c.key === "site" ? "site mirror" : "catalog original" }))}
-      emptyLabel={value.trim() ? "custom" : "inherited"}
+      options={choices.map((c) => ({ value: c.ref, label: c.key === "site" ? labels.site : labels.catalog }))}
+      emptyLabel={value.trim() ? labels.custom : labels.inherited}
     />
   );
 }
@@ -1828,9 +1825,6 @@ export function planRequest(
     // The release's form layer, on an upgrade: the form's values are put over
     // it, so the request carries the whole layer rebuilt.
     formLayer?: Record<string, unknown>;
-    // Kinds from the last dry run, so a string slot is written as a string.
-    // Without them the form layer's own shape decides, and a fresh deploy writes a map.
-    imageSlots?: ImageSlotKind[];
     values?: Record<string, unknown>;
     siteEnv?: Record<string, unknown>;
   },
@@ -1923,7 +1917,7 @@ export function planRequest(
   // A typed ref is this deploy's form layer. An empty row is not an override;
   // on an upgrade it is a clear, so the release's copy of that path is dropped
   // before the overlay, the same way an emptied toleration list replaces the old one.
-  applyImageEdits(overrides, f, opts.imageSlots, opts.formLayer);
+  applyImageEdits(overrides, f.images);
   if (f.priorityClassName.trim()) overrides.priorityClassName = f.priorityClassName.trim();
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
 
@@ -1931,7 +1925,7 @@ export function planRequest(
   const siteEnv = envBase(opts.siteEnv);
   const preset = Object.keys(siteEnv).length ? (opts.preset ? withPreset(opts.preset, siteEnv) : siteEnv) : opts.preset;
   const base = opts.formLayer ? structuredClone(opts.formLayer) : undefined;
-  if (base) dropClearedImages(base, f.image, f.images);
+  if (base) dropClearedImages(base, f.images);
   const layer = withEnv(opts.values, withPreset(base ? overlay(base, overrides) : overrides, preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
 
@@ -1990,9 +1984,7 @@ export function formFromPlan(plan: Plan): Form {
     return typeof v === "boolean" ? v : fallback;
   };
   const nv = nginxValuesMap(at("modelRoute.nginx.values"));
-  // The engine stays on form.image. Every other image the form layer already set
-  // is seeded so an upgrade shows it and sends it back; a clear is not seeded.
-  const { image: seededImage, ...imageEdits } = imageEditsFromLayer(o);
+  // Every image the form layer set, so an upgrade shows it and a clear drops it.
 
   return {
     ...EMPTY,
@@ -2011,8 +2003,7 @@ export function formFromPlan(plan: Plan): Form {
     affinity: affinityRules(o),
     replicaCount: str("replicaCount"),
     route: str("modelRoute.nginx.route"),
-    image: seededImage ?? joinImage(str("image.repository"), str("image.tag")),
-    images: imageEdits,
+    images: imageEditsFromLayer(o),
     cart: bool("cart.enabled", true),
     modelRoute: bool("modelRoute.enabled"),
     slo: bool("sloRequirement.enabled", true),

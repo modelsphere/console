@@ -5,12 +5,14 @@ import {
   applyImageEdits,
   discoverImageSlots,
   dropClearedImages,
-  dropImage,
   imageEditsFromLayer,
+  imagePatch,
+  imageRows,
+  imageText,
   joinImage,
   mergedHelmValues,
-  provenanceLayers,
   splitImage,
+  type ImageEdit,
 } from "./imageSlots";
 
 const plan = (form: Record<string, unknown>) => ({ release: { name: "r", namespace: "n" }, layers: { form } }) as unknown as Plan;
@@ -52,12 +54,13 @@ describe("discoverImageSlots", () => {
     other: { enabled: true, image: { repository: "example.com/other", tag: "9" } },
   };
 
-  it("lists map and string slots, hides disabled sections, and skips metricsMock", () => {
+  it("lists map and string slots and hides disabled sections", () => {
     const slots = discoverImageSlots(values);
     expect(slots.map((s) => [s.path, s.kind, s.value])).toEqual([
       ["image", "map", "quay.io/ascend/vllm-ascend:pinned@sha256:abc"],
       ["hangWatcher.image", "map", "example.com/hang-watcher:0.1.27"],
       ["sidecar.image", "string", "example.com/echo:1"],
+      ["metricsMock.image", "string", "example.com/http-echo:0.2.3"],
       ["other.image", "map", "example.com/other:9"],
     ]);
   });
@@ -67,32 +70,6 @@ describe("discoverImageSlots", () => {
       pd: { enabled: false, prefill: { enabled: true, image: { repository: "example.com/engine", tag: "1" } } },
     });
     expect(slots).toEqual([]);
-  });
-
-  it("names the last layer that set the slot, and the chart when none did", () => {
-    const layers = {
-      catalog: { image: { repository: "quay.io/ascend/vllm-ascend", tag: "pinned@sha256:abc" } },
-      site: { image: { repository: "mirror.example/vllm-ascend" } },
-      form: { hangWatcher: { image: { repository: "example.com/custom", tag: "9" } } },
-    };
-    const merged = {
-      ...values,
-      image: { repository: "mirror.example/vllm-ascend", tag: "pinned@sha256:abc" },
-      hangWatcher: { enabled: true, image: { repository: "example.com/custom", tag: "9" } },
-    };
-    const byPath = Object.fromEntries(discoverImageSlots(merged, layers).map((s) => [s.path, s.layer]));
-    expect(byPath.image).toBe("site");
-    expect(byPath["hangWatcher.image"]).toBe("form");
-    expect(byPath["sidecar.image"]).toBe("chart");
-    expect(byPath["other.image"]).toBe("chart");
-  });
-
-  it("lets an edit layer win over the form", () => {
-    const slots = discoverImageSlots(
-      { image: { repository: "example.com/edited", tag: "1" } },
-      { form: { image: { repository: "example.com/form", tag: "1" } }, edit: { image: { repository: "example.com/edited" } } },
-    );
-    expect(slots[0]?.layer).toBe("edit");
   });
 });
 
@@ -107,57 +84,41 @@ describe("mergedHelmValues", () => {
   });
 });
 
-describe("provenanceLayers", () => {
-  it("builds catalog and site from the variant when no plan layers exist", () => {
-    const layers = provenanceLayers({
-      variantValues: { hangWatcher: { image: { repository: "example.com/hang", tag: "1" } } },
-      variantImage: { repository: "lmsysorg/sglang", tag: "v0.5.4" },
-      mirroredRepository: "mirror.example/sglang",
-      formLayer: { image: { repository: "example.com/mine", tag: "rc1" } },
-    });
-    const slots = discoverImageSlots(
-      {
-        image: { repository: "example.com/mine", tag: "rc1" },
-        hangWatcher: { enabled: true, image: { repository: "example.com/hang", tag: "1" } },
-      },
-      layers,
+describe("imageRows", () => {
+  it("shows the engine before a dry run, and a form-layer image the chart did not list", () => {
+    expect(imageRows(undefined, { catalog: "cat/engine:1", site: "mirror/engine:1" }).map((s) => [s.path, s.value])).toEqual([
+      ["image", "mirror/engine:1"],
+    ]);
+    const rows = imageRows(
+      [{ path: "image", kind: "map", value: "chart/engine:1" }],
+      undefined,
+      { "sidecar.image": "example.com/echo:1", image: "", "gone.image": "" },
     );
-    expect(Object.fromEntries(slots.map((s) => [s.path, s.layer]))).toEqual({
-      image: "form",
-      "hangWatcher.image": "catalog",
-    });
-  });
-
-  it("prefers a composed plan's layers, then the form and edit this page would send", () => {
-    const layers = provenanceLayers({
-      planLayers: { catalog: { image: { repository: "old", tag: "1" } }, site: { image: { repository: "mirror/old" } } },
-      variantImage: { repository: "ignored", tag: "ignored" },
-      formLayer: { replicaCount: 1 },
-      edits: "image:\n  tag: from-edit\n",
-    });
-    expect(layers.catalog).toEqual({ image: { repository: "old", tag: "1" } });
-    expect(layers.site).toEqual({ image: { repository: "mirror/old" } });
-    expect(layers.form).toEqual({ replicaCount: 1 });
-    expect(layers.edit).toEqual({ image: { tag: "from-edit" } });
+    expect(rows.map((s) => [s.path, s.kind, s.value])).toEqual([
+      ["image", "map", "chart/engine:1"],
+      ["sidecar.image", "string", "example.com/echo:1"],
+    ]);
   });
 });
 
 describe("image edits on the form layer", () => {
   it("writes a map slot as repository and tag, and a string slot as the string", () => {
     const overrides: Record<string, unknown> = {};
-    applyImageEdits(
-      overrides,
-      { image: "quay.io/ascend/vllm-ascend:pinned@sha256:abc", images: { "sidecar.image": "example.com/echo:2" } },
-      [{ path: "sidecar.image", kind: "string" }],
-    );
+    applyImageEdits(overrides, imagePatch(imagePatch({}, "image", "map", "quay.io/ascend/vllm-ascend:pinned@sha256:abc"), "sidecar.image", "string", "example.com/echo:2"));
     expect(overrides).toEqual({
       image: { repository: "quay.io/ascend/vllm-ascend", tag: "pinned@sha256:abc" },
       sidecar: { image: "example.com/echo:2" },
     });
-    expect(planRequest({ ...EMPTY, image: "host:5000/repo:tag" }, { model: "m" }).overrides?.image).toEqual({
+    expect(planRequest({ ...EMPTY, images: imagePatch({}, "image", "map", "host:5000/repo:tag") }, { model: "m" }).overrides?.image).toEqual({
       repository: "host:5000/repo",
       tag: "tag",
     });
+    // A trailing colon is kept in the field and is not sent as its own key.
+    const half = imagePatch({}, "image", "map", "repo:");
+    expect(imageText(half.image)).toBe("repo:");
+    const typed: Record<string, unknown> = {};
+    applyImageEdits(typed, half);
+    expect(typed).toEqual({ image: { repository: "repo" } });
   });
 
   it("seeds upgrades from the form layer and drops a cleared override without touching other keys", () => {
@@ -168,32 +129,39 @@ describe("image edits on the form layer", () => {
       sidecar: { image: "example.com/echo:1" },
     };
     const form = formFromPlan(plan(layer));
-    expect(form.image).toBe("example.com/engine:custom");
-    expect(form.images).toEqual({ "hangWatcher.image": "example.com/hang:1", "sidecar.image": "example.com/echo:1" });
-    expect(imageEditsFromLayer(layer).image).toBe("example.com/engine:custom");
+    expect(form.images).toEqual({
+      image: { repository: "example.com/engine", tag: "custom" },
+      "hangWatcher.image": { repository: "example.com/hang", tag: "1" },
+      "sidecar.image": "example.com/echo:1",
+    });
+    expect(imageEditsFromLayer(layer).image).toEqual({ repository: "example.com/engine", tag: "custom" });
 
-    const kept = planRequest(form, { model: "m", formLayer: layer, imageSlots: [{ path: "sidecar.image", kind: "string" }] }).overrides!;
+    const kept = planRequest(form, { model: "m", formLayer: layer }).overrides!;
     expect(kept.image).toEqual({ repository: "example.com/engine", tag: "custom", pullPolicy: "Always" });
     expect(kept.hangWatcher).toEqual({ image: { repository: "example.com/hang", tag: "1" } });
     expect(kept.sidecar).toEqual({ image: "example.com/echo:1" });
     expect(kept.extraArgs).toEqual(["--x"]);
 
-    const cleared = planRequest(
-      { ...form, image: "", images: { ...form.images, image: "", "hangWatcher.image": "", "sidecar.image": "" } },
-      { model: "m", formLayer: layer, imageSlots: [{ path: "sidecar.image", kind: "string" }] },
-    ).overrides!;
-    expect(cleared.image).toEqual({ pullPolicy: "Always" });
-    expect(cleared).not.toHaveProperty("hangWatcher");
-    expect(cleared).not.toHaveProperty("sidecar");
-    expect(cleared.extraArgs).toEqual(["--x"]);
+    const blank = { image: "", "hangWatcher.image": "", "sidecar.image": "" };
+    for (const images of [blank, {}]) {
+      const cleared = planRequest({ ...form, images }, { model: "m", formLayer: layer }).overrides!;
+      expect(cleared.image).toEqual({ pullPolicy: "Always" });
+      expect(cleared.hangWatcher).toEqual({});
+      expect(cleared.sidecar).toEqual({});
+      expect(cleared.extraArgs).toEqual(["--x"]);
+    }
   });
 
-  it("leaves a form-layer image in place when the field was never cleared", () => {
-    const layer = { image: { repository: "example.com/engine", tag: "custom" }, note: true };
-    const base = structuredClone(layer);
-    dropClearedImages(base, "", {});
-    expect(base).toEqual(layer);
-    dropImage(base, "image");
-    expect(base).toEqual({ note: true });
+  it("drops a form-layer image the form left empty, and keeps one it still holds", () => {
+    const layer = { image: { repository: "example.com/engine", tag: "custom", pullPolicy: "Always" }, note: true };
+    const kept = structuredClone(layer);
+    dropClearedImages(kept, imageEditsFromLayer(layer));
+    expect(kept).toEqual(layer);
+    const clearedBy: Record<string, ImageEdit>[] = [{}, { image: "" }];
+    for (const images of clearedBy) {
+      const cleared = structuredClone(layer);
+      dropClearedImages(cleared, images);
+      expect(cleared).toEqual({ image: { pullPolicy: "Always" }, note: true });
+    }
   });
 });

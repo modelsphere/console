@@ -6,7 +6,6 @@ import { api, deployApi, type ApplyResult, type ApplyWith, type DiffResult, type
 import { Badge } from "@swiss/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
 import { applyFlags, DeploySettings, EMPTY, imageOf, planRequest, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
-import { imageOverrideLayer, provenanceLayers, type ImageSlot } from "@swiss/lib/imageSlots";
 import { useImageSlots } from "@swiss/lib/useImageSlots";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
@@ -132,7 +131,6 @@ export function Deploy() {
     variantNow,
     { name: variantNow?.chart.name, version: chart.resolved ?? variantNow?.chart.version },
   );
-  const slotsRef = useRef<ImageSlot[]>([]);
   const requestOf = (f: Form): PlanRequest | undefined =>
     catalog && model.data
       ? planRequest(f, {
@@ -147,24 +145,9 @@ export function Deploy() {
           preset: presetValues(profile.data?.profile, f.preset),
           values: model.data.variant.values,
           siteEnv: profile.data?.profile?.extra,
-          imageSlots: slotsRef.current,
         })
       : undefined;
-  const imageRequest = requestOf(form);
-  const imageLayers = useMemo(
-    () =>
-      provenanceLayers({
-        planLayers: plan?.layers,
-        variantValues: model.data?.variant.values,
-        variantImage: model.data?.variant.image,
-        mirroredRepository: model.data ? model.data.imageRepository?.[model.data.variant.id] : undefined,
-        formLayer: imageOverrideLayer(form, slotsRef.current),
-        edits: form.edits,
-      }),
-    [plan, model.data, form],
-  );
-  const discovered = useImageSlots(imageRequest, imageLayers, !!model.data && !!catalog && cluster.data?.allowDeploy !== false);
-  slotsRef.current = discovered.slots;
+  const discovered = useImageSlots(form, requestOf, !!model.data && !!catalog && cluster.data?.allowDeploy !== false);
 
   const planM = useMutation({
     mutationFn: () => deployApi.plan(requestOf(form)!),

@@ -4,27 +4,19 @@ import { isMap } from "@swiss/lib/formLayer";
 
 type Tree = Record<string, unknown>;
 
-// Same merge order as the plan layers. Last writer wins. Chart values are not
-// one of these; a slot none of them set is the chart's own.
-const LAYER_ORDER = ["defaults", "catalog", "site", "derived", "form", "edit", "autoscale"] as const;
-
-export const CHART_LAYER = "chart";
-
 export interface ImageSlot {
   // Values path of the slot: "image", "hangWatcher.image", "pd.router.imageOverride".
   path: string;
   // "map" is {repository, tag}; "string" is a leaf whose key is image.
   kind: "map" | "string";
-  // repository:tag, or the string. A tag may itself contain @sha256:.
+  // repository:tag, or the string, as the chart would render it with no form image edit.
   value: string;
-  // The layer that last set the slot, or "chart" when only the chart default has it.
-  layer: string;
 }
 
-export interface ImageSlotKind {
-  path: string;
-  kind: "map" | "string";
-}
+// What a row stores. A map slot is {repository, tag}; a string slot is the string.
+// "" is empty. `draft` is only the text still being typed when a map ref does not
+// round-trip (a trailing colon); the plan never sends it.
+export type ImageEdit = string | { repository: string; tag?: string; draft?: string };
 
 // splitImage turns a typed ref into the two values a map slot takes.
 // The digest is split off first so a tag of pinned@sha256:… keeps the digest
@@ -77,55 +69,26 @@ function getPath(root: unknown, path: string): unknown {
   return cur;
 }
 
-function layerOrder(layers: Record<string, Tree>): string[] {
-  const known = LAYER_ORDER.filter((name) => Object.prototype.hasOwnProperty.call(layers, name));
-  const rest = Object.keys(layers).filter((name) => !(LAYER_ORDER as readonly string[]).includes(name)).sort();
-  return [...known, ...rest];
-}
-
-// The last layer in merge order that sets any of these leaves. Chart when none do.
-function layerFor(layers: Record<string, Tree> | undefined, paths: string[]): string {
-  if (!layers) return CHART_LAYER;
-  let found = "";
-  for (const name of layerOrder(layers)) {
-    const tree = layers[name];
-    if (tree && paths.some((path) => getPath(tree, path) !== undefined)) found = name;
-  }
-  return found || CHART_LAYER;
-}
-
 function dot(path: string[]): string {
   return path.join(".");
 }
 
-function leaf(base: string, key: string): string {
-  return base ? `${base}.${key}` : key;
-}
-
 // discoverImageSlots lists the images a merged values document renders.
 // A slot is a map with a string repository (its tag belongs to it) or a string
-// leaf named image. A section with enabled: false hides everything under it,
-// and metricsMock is never a slot.
-export function discoverImageSlots(values: Tree, layers?: Record<string, Tree>): ImageSlot[] {
+// leaf named image. A section with enabled: false hides everything under it.
+export function discoverImageSlots(values: Tree): ImageSlot[] {
   const out: ImageSlot[] = [];
   const walk = (node: unknown, path: string[]) => {
     if (!isMap(node) || node.enabled === false) return;
     const here = dot(path);
     if (typeof node.repository === "string") {
       const tag = typeof node.tag === "string" ? node.tag : "";
-      out.push({
-        path: here,
-        kind: "map",
-        value: joinImage(node.repository, tag),
-        layer: layerFor(layers, [leaf(here, "repository"), leaf(here, "tag")]),
-      });
+      out.push({ path: here, kind: "map", value: joinImage(node.repository, tag) });
     }
     for (const [key, value] of Object.entries(node)) {
-      if (key === "metricsMock") continue;
       const child = [...path, key];
       if (key === "image" && typeof value === "string") {
-        const at = dot(child);
-        out.push({ path: at, kind: "string", value, layer: layerFor(layers, [at]) });
+        out.push({ path: dot(child), kind: "string", value });
       } else if (isMap(value)) walk(value, child);
     }
   };
@@ -134,17 +97,56 @@ export function discoverImageSlots(values: Tree, layers?: Record<string, Tree>):
   return out.sort((a, b) => (a.path === "image" ? -1 : b.path === "image" ? 1 : 0));
 }
 
-// Image overrides already stored on a form layer, path to ref. Empty values
-// are left out so a missing edit is not read later as a clear.
-export function imageEditsFromLayer(layer: Tree): Record<string, string> {
-  const out: Record<string, string> = {};
+// The text an image input shows. A half-typed map ref keeps its draft so the
+// field does not eat a trailing colon.
+export function imageText(value: ImageEdit | undefined): string {
+  if (typeof value !== "object" || value === null) return value ?? "";
+  return value.draft ?? joinImage(value.repository, value.tag ?? "");
+}
+
+function imageValue(kind: "map" | "string", raw: string): ImageEdit {
+  if (!raw.trim()) return "";
+  if (kind === "string") return raw;
+  const split = splitImage(raw);
+  const text = joinImage(split.repository, split.tag ?? "");
+  const shaped: { repository: string; tag?: string } = split.tag ? { repository: split.repository, tag: split.tag } : { repository: split.repository };
+  return raw === text ? shaped : { ...shaped, draft: raw };
+}
+
+// One images map. The engine is the "image" path; nothing else is special.
+export function imagePatch(images: Record<string, ImageEdit>, path: string, kind: "map" | "string", raw: string): Record<string, ImageEdit> {
+  return { ...images, [path]: imageValue(kind, raw) };
+}
+
+// The form-layer value, or nothing when the row is empty. Draft is left off.
+function imagePayload(value: ImageEdit | undefined): string | { repository: string; tag?: string } | undefined {
+  if (typeof value === "string") {
+    const text = value.trim();
+    return text || undefined;
+  }
+  if (!value || !value.repository.trim()) return undefined;
+  const repository = value.repository.trim();
+  return value.tag ? { repository, tag: value.tag } : { repository };
+}
+
+// Image overrides already stored on a form layer, path to the shaped value.
+// Empty values are left out: a clear is an empty form field, not a stored edit.
+export function imageEditsFromLayer(layer: Tree): Record<string, ImageEdit> {
+  const out: Record<string, ImageEdit> = {};
   for (const slot of discoverImageSlots(layer)) {
-    if (slot.value) out[slot.path] = slot.value;
+    const raw = getPath(layer, slot.path);
+    if (slot.kind === "string") {
+      if (typeof raw === "string" && raw.trim()) out[slot.path] = raw;
+    } else if (isMap(raw) && typeof raw.repository === "string" && raw.repository.trim()) {
+      const edit: { repository: string; tag?: string } = { repository: raw.repository };
+      if (typeof raw.tag === "string" && raw.tag) edit.tag = raw.tag;
+      out[slot.path] = edit;
+    }
   }
   return out;
 }
 
-export function setPath(root: Tree, path: string, value: unknown): void {
+function setPath(root: Tree, path: string, value: unknown): void {
   const parts = path.split(".").filter(Boolean);
   if (!parts.length) return;
   let cur = root;
@@ -155,18 +157,16 @@ export function setPath(root: Tree, path: string, value: unknown): void {
   cur[parts[parts.length - 1]] = value;
 }
 
-// Removes the form-layer override at path. A map slot loses repository and tag
-// and keeps any other key (pullPolicy); an emptied map is pruned so the layer
-// does not send an empty object that would look like it still owned the section.
-export function dropImage(root: Tree, path: string): void {
+// Removes repository and tag from a map slot (any other key, such as pullPolicy,
+// stays) or deletes a string slot. An emptied map is removed. Parents are left
+// as they are, even when that leaves an empty object.
+function dropImage(root: Tree, path: string): void {
   const parts = path.split(".").filter(Boolean);
   if (!parts.length) return;
-  const stack: Tree[] = [root];
   let cur: Tree = root;
   for (const key of parts.slice(0, -1)) {
     const next = cur[key];
     if (!isMap(next)) return;
-    stack.push(next);
     cur = next;
   }
   const leafKey = parts[parts.length - 1];
@@ -174,108 +174,42 @@ export function dropImage(root: Tree, path: string): void {
   if (isMap(value)) {
     delete value.repository;
     delete value.tag;
-    if (Object.keys(value).length > 0) return;
-  } else if (!(leafKey in cur)) return;
-  delete cur[leafKey];
-  for (let i = stack.length - 1; i > 0; i--) {
-    const node = stack[i];
-    if (Object.keys(node).length > 0) break;
-    delete stack[i - 1][parts[i - 1]];
+    if (Object.keys(value).length === 0) delete cur[leafKey];
+    return;
   }
+  if (leafKey in cur) delete cur[leafKey];
 }
 
-function kindOf(path: string, slots: ImageSlotKind[] | undefined, formLayer: Tree | undefined): "map" | "string" {
-  const known = slots?.find((slot) => slot.path === path)?.kind;
-  if (known) return known;
-  return typeof getPath(formLayer, path) === "string" ? "string" : "map";
-}
-
-// Non-empty image edits, written onto the form overrides. The engine row is
-// form.image; other rows live in form.images. An empty string is not an override.
-export function applyImageEdits(
-  overrides: Tree,
-  form: { image: string; images?: Record<string, string> },
-  slots?: ImageSlotKind[],
-  formLayer?: Tree,
-): void {
-  if (form.image.trim()) setPath(overrides, "image", splitImage(form.image));
-  for (const [path, raw] of Object.entries(form.images ?? {})) {
-    if (path === "image" || !raw.trim()) continue;
-    const value = raw.trim();
-    setPath(overrides, path, kindOf(path, slots, formLayer) === "string" ? value : splitImage(value));
-  }
-}
-
-// The image keys this form would put on the form layer, and nothing else.
-// Provenance names that document "form" without treating the whole merged
-// request as one.
-export function imageOverrideLayer(
-  form: { image: string; images?: Record<string, string> },
-  slots?: ImageSlotKind[],
-  formLayer?: Tree,
-): Tree {
-  const overrides: Tree = {};
-  applyImageEdits(overrides, form, slots, formLayer);
-  return overrides;
-}
-
-// Rows to render before a dry run has listed the chart's slots: the engine, from
-// the catalog/mirror pair the page already has. An empty list stays empty.
-export function imageRows(slots: ImageSlot[] | undefined, image?: { catalog: string; site: string }): ImageSlot[] {
-  if (slots?.length) return slots;
-  if (!image) return [];
-  return [{ path: "image", kind: "map", value: image.site, layer: image.site === image.catalog ? "catalog" : "site" }];
-}
-
-// An empty edit drops that path's form-layer override. The engine row counts
-// as cleared only when images.image is explicitly "", so a form that never
-// touched the field keeps a release's image.repository / image.tag.
-export function dropClearedImages(layer: Tree, image: string, images: Record<string, string> | undefined): void {
-  if (!image.trim() && images && Object.prototype.hasOwnProperty.call(images, "image") && !String(images.image).trim()) {
-    dropImage(layer, "image");
-  }
+// Non-empty image edits, written onto the form overrides. The value is already
+// the shape the slot takes; the plan does not look the kind up again.
+export function applyImageEdits(overrides: Tree, images: Record<string, ImageEdit> | undefined): void {
   for (const [path, raw] of Object.entries(images ?? {})) {
-    if (path === "image" || raw.trim()) continue;
-    dropImage(layer, path);
+    const value = imagePayload(raw);
+    if (value !== undefined) setPath(overrides, path, value);
   }
 }
 
-// Layers to name a slot with. A composed plan's layers win. Without one, the
-// catalog document is the variant values plus its image, and the site document
-// is the mirror when it rewrites the engine repository. The form and edit
-// documents are what this page would send, so an unsaved edit is already "form".
-export function provenanceLayers(opts: {
-  planLayers?: Record<string, Tree>;
-  variantValues?: Tree;
-  variantImage?: { repository?: string; tag?: string };
-  mirroredRepository?: string;
-  formLayer?: Tree;
-  edits?: string;
-}): Record<string, Tree> {
-  const layers: Record<string, Tree> = {};
-  if (opts.planLayers) {
-    Object.assign(layers, opts.planLayers);
-  } else {
-    const catalog: Tree = { ...(opts.variantValues ?? {}) };
-    if (opts.variantImage?.repository) {
-      const image = isMap(catalog.image) ? { ...catalog.image } : {};
-      image.repository = opts.variantImage.repository;
-      if (opts.variantImage.tag) image.tag = opts.variantImage.tag;
-      catalog.image = image;
-    }
-    if (Object.keys(catalog).length) layers.catalog = catalog;
-    const repo = opts.variantImage?.repository;
-    const mirror = opts.mirroredRepository;
-    if (repo && mirror && mirror !== repo) layers.site = { image: { repository: mirror } };
+// Rows to render. Before a dry run has listed the chart's slots, the engine
+// comes from the catalog/mirror pair the page already has. A form-layer image
+// the chart itself does not list is still a row, so an upgrade can show it.
+export function imageRows(slots: ImageSlot[] | undefined, image?: { catalog: string; site: string }, edits?: Record<string, ImageEdit>): ImageSlot[] {
+  const base = slots?.length ? slots : image ? [{ path: "image", kind: "map" as const, value: image.site }] : [];
+  if (!edits) return base;
+  const seen = new Set(base.map((slot) => slot.path));
+  const extra: ImageSlot[] = [];
+  for (const [path, value] of Object.entries(edits)) {
+    if (seen.has(path) || imagePayload(value) === undefined) continue;
+    extra.push({ path, kind: typeof value === "string" ? "string" : "map", value: imageText(value) });
   }
-  if (opts.formLayer && Object.keys(opts.formLayer).length) layers.form = opts.formLayer;
-  if (opts.edits?.trim()) {
-    try {
-      const edit = parseMap(opts.edits);
-      if (Object.keys(edit).length) layers.edit = edit;
-    } catch {
-      // Mid-edit YAML does not parse; the edit layer simply is not named yet.
-    }
+  if (!extra.length) return base;
+  return base.concat(extra).sort((a, b) => (a.path === "image" ? -1 : b.path === "image" ? 1 : 0));
+}
+
+// An empty edit drops that path's form-layer override. formFromPlan seeds every
+// slot the release's form layer set, so a path that layer has and the form does
+// not (missing or blank) is a clear. "" and a missing key are the same.
+export function dropClearedImages(layer: Tree, images: Record<string, ImageEdit> | undefined): void {
+  for (const slot of discoverImageSlots(layer)) {
+    if (imagePayload(images?.[slot.path]) === undefined) dropImage(layer, slot.path);
   }
-  return layers;
 }

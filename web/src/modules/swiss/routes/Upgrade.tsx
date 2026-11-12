@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { ArrowRight, Check, ChevronLeft, ChevronsUpDown, TriangleAlert, Undo2 } from "lucide-react";
@@ -26,7 +26,6 @@ import {
   planRequest,
   type Form,
 } from "@swiss/components/DeploySettings";
-import { imageOverrideLayer, provenanceLayers, type ImageSlot } from "@swiss/lib/imageSlots";
 import { useImageSlots } from "@swiss/lib/useImageSlots";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
@@ -176,16 +175,15 @@ export function Upgrade() {
     pin,
     { name: pin?.chart.name ?? current.data?.chart.name, version: chart.resolved ?? pin?.chart.version ?? current.data?.chart.version },
   );
-  const slotsRef = useRef<ImageSlot[]>([]);
-  const requestOf = (): PlanRequest | undefined =>
+  const requestOf = (f: Form): PlanRequest | undefined =>
     current.data
-      ? planRequest(form, {
+      ? planRequest(f, {
           model: current.data.source.model,
           version: version || undefined,
           variant: variant || undefined,
           catalog: moving ? targetCatalog : undefined,
           chartVersion: chartVersion || undefined,
-          forceGpuProducts: unlistedProducts(keptPin?.requires.gpuProduct, form.gpuProducts).length > 0,
+          forceGpuProducts: unlistedProducts(keptPin?.requires.gpuProduct, f.gpuProducts).length > 0,
           // The server carries forward anything the form does not cover, so a
           // value set once from a flag survives the upgrade instead of being
           // dropped by a form that never knew about it.
@@ -195,27 +193,12 @@ export function Upgrade() {
           formLayer: current.data.layers?.form,
           values: entry.data?.variant.values ?? current.data.layers?.catalog,
           siteEnv: profile.data?.profile?.extra,
-          imageSlots: slotsRef.current,
         })
       : undefined;
-  const imageRequest = !rollbackTo && current.data ? requestOf() : undefined;
-  const imageLayers = useMemo(
-    () =>
-      provenanceLayers({
-        planLayers: plan?.layers ?? current.data?.layers,
-        variantValues: entry.data?.variant.values,
-        variantImage: entry.data?.variant.image,
-        mirroredRepository: entry.data?.variant ? entry.data.imageRepository?.[entry.data.variant.id] : undefined,
-        formLayer: imageOverrideLayer(form, slotsRef.current, current.data?.layers?.form),
-        edits: form.edits,
-      }),
-    [plan, current.data, entry.data, form],
-  );
-  const discovered = useImageSlots(imageRequest, imageLayers, !rollbackTo && !!current.data && cluster.data?.allowDeploy !== false);
-  slotsRef.current = discovered.slots;
+  const discovered = useImageSlots(form, (f) => (rollbackTo ? undefined : requestOf(f)), !rollbackTo && !!current.data && cluster.data?.allowDeploy !== false);
 
   const planM = useMutation({
-    mutationFn: () => deployApi.plan(requestOf()!),
+    mutationFn: () => deployApi.plan(requestOf(form)!),
     // The previous plan is superseded the moment a recompose starts. Dropping
     // it here rather than on the way back means a failed compose leaves
     // nothing to act on, instead of a stale plan the error message sits behind.

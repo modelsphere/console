@@ -4,7 +4,7 @@ import { DeploySettings, EMPTY } from "./DeploySettings";
 
 const image = { catalog: "lmsysorg/sglang:v0.5.4", site: "ghcr.io/modelsphere/sglang:v0.5.4" };
 const render = (img: string, pair = image) =>
-  renderToStaticMarkup(<DeploySettings form={{ ...EMPTY, serviceId: "m", image: img }} onChange={() => {}} image={pair} />);
+  renderToStaticMarkup(<DeploySettings form={{ ...EMPTY, serviceId: "m", images: { image: img } }} onChange={() => {}} image={pair} />);
 const selected = (html: string, label: string) => new RegExp(`<option[^>]*selected[^>]*>${label}</option>`).test(html);
 
 describe("image override", () => {
@@ -22,17 +22,18 @@ describe("image override", () => {
     expect(render(image.catalog, { catalog: image.catalog, site: image.catalog })).not.toContain(">site mirror<");
   });
 
-  it("lists a discovered slot by its values path and the layer that set it", () => {
+  it("lists a discovered slot by its values path, with the effective value as the placeholder", () => {
     const html = renderToStaticMarkup(
       <DeploySettings
         form={{ ...EMPTY, serviceId: "m" }}
         onChange={() => {}}
         image={image}
-        slots={[{ path: "image", kind: "map", value: image.site, layer: "site" }, { path: "hangWatcher.image", kind: "map", value: "example.com/hang:1", layer: "chart" }]}
+        slots={[{ path: "image", kind: "map", value: image.site }, { path: "hangWatcher.image", kind: "map", value: "example.com/hang:1" }]}
       />,
     );
     expect(html).toContain("hangWatcher.image");
-    expect(html).toContain("set by chart");
-    expect(html).toContain("set by site");
+    expect(html).toContain('placeholder="example.com/hang:1"');
+    expect(html).toContain(`placeholder="${image.site}"`);
+    expect(html).not.toContain("set by");
   });
 });

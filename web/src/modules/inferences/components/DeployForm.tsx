@@ -29,9 +29,8 @@ import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/
 import { unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { CHECK_MS, inputError, rememberable, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
-import { effective, imageChoices, tolerationExtras, type Form, type Toleration } from "@swiss/components/DeploySettings";
-import { imageRows, type ImageSlot } from "@swiss/lib/imageSlots";
-import { Select as SourceSelect } from "@swiss/components/ChartVersion";
+import { effective, ImageSource, tolerationExtras, type Form, type Toleration } from "@swiss/components/DeploySettings";
+import { imagePatch, imageRows, imageText, type ImageSlot } from "@swiss/lib/imageSlots";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
 import { useT } from "@/modules/inferences/i18n";
@@ -275,12 +274,8 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
   );
 }
 
-function imagePatch(form: Form, path: string, value: string): Partial<Form> {
-  const images = { ...form.images, [path]: value };
-  return path === "image" ? { image: value, images } : { images };
-}
-
-// One row per chart image. Empty leaves the value to the layer named beside it.
+// One row per chart image. Empty keeps the image shown as the placeholder;
+// a typed ref is the form layer. The engine row keeps the mirror choice.
 function ImageRows({
   form,
   onChange,
@@ -296,9 +291,8 @@ function ImageRows({
 }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
-  const rows = imageRows(slots, image);
+  const rows = imageRows(slots, image, form.images);
   if (!rows.length && !error) return null;
-  const edited = (path: string) => (path === "image" ? form.image : (form.images[path] ?? ""));
   return (
     <div className="flex flex-col gap-3 rounded-md border p-3">
       <div>
@@ -307,36 +301,25 @@ function ImageRows({
         {error && <p className="text-xs text-warning">{error}</p>}
       </div>
       {rows.map((slot) => {
-        const value = edited(slot.path);
+        const value = imageText(form.images[slot.path]);
+        const set = (raw: string) => onChange({ images: imagePatch(form.images, slot.path, slot.kind, raw) });
         return (
           <div key={slot.path} className="flex flex-col gap-1.5">
-            <FloatingField value={value || slot.value} label={slot.path} hint={t("deploy.fields.imageLayer", { layer: slot.layer })}>
-              <Input value={value} onChange={(e) => onChange(imagePatch(form, slot.path, e.target.value))} placeholder={slot.value || "repository:tag"} aria-label={slot.path} className="font-mono text-xs" />
+            <FloatingField value={value || slot.value} label={slot.path}>
+              <Input value={value} onChange={(e) => set(e.target.value)} placeholder={slot.value || "repository:tag"} aria-label={slot.path} className="font-mono text-xs" />
             </FloatingField>
             {slot.path === "image" && image && (
-              <ImageSource image={image} value={value} onPick={(v) => onChange(imagePatch(form, "image", v))} />
+              <ImageSource
+                image={image}
+                value={value}
+                onPick={set}
+                labels={{ aria: f("imageSource"), site: f("imageSite"), catalog: f("imageCatalog"), custom: f("imageCustom"), inherited: f("imageInherited") }}
+              />
             )}
           </div>
         );
       })}
     </div>
-  );
-}
-
-function ImageSource({ image, value, onPick }: { image: { catalog: string; site: string }; value: string; onPick: (ref: string) => void }) {
-  const t = useT();
-  const f = (k: string) => t(`deploy.fields.${k}`);
-  const choices = imageChoices(image);
-  if (!choices.length) return null;
-  const selected = choices.find((c) => c.ref === value.trim())?.ref ?? "";
-  return (
-    <SourceSelect
-      ariaLabel={f("imageSource")}
-      value={selected}
-      onChange={onPick}
-      options={choices.map((c) => ({ value: c.ref, label: f(c.key === "site" ? "imageSite" : "imageCatalog") }))}
-      emptyLabel={value.trim() ? f("imageCustom") : f("imageInherited")}
-    />
   );
 }
 
