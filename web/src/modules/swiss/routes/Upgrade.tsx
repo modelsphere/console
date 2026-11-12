@@ -172,6 +172,8 @@ export function Upgrade() {
           cacheUnsupported: !!cache.unsupported,
           inputs: entry.data?.variant.inputs,
           formLayer: current.data!.layers?.form,
+          values: entry.data?.variant.values ?? current.data!.layers?.catalog,
+          siteEnv: profile.data?.profile?.extra,
         }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping

@@ -16,4 +16,8 @@ export const EMPTY: Form = monitorSettings(SWISS_EMPTY, false);
 export const formFromPlan = (plan: Plan): Form => swissFormFromPlan(plan);
 
 export const planRequest = (form: Form, options: Parameters<typeof swissPlanRequest>[1], profile?: SiteProfile) =>
-  swissPlanRequest(profile ? monitorSettings(form, monitorOn(profile)) : form, { ...options, preset: presetValues(profile, form.preset) });
+  swissPlanRequest(profile ? monitorSettings(form, monitorOn(profile)) : form, {
+    ...options,
+    preset: presetValues(profile, form.preset),
+    siteEnv: profile?.extra ?? options.siteEnv,
+  });
