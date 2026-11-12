@@ -19,7 +19,7 @@ import { presetValues } from "@swiss/lib/formLayer";
 import { deployCapacity, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { InstallMethodChoice } from "@swiss/components/InstallMethod";
-import { isVideo, videoProblem } from "@swiss/lib/video";
+import { isVideo, videoProblem, videoSeed } from "@swiss/lib/video";
 
 export function Deploy() {
   const { name = "" } = useParams();
@@ -93,14 +93,16 @@ export function Deploy() {
   const siteDefaults = useMemo(() => siteSwitchDefaults(profile.data), [profile.data]);
   const variantValues = model.data?.variant.values;
   const seeded = useRef<SwitchDefaults | null>(null);
-  // A video variant's own settings start from its values, once per variant.
-  const seededVideo = useRef("");
+  // A video variant's own settings start from its values, once per variant;
+  // leaving a video variant takes them back off, GPU tolerations included, so
+  // an LLM deploy does not inherit them.
+  const seededVideo = useRef<string | null>(null);
   useEffect(() => {
-    if (!loaded || !video) return;
-    const key = JSON.stringify(variantValues ?? null);
-    if (seededVideo.current === key) return;
+    if (!loaded) return;
+    const { key, action } = videoSeed(seededVideo.current, video, variantValues);
     seededVideo.current = key;
-    setForm((f) => videoForm(f, variantValues));
+    if (action === "seed") setForm((f) => videoForm(f, variantValues));
+    else if (action === "clear") setForm((f) => ({ ...f, video: EMPTY.video, tolerations: EMPTY.tolerations }));
   }, [loaded, video, variantValues]);
   useEffect(() => {
     if (!loaded) return;

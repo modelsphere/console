@@ -775,7 +775,8 @@
       "gpuProductsHint": "Restricts the GPU pods to these products; any one will do.",
       "problems": {
         "serviceId": "A service ID is required.",
-        "noPool": "Enable at least one pool."
+        "noPool": "Enable at least one pool.",
+        "zero": "Replicas, TP size and Ulysses degree must each be at least 1."
       }
     }
   },

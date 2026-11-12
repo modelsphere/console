@@ -764,7 +764,8 @@
       "gpuProductsHint": "将 GPU Pod 限定在这些型号上，满足其一即可。",
       "problems": {
         "serviceId": "服务 ID 必填。",
-        "noPool": "至少启用一个池。"
+        "noPool": "至少启用一个池。",
+        "zero": "副本数、TP 并行度和 Ulysses 并行度都至少为 1。"
       }
     }
   },

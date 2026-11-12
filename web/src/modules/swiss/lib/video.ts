@@ -40,6 +40,28 @@ export function jobSLOs(objects: ObjectResult[] | undefined): JobSLO[] {
     .sort((a, b) => a.serviceId.localeCompare(b.serviceId));
 }
 
+// poolScalers is a video release's LLMScalers, one per pool, and those of the
+// pools that are scaled. A pool whose JobSLO has no maximum is not scaled by
+// design: the decision server publishes nothing for it, and its scaler reports
+// that as unavailable, which is not a failure.
+export function poolScalers(objects: ObjectResult[] | undefined): { all: ObjectResult[]; scaled: ObjectResult[] } {
+  const ids = new Set(jobSLOs(objects).filter((j) => j.spec?.maximumDeployment).map((j) => j.serviceId));
+  const all = (objects ?? []).filter((o) => o.ref.kind === "LLMScaler");
+  const scaled = all.filter((o) => ids.has(((o.live?.spec ?? {}) as { customProvider?: { serviceId?: string } }).customProvider?.serviceId ?? ""));
+  return { all, scaled };
+}
+
+// videoSeed decides what a deploy form does with its video fields when the
+// variant (or its values) changes: seed them from a video variant's values,
+// merged into what is typed; clear them, GPU tolerations included, on leaving a
+// video variant; or nothing. prev is the last key returned (null before any).
+export function videoSeed(prev: string | null, video: boolean, values: unknown): { key: string; action?: "seed" | "clear" } {
+  const key = video ? JSON.stringify(values ?? null) : "";
+  if (prev === key) return { key };
+  if (video) return { key, action: "seed" };
+  return prev ? { key, action: "clear" } : { key };
+}
+
 // Number fields are kept as typed; empty leaves the chart's value.
 export interface PoolForm {
   enabled: boolean;
@@ -112,13 +134,15 @@ function readPool(tree: Tree | undefined, p: Pool, base: PoolForm): PoolForm {
 
 // videoFields reads the video part of a tree: the variant's values on a fresh
 // deploy (over the console's defaults), a release's form layer on an upgrade.
-export function videoFields(tree: Tree | undefined): VideoFields {
+// A release's size the form layer does not set stays empty, which keeps the
+// volume as it is: the default could be smaller, and a PVC cannot shrink.
+export function videoFields(tree: Tree | undefined, opts: { release?: boolean } = {}): VideoFields {
   const turbo = get(tree, KEYS.turbo);
   return {
     pools: { fl2va: readPool(tree, "fl2va", VIDEO_EMPTY.pools.fl2va), ref2va: readPool(tree, "ref2va", VIDEO_EMPTY.pools.ref2va) },
     turbo: typeof turbo === "boolean" ? turbo : VIDEO_EMPTY.turbo,
     storageClass: str(get(tree, KEYS.storageClass)),
-    storageSize: str(get(tree, KEYS.storageSize)) || VIDEO_EMPTY.storageSize,
+    storageSize: str(get(tree, KEYS.storageSize)) || (opts.release ? "" : VIDEO_EMPTY.storageSize),
     databaseUrl: "",
     databaseKept: !!str(get(tree, KEYS.databaseUrl)),
   };
@@ -143,11 +167,17 @@ export function videoGpus(f: VideoFields): { perPod: Record<Pool, number>; total
   return { perPod, total };
 }
 
-export type VideoProblem = { code: "noPool" };
+export type VideoProblem = { code: "noPool" } | { code: "zero" };
 
-// videoProblem is why the video part cannot be composed, or undefined.
+// videoProblem is why the video part cannot be composed, or undefined. An
+// enabled pool with 0 replicas, TP or Ulysses is refused here rather than at
+// render: the GPU count would be 0 and the engine args invalid.
 export function videoProblem(f: VideoFields): VideoProblem | undefined {
   if (!POOLS.some((p) => f.pools[p].enabled)) return { code: "noPool" };
+  for (const p of POOLS) {
+    const pf = f.pools[p];
+    if (pf.enabled && [pf.replicaCount, pf.tpSize, pf.ulyssesDegree].some((v) => num(v) === 0)) return { code: "zero" };
+  }
   return undefined;
 }
 
