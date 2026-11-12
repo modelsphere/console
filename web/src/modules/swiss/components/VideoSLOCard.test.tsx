@@ -66,8 +66,9 @@ describe("VideoSLOCard", () => {
         <VideoSLOCard namespace="video" release="h3" canEdit />
       </QueryClientProvider>,
     );
-    for (const want of ["FL2VA pool", "Ref2VA pool", "autoscaled", "not scaled: no maximum", "Max queue depth", "sum(q)", "empty = autoscaling off"]) expect(html).toContain(want);
-    for (const llmOnly of ["TTFT", "OTPS"]) expect(html).not.toContain(llmOnly);
+    for (const want of ["FL2VA pool", "Ref2VA pool", "autoscaled", "not scaled: no maximum", "Max queue depth", "empty = autoscaling off"]) expect(html).toContain(want);
+    // The queue query is the chart's internals, not something a user sets.
+    for (const hidden of ["TTFT", "OTPS", "Queue query", "sum(q)"]) expect(html).not.toContain(hidden);
   });
 
   it("says how to get SLOs on a release that has none", () => {
