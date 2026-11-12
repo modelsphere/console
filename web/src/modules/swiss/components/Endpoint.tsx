@@ -18,6 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/c
 import { Code } from "@swiss/components/ui/code";
 import { Field, Input } from "@swiss/components/ui/input";
 import { ErrorState } from "@swiss/components/States";
+import { VideoExamples } from "@swiss/components/VideoEndpoint";
+import { isVideo } from "@swiss/lib/video";
 
 // Endpoint is where this release is called and the two ways of asking whether
 // calling it works. One card, because an operator arrives with one question --
@@ -41,6 +43,38 @@ export function Endpoint({
   status: Status;
   access?: boolean;
 }) {
+  // Shared with HealthCheck's query: one read of the plan says which API this release serves.
+  const plan = useQuery({
+    queryKey: ["releasePlan", namespace, release],
+    queryFn: () => api.releasePlan(namespace, release),
+    retry: false,
+  });
+  if (isVideo(plan.data?.engine)) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+            Endpoint
+            {s.route && <Badge variant="outline">{s.route}</Badge>}
+            <Badge variant="muted">video</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {access ? <AccessPoint status={s} video /> : s.url ? <VideoExamples status={s} /> : <AccessPoint status={s} video />}
+
+          {/* No chat to send: swissd probes the route's /readyz, which answers only when the
+              router, a server and the database behind it all do. */}
+          <Check
+            open={!access}
+            title="Readiness check"
+            hint="Asks the entrypoint for this route's /readyz: route → router → server → database. It does not run a generation."
+          >
+            <ServingCheck namespace={namespace} release={release} video />
+          </Check>
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <Card>
       <CardHeader>
@@ -74,7 +108,7 @@ export function Endpoint({
 
 // AccessPoint is the address and a request that works against it, with the key
 // left to fill in. Names the auth header but never holds the key.
-export function AccessPoint({ status: s }: { status: Status }) {
+export function AccessPoint({ status: s, video = false }: { status: Status; video?: boolean }) {
   if (!s.url) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -89,7 +123,7 @@ export function AccessPoint({ status: s }: { status: Status }) {
       </p>
     );
   }
-  const curl = curlFor(s);
+  const curl = video ? "" : curlFor(s);
   return (
     <div className="space-y-3">
       <div className="flex min-w-0 items-center gap-2 rounded-lg border bg-muted/30 py-1.5 pr-1.5 pl-3">
@@ -116,7 +150,7 @@ export function AccessPoint({ status: s }: { status: Status }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
-        {s.model && (
+        {!video && s.model && (
           <Badge variant="outline" className="gap-1">
             <span className="text-muted-foreground">model</span>
             <span className="font-mono">{s.model}</span>
@@ -131,13 +165,17 @@ export function AccessPoint({ status: s }: { status: Status }) {
         </Badge>
       </div>
 
-      <div>
-        <div className="mb-1 flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">Example request — fill in the key</span>
-          <IconCopy value={curl} label="copy the request" />
+      {video ? (
+        <VideoExamples status={s} />
+      ) : (
+        <div>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">Example request — fill in the key</span>
+            <IconCopy value={curl} label="copy the request" />
+          </div>
+          <Code lang="sh">{curl}</Code>
         </div>
-        <Code lang="sh">{curl}</Code>
-      </div>
+      )}
     </div>
   );
 }
@@ -169,7 +207,7 @@ function Check({
 
 // ServingCheck asks the entrypoint for /v1/models: it proves the route resolves
 // and something is behind it.
-function ServingCheck({ namespace, release }: { namespace: string; release: string }) {
+function ServingCheck({ namespace, release, video = false }: { namespace: string; release: string; video?: boolean }) {
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [auth, setAuth] = useState<EntrypointAuth>({});
 
@@ -199,15 +237,15 @@ function ServingCheck({ namespace, release }: { namespace: string; release: stri
       {probe && (
         <div className="space-y-2 text-sm">
           <div className="flex flex-wrap items-center gap-2">
-            {probe.ok && probe.models?.length ? (
+            {probe.ok && (video || probe.models?.length) ? (
               <>
                 <CircleCheck className="size-4 text-success" />
-                <span className="font-medium">Serving</span>
+                <span className="font-medium">{video ? "Ready" : "Serving"}</span>
               </>
             ) : (
               <>
                 <CircleX className="size-4 text-destructive" />
-                <span className="font-medium">Not serving yet</span>
+                <span className="font-medium">{video ? "Not ready yet" : "Not serving yet"}</span>
               </>
             )}
             {probe.status ? <Badge variant="muted">HTTP {probe.status}</Badge> : null}

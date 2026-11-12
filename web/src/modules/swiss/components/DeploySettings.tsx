@@ -9,8 +9,11 @@ import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, affinityRules, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
 import { overlay, withPreset } from "@swiss/lib/formLayer";
 import { toYaml } from "@swiss/lib/yaml";
+import { isVideo, VIDEO_EMPTY, videoFields, videoOverrides, type VideoFields } from "@swiss/lib/video";
+import { DEFAULTS as VIDEO_DEFAULTS, KEYS as VIDEO_KEYS } from "@swiss/lib/videoChart";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
+import { VideoSettings } from "@swiss/components/VideoSettings";
 import {
   DIRECTIVES,
   DIRECTIVES_BY_KEY,
@@ -104,6 +107,9 @@ export interface Form {
   // with the diff and the apply. The swiss pages leave it off and ask in the
   // apply dialog instead.
   skipSchemaValidation: boolean;
+  // A video variant's own fields. The rest of the form is the LLM form's, and
+  // planRequest writes only the parts of it the video chart takes.
+  video: VideoFields;
 }
 
 export const EMPTY: Form = {
@@ -147,7 +153,14 @@ export const EMPTY: Form = {
   cacheHistoryLimit: "",
   cacheMaxSlots: "",
   skipSchemaValidation: false,
+  video: VIDEO_EMPTY,
 };
+
+// videoForm is a fresh video deploy's form: the LLM form's, with the video
+// fields read from the variant's values and the GPU pods' default tolerations.
+export function videoForm(f: Form, values: Record<string, unknown> | undefined): Form {
+  return { ...f, video: videoFields(values), tolerations: VIDEO_DEFAULTS.tolerations };
+}
 
 // The switches swissd gives a default for, by chart section.
 const DEFAULTED_SWITCHES = { modelRoute: "modelRoute", scaler: "scaler", cart: "cart", slo: "sloRequirement", serviceMonitor: "serviceMonitor", cache: "cache" } as const;
@@ -217,6 +230,7 @@ export function DeploySettings({
   remember,
   onRemember,
   presets,
+  video = false,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -250,8 +264,11 @@ export function DeploySettings({
   onRemember?: (key: string, on: boolean) => void;
   // The site profile's presets, on a deploy.
   presets?: Record<string, Preset>;
+  // A video variant: the video chart's own settings (form.video) are added, and
+  // what only an LLM chart takes -- replicas and scaler bounds, route tuning,
+  // ServiceMonitor, the engine image, the compile cache -- is left out.
+  video?: boolean;
 }) {
-  const checked = useDebounced(form.inputs, CHECK_MS);
   const picked = presets?.[form.preset];
   const set =
     (k: keyof Form) =>
@@ -346,52 +363,15 @@ export function DeploySettings({
             />
           </Row>
 
-          {inputs?.map((row) => {
-            const { input, answer, from, choices, site } = row;
-            const value = form.inputs[input.key] ?? "";
-            const typed = checked[input.key] ?? "";
-            const error = inputError({ input, answer }, typed);
-            const problem = error === "required" ? "required" : error && inputProblem(input, typed.trim() || answer || "");
-            return (
-              <Row
-                key={input.key}
-                label={input.title}
-                note={
-                  from === "release"
-                    ? "the release's answer, kept unless you change it"
-                    : from === "site"
-                      ? "the site profile's answer, unless you change it"
-                      : from === "variant"
-                        ? "the variant's default, unless you change it"
-                        : "unanswered: the variant has no default, and the site profile no answer"
-                }
-                hint={input.description ? `${input.description} (${input.key})` : input.key}
-                aside={`e.g. ${String(input.example)}`}
-              >
-                <div className="min-w-0 flex-1">
-                  <Suggest
-                    value={value}
-                    onChange={(v) => onChange({ inputs: { ...form.inputs, [input.key]: v } })}
-                    suggestion={answer}
-                    placeholder={answer}
-                    invalid={!!error}
-                    choices={choices?.map((c) => ({ value: c.answer, label: FROM[c.from] }))}
-                  />
-                  {problem && <p className="mt-1 text-[11px] text-destructive">{problem}</p>}
-                  {remember && onRemember && rememberable(row, typed) && (
-                    <label className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <input type="checkbox" className="size-3.5 accent-primary" checked={!!remember[input.key]} onChange={(e) => onRemember(input.key, e.target.checked)} />
-                      <HoverHint text="Every variant that declares this key, for any model, will take it.">
-                        <span>Save to the site profile</span>
-                      </HoverHint>
-                      {site && <span className="break-all">· replaces the site's answer {site.written}</span>}
-                    </label>
-                  )}
-                </div>
-              </Row>
-            );
-          })}
+          {inputs && <InputFields inputs={inputs} values={form.inputs} onChange={(v) => onChange({ inputs: v })} remember={remember} onRemember={onRemember} />}
 
+          {video ? (
+            <Row
+              label="Autoscale / SLO"
+              note="a scaler and an SLO requirement for each pool; a pool is not scaled until its SLO has a maximum, set in the SLO card once the release is up"
+              toggle={<Switch checked={form.slo} onChange={toggle("slo")} label="autoscale" />}
+            />
+          ) : (
           <Row
             label="Autoscale"
             note="on by default — an LLMScaler owns the replica count between min and max; empty keeps the chart's bounds"
@@ -430,6 +410,7 @@ export function DeploySettings({
               />
             )}
           </Row>
+          )}
 
           <Row
             label="Namespace"
@@ -468,6 +449,16 @@ export function DeploySettings({
         </CardContent>
       </Card>
 
+      {video && (
+        <VideoSettings
+          value={form.video}
+          onChange={(v) => onChange({ video: v })}
+          lockIdentity={lockIdentity}
+          classInput={!!inputs?.some((r) => r.input.key === VIDEO_KEYS.storageClass)}
+        />
+      )}
+
+      {!video && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Routing options</CardTitle>
@@ -718,6 +709,7 @@ export function DeploySettings({
           </Row>
         </CardContent>
       </Card>
+      )}
 
       {/* Folded away, but every flag is still written into the plan either
           way -- a section nobody opens must not hand the decision back to a
@@ -728,6 +720,7 @@ export function DeploySettings({
           <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
         </summary>
         <div className="divide-y border-t px-4">
+          {!video && (
           <Row
             label="ServiceMonitor"
             note="Prometheus metrics scraped alongside the release"
@@ -739,6 +732,7 @@ export function DeploySettings({
               />
             }
           />
+          )}
 
           {/* Off is the answer almost always: the catalog pins the tag and the
               site rewrites the repository to its mirror, and between them the
@@ -748,7 +742,7 @@ export function DeploySettings({
 
               Off empties the field, so turning it off puts the inherited answer
               back rather than leaving a stale override behind. */}
-          {image && (
+          {image && !video && (
             <Row
               label="Image"
               note="repository:tag — off inherits the catalog's tag and the site's mirror"
@@ -859,7 +853,7 @@ export function DeploySettings({
               placeholder={cluster?.schedulerName ?? "the chart's default"}
             />
           </Row>
-          {cache && (
+          {cache && !video && (
             <Row
               label="Compile cache"
               note="keeps compiled kernels on the node, so a restarted pod skips the 20–40 minute recompile; empty fields keep the site's, else the chart's. Off writes nothing, so a site that turns it on still applies: set cache.enabled: false in the plan editor to force it off"
@@ -906,10 +900,76 @@ export function DeploySettings({
   );
 }
 
+// The variant's catalog inputs, one row each. Shared with the video form.
+export function InputFields({
+  inputs,
+  values,
+  onChange,
+  remember,
+  onRemember,
+}: {
+  inputs: InputRow[];
+  values: Record<string, string>;
+  onChange: (v: Record<string, string>) => void;
+  remember?: Record<string, boolean>;
+  onRemember?: (key: string, on: boolean) => void;
+}) {
+  const checked = useDebounced(values, CHECK_MS);
+  return (
+    <>
+      {inputs.map((row) => {
+        const { input, answer, from, choices, site } = row;
+        const value = values[input.key] ?? "";
+        const typed = checked[input.key] ?? "";
+        const error = inputError({ input, answer }, typed);
+        const problem = error === "required" ? "required" : error && inputProblem(input, typed.trim() || answer || "");
+        return (
+          <Row
+            key={input.key}
+            label={input.title}
+            note={
+              from === "release"
+                ? "the release's answer, kept unless you change it"
+                : from === "site"
+                  ? "the site profile's answer, unless you change it"
+                  : from === "variant"
+                    ? "the variant's default, unless you change it"
+                    : "unanswered: the variant has no default, and the site profile no answer"
+            }
+            hint={input.description ? `${input.description} (${input.key})` : input.key}
+            aside={`e.g. ${String(input.example)}`}
+          >
+            <div className="min-w-0 flex-1">
+              <Suggest
+                value={value}
+                onChange={(v) => onChange({ ...values, [input.key]: v })}
+                suggestion={answer}
+                placeholder={answer}
+                invalid={!!error}
+                choices={choices?.map((c) => ({ value: c.answer, label: FROM[c.from] }))}
+              />
+              {problem && <p className="mt-1 text-[11px] text-destructive">{problem}</p>}
+              {remember && onRemember && rememberable(row, typed) && (
+                <label className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <input type="checkbox" className="size-3.5 accent-primary" checked={!!remember[input.key]} onChange={(e) => onRemember(input.key, e.target.checked)} />
+                  <HoverHint text="Every variant that declares this key, for any model, will take it.">
+                    <span>Save to the site profile</span>
+                  </HoverHint>
+                  {site && <span className="break-all">· replaces the site's answer {site.written}</span>}
+                </label>
+              )}
+            </div>
+          </Row>
+        );
+      })}
+    </>
+  );
+}
+
 // Three columns: label, switch, control. The switch column is reserved so a
 // switch beside an input never shoves that input sideways. Every box fills
 // the control column, so they share one left edge and one right edge.
-function Row({
+export function Row({
   label,
   note,
   hint,
@@ -1032,7 +1092,7 @@ function CacheFields({ form, onChange, defaults }: { form: Form; onChange: (patc
 const TOLERATION_FIELDS = ["key", "operator", "value", "effect"];
 
 // What a toleration's row shows. An operator left out is Equal, as Kubernetes reads it.
-function tolerationRow(r: Record<string, unknown>): Toleration {
+export function tolerationRow(r: Record<string, unknown>): Toleration {
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   return { key: str(r.key), operator: r.operator === "Exists" ? "Exists" : "Equal", value: str(r.value), effect: str(r.effect), raw: r };
 }
@@ -1051,7 +1111,7 @@ function tolerationsOf(o: Record<string, unknown>): Toleration[] {
 
 // A row with no key is a half-typed one, unless it is a deployed toleration
 // that has none: that one tolerates every taint.
-function tolerationValue(t: Toleration): Record<string, unknown> | undefined {
+export function tolerationValue(t: Toleration): Record<string, unknown> | undefined {
   const raw = t.raw;
   if (raw) {
     const was = tolerationRow(raw);
@@ -1129,7 +1189,7 @@ function TabHint() {
 const FROM: Record<InputChoice["from"], string> = { release: "Release", site: "Site profile", variant: "Variant default" };
 
 // choices list under the field when the empty field is clicked; typing closes the list.
-function Suggest({
+export function Suggest({
   value,
   onChange,
   suggestion,
@@ -1198,7 +1258,7 @@ function Suggest({
 
 // The slash is drawn, never stored: the chart wants the path without it, and a
 // leading one typed or pasted here is stripped rather than sent.
-function PathInput({
+export function PathInput({
   value,
   onChange,
   suggestion,
@@ -1261,7 +1321,7 @@ const EFFECTS = ["", "NoSchedule", "PreferNoSchedule", "NoExecute"];
 
 // Structured rows rather than a YAML box: a toleration is four fields, and
 // three of them are closed sets.
-function Tolerations({
+export function Tolerations({
   rows,
   onChange,
 }: {
@@ -1444,7 +1504,7 @@ function CapacityLine({ value, perPod, needNodes, refreshing, onRefresh }: Capac
   );
 }
 
-function Products({
+export function Products({
   selected,
   onChange,
   options,
@@ -1528,6 +1588,20 @@ extraArgs:
   - --tp-size=4`;
 
 const num = (v: string) => (v.trim() === "" ? undefined : Number(v));
+const strings = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+const at = (tree: Record<string, unknown> | undefined, path: string): unknown =>
+  path.split(".").reduce<unknown>((acc, k) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[k] : undefined), tree);
+
+function setPath(tree: Record<string, unknown>, path: string, value: unknown) {
+  const keys = path.split(".");
+  let node = tree;
+  for (const k of keys.slice(0, -1)) {
+    if (!node[k] || typeof node[k] !== "object" || Array.isArray(node[k])) node[k] = {};
+    node = node[k] as Record<string, unknown>;
+  }
+  node[keys[keys.length - 1]] = value;
+}
 
 function extraValue(f: Form, key: string): string {
   return f.nginxExtras.find((r) => r.key === key)?.value.trim() ?? "";
@@ -1812,10 +1886,25 @@ export function planRequest(
     // The release's form layer, on an upgrade: the form's values are put over
     // it, so the request carries the whole layer rebuilt.
     formLayer?: Record<string, unknown>;
+    // A video variant: the form's video fields, and none of what only an LLM
+    // chart takes (replicas, CART, route tuning, monitor, cache, engine image).
+    video?: boolean;
   },
 ): PlanRequest {
-  const overrides: Record<string, unknown> = {};
+  const overrides: Record<string, unknown> = opts.video ? videoOverrides(f.video, opts.formLayer) : {};
   const on = effective(f);
+  // An upgrade lays the form over the release's form layer, where a key left
+  // out stays: a route emptied here is sent as "", which swissd and the charts
+  // read as unset, so it falls back to the service ID.
+  const hadRoute = !!str(at(opts.formLayer, "modelRoute.nginx.route"));
+
+  if (opts.video) {
+    // The one SLO switch is the pools' JobSLOs and their scalers together.
+    overrides.scaler = { enabled: f.slo };
+    overrides.sloRequirement = { enabled: f.slo };
+    const route = on.modelRoute ? f.route.trim() : "";
+    overrides.modelRoute = route || hadRoute ? { enabled: on.modelRoute, nginx: { route } } : { enabled: on.modelRoute };
+  } else {
 
   // replicaCount and the scaler bounds are the same decision, so only the one
   // that applies is sent: a fixed count under a live scaler is two answers to
@@ -1840,6 +1929,7 @@ export function planRequest(
   const modelRoute: Record<string, unknown> = { enabled: on.modelRoute };
   const nginx: Record<string, unknown> = {};
   if (route) nginx.route = route;
+  else if (hadRoute) nginx.route = "";
 
   const nginxValues: Record<string, string> = {
     expose_routed_peer: f.exposeRoutedPeer ? "true" : "false",
@@ -1895,16 +1985,19 @@ export function planRequest(
     if (num(f.cacheMaxSlots) !== undefined) cache.maxSlotsPerNode = num(f.cacheMaxSlots);
     overrides.cache = cache;
   }
+  }
 
   const tolerations = f.tolerations.flatMap((t) => tolerationValue(t) ?? []);
-  if (tolerations.length || opts.formLayer?.tolerations !== undefined) overrides.tolerations = tolerations;
+  // The video chart's are the GPU pods', and always sent: they replace the chart's own list.
+  if (opts.video) setPath(overrides, VIDEO_KEYS.tolerations, tolerations);
+  else if (tolerations.length || opts.formLayer?.tolerations !== undefined) overrides.tolerations = tolerations;
 
   // Only the repository: the tag and digest are the catalog's, and a form that
   // wrote the whole image section would drop them.
   // The tag lands in the form layer, which merges after the catalog's -- so it
   // wins, and the plan reports it as shadowed rather than the two disagreeing
   // quietly.
-  if (f.image.trim()) overrides.image = splitImage(f.image);
+  if (f.image.trim() && !opts.video) overrides.image = splitImage(f.image);
 
   if (f.priorityClassName.trim()) overrides.priorityClassName = f.priorityClassName.trim();
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
@@ -1963,18 +2056,46 @@ export function formFromPlan(plan: Plan): Form {
     const v = at(path);
     return v === undefined || v === null ? "" : String(v);
   };
-  const bool = (path: string, fallback = false) => {
+  // A switch the form layer does not name is shown as the release runs it: the
+  // last layer that sets it, else the fallback. An API or older deploy leaves a
+  // switch to the site or the defaults, and an upgrade that read it as the
+  // fallback would turn it off unasked.
+  const sw = (path: string, fallback = false) => {
     const v = at(path);
-    return typeof v === "boolean" ? v : fallback;
+    if (typeof v === "boolean") return v;
+    return effectiveBool(plan, path) ?? fallback;
   };
   const nv = nginxValuesMap(at("modelRoute.nginx.values"));
+
+  if (isVideo(plan.engine)) {
+    const tolerations = at(VIDEO_KEYS.tolerations);
+    return {
+      ...EMPTY,
+      namespace: plan.release.namespace,
+      serviceId: str("serviceId"),
+      localPath: str("model.localPath"),
+      gpuProducts: gpuProductsOf(o).length ? gpuProductsOf(o) : strings(at("sglang.gpuProduct")),
+      gpuResource: String(((plan.layers?.derived?.model ?? {}) as Record<string, unknown>).gpuResource ?? ""),
+      tolerations: Array.isArray(tolerations) ? tolerationsOf({ tolerations }) : VIDEO_DEFAULTS.tolerations,
+      affinity: affinityRules(o),
+      // Earlier forms wrote the service ID as the route; it reads back as empty.
+      route: str("modelRoute.nginx.route") === str("serviceId") ? "" : str("modelRoute.nginx.route"),
+      modelRoute: sw("modelRoute.enabled"),
+      slo: effectiveBool(plan, VIDEO_KEYS.sloRequirement) ?? effectiveBool(plan, VIDEO_KEYS.scaler) ?? false,
+      // Earlier forms wrote these under sglang; the chart reads either.
+      priorityClassName: str("priorityClassName") || str("sglang.priorityClassName"),
+      schedulerName: str("schedulerName") || str("sglang.schedulerName"),
+      video: videoFields(o, { release: true }),
+      edits: editsOf(plan),
+    };
+  }
 
   return {
     ...EMPTY,
     namespace: plan.release.namespace,
     serviceId: str("serviceId"),
     localPath: str("model.localPath"),
-    scaler: bool("scaler.enabled"),
+    scaler: sw("scaler.enabled"),
     scalerMin: str("scaler.minReplicas"),
     scalerMax: str("scaler.maxReplicas"),
     // The product sits under the vendor's own label key, so find it by suffix
@@ -1987,10 +2108,10 @@ export function formFromPlan(plan: Plan): Form {
     replicaCount: str("replicaCount"),
     route: str("modelRoute.nginx.route"),
     image: joinImage(str("image.repository"), str("image.tag")),
-    cart: bool("cart.enabled", true),
-    modelRoute: bool("modelRoute.enabled"),
-    slo: bool("sloRequirement.enabled", true),
-    serviceMonitor: bool("serviceMonitor.enabled"),
+    cart: sw("cart.enabled", true),
+    modelRoute: sw("modelRoute.enabled"),
+    slo: sw("sloRequirement.enabled", true),
+    serviceMonitor: sw("serviceMonitor.enabled"),
     priorityClassName: str("priorityClassName"),
     schedulerName: str("schedulerName"),
     exposeRoutedPeer: truthyStr(nv.expose_routed_peer, true),
@@ -2005,7 +2126,7 @@ export function formFromPlan(plan: Plan): Form {
       .map(([key, value]) => ({ key, value: String(value ?? "") })),
     backendMaxConcurrency: backendMaxConcurrencyOf(at("modelRoute.nginx.peers")),
     cartMaxLoad: str("modelRoute.cart.maxLoad"),
-    monitor: bool("modelRoute.monitor.enabled", true),
+    monitor: sw("modelRoute.monitor.enabled", true),
     monitorModel: str("modelRoute.monitor.model"),
     monitorGpuType: str("modelRoute.monitor.gpuType"),
     // What the release ran with, which the site may have decided rather than
@@ -2017,11 +2138,25 @@ export function formFromPlan(plan: Plan): Form {
     cacheMaxSlots: str("cache.maxSlotsPerNode"),
     // Per apply, so not on the plan: an upgrade that needs it asks again.
     skipSchemaValidation: false,
-    edits:
-      plan.layers?.edit && Object.keys(plan.layers.edit).length > 0
-        ? toYamlish(plan.layers.edit)
-        : "",
+    edits: editsOf(plan),
   };
+}
+
+// The plan's edit layer as the editor's text.
+export function editsOf(plan: Plan): string {
+  return plan.layers?.edit && Object.keys(plan.layers.edit).length > 0 ? toYamlish(plan.layers.edit) : "";
+}
+
+// effectiveBool is the boolean at path in the last plan layer that sets one,
+// form and edit included; undefined when no layer does (the chart's own
+// default is not a layer).
+function effectiveBool(plan: Plan, path: string): boolean | undefined {
+  let on: boolean | undefined;
+  for (const layer of layersOf(plan)) {
+    const v = at(plan.layers[layer] as Record<string, unknown> | undefined, path);
+    if (typeof v === "boolean") on = v;
+  }
+  return on;
 }
 
 function cacheOn(plan: Plan): boolean {

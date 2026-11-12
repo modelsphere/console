@@ -38,10 +38,12 @@ import { enginesMove, scalerFailing, scalerHold } from "@swiss/lib/scaler";
 import { AccessPoint } from "@swiss/components/Endpoint";
 import { ReleaseStatus } from "@swiss/components/ReleaseStatus";
 import { SLODialog } from "@swiss/components/SLOCard";
+import { VideoSLODialog } from "@swiss/components/VideoSLOCard";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { METHODS } from "@swiss/components/InstallMethod";
 import { isUninstalling } from "@swiss/lib/phase";
 import { cn, timeAgo } from "@swiss/lib/utils";
+import { isVideo, jobSLOs, poolScalers } from "@swiss/lib/video";
 
 export function DeploymentDetail() {
   const { namespace = "", release = "" } = useParams();
@@ -84,7 +86,12 @@ export function DeploymentDetail() {
 
   const s = status.data;
   const removing = isUninstalling(s);
-  const showSLO = !removing && s.planStatus?.phase === "applied" && sloEnabled(plan.data);
+  // A video release has one SLO per pool, edited in a dialog of its own.
+  const video = isVideo(plan.data?.engine);
+  // A video release's JobSLOs may come from the chart's default, with the switch
+  // never named in its form layer: the live objects decide.
+  const sloOn = video && objects.data ? jobSLOs(objects.data.objects).length > 0 : sloEnabled(plan.data);
+  const showSLO = !removing && s.planStatus?.phase === "applied" && sloOn;
   const openSLO = () => setSloOpen(true);
 
   return (
@@ -169,14 +176,18 @@ export function DeploymentDetail() {
         deployed={plan.data?.layers.catalog}
       />
 
-      <InstallStatus namespace={namespace} release={release} status={s} objects={objects.data?.objects} />
+      <InstallStatus namespace={namespace} release={release} status={s} objects={objects.data?.objects} video={video} />
 
-      <ReleaseObjects namespace={namespace} release={release} onConfigureSLO={showSLO ? openSLO : undefined} />
-      <SLODialog
-        target={sloOpen && showSLO ? { namespace, release } : null}
-        canEdit={!!cluster.data?.allowDeploy}
-        onClose={() => setSloOpen(false)}
-      />
+      <ReleaseObjects namespace={namespace} release={release} onConfigureSLO={showSLO ? openSLO : undefined} video={video} />
+      {video ? (
+        <VideoSLODialog target={sloOpen && showSLO ? { namespace, release } : null} canEdit={!!cluster.data?.allowDeploy} onClose={() => setSloOpen(false)} />
+      ) : (
+        <SLODialog
+          target={sloOpen && showSLO ? { namespace, release } : null}
+          canEdit={!!cluster.data?.allowDeploy}
+          onClose={() => setSloOpen(false)}
+        />
+      )}
 
       <ReleaseStatus namespace={namespace} release={release} stats={false} access={false} poll={false} />
 
@@ -206,7 +217,7 @@ export function DeploymentDetail() {
 // helm's own status describes the last apply that returned. The track under it
 // adds what the controllers say: a release can be applied with ready pods and
 // still serve nobody, because nothing routed to it.
-function InstallStatus({ namespace, release, status, objects }: { namespace: string; release: string; status: Status; objects?: ObjectResult[] }) {
+function InstallStatus({ namespace, release, status, objects, video = false }: { namespace: string; release: string; status: Status; objects?: ObjectResult[]; video?: boolean }) {
   const p: PlanStatus | undefined = status.planStatus;
   const autoscale = useAutoscaling(namespace, release).data;
 
@@ -224,7 +235,7 @@ function InstallStatus({ namespace, release, status, objects }: { namespace: str
     appliedStep(status, p),
     podsStep(status),
     routeStep(pick<ModelRouteSpec, ModelRouteStatus>(objects, "ModelRoute")),
-    autoscale?.enabled ? pdScaleStep(autoscale) : scalerStep(pick<LLMScalerSpec, LLMScalerStatus>(objects, "LLMScaler")),
+    autoscale?.enabled ? pdScaleStep(autoscale) : video ? videoScalerStep(objects) : scalerStep(pick<LLMScalerSpec, LLMScalerStatus>(objects, "LLMScaler")),
   ];
   const updated = p?.updatedAt ?? p?.startedAt;
   const summary = [
@@ -299,7 +310,7 @@ function InstallStatus({ namespace, release, status, objects }: { namespace: str
               </Badge>
             )}
           </div>
-          <AccessPoint status={status} />
+          <AccessPoint status={status} video={video} />
         </div>
       </CardContent>
     </Card>
@@ -353,6 +364,17 @@ export function scalerStep({ result, status }: ReturnType<typeof pick<LLMScalerS
   if (want !== undefined && want !== cur && !scalerHold(status?.conditions))
     return { label, state: "wait", detail: `${cur} → ${want} replicas` };
   return { label, state: "ok", detail: `${cur} replica${cur === 1 ? "" : "s"}, steady` };
+}
+
+// A video release has an LLMScaler per pool; only the scaled pools' count, the
+// worst of them, and a release with no pool scaled is not scaled.
+export function videoScalerStep(objects: ObjectResult[] | undefined): Step {
+  const { all, scaled } = poolScalers(objects);
+  if (!all.length) return scalerStep({ result: undefined, spec: undefined, status: undefined });
+  const steps = scaled.map((o) => scalerStep({ result: o, spec: o.live?.spec as LLMScalerSpec | undefined, status: o.live?.status as LLMScalerStatus | undefined }));
+  if (!steps.length) return { label: "Scaling", state: "off", detail: "not scaled: no pool has a maximum" };
+  const rank: Record<StepState, number> = { bad: 0, wait: 1, ok: 2, off: 3 };
+  return steps.reduce((worst, s) => (rank[s.state] < rank[worst.state] ? s : worst));
 }
 
 // A PD release has no LLMScaler: swissd scales its slices, and this is its last pass.

@@ -200,7 +200,8 @@
       "failingMessage": "{reason}: {message}",
       "noDecision": "No decision yet",
       "scaling": "{cur} → {want} replicas",
-      "steady": "{n} replicas, steady"
+      "steady": "{n} replicas, steady",
+      "unmanaged": "not scaled: no pool has a maximum"
     },
     "pdScale": {
       "label": "PD autoscaling",
@@ -248,6 +249,7 @@
   "slo": {
     "title": "SLO of {release}",
     "description": "What the scaler sizes the service by: the latency and throughput to hold, and the replica bounds.",
+    "videoDescription": "Each pool's queue target and replica bounds. A pool with no maximum is not scaled.",
     "setup": "SLO requirement is on for {release}. Configure it here first: the scaler and openresty take their targets from it.",
     "waiting": "Waiting for the install to apply. The form opens once the requirement exists."
   },
@@ -733,6 +735,49 @@
     "rollbackSheet": {
       "title": "Roll back {release} to revision {revision}",
       "description": "Re-applies that revision's plan exactly as it ran; to change settings, upgrade instead."
+    },
+    "video": {
+      "serviceIdHint": "Names the helm release and the route.",
+      "routeHint": "Publishes a video ModelRoute on the shared openresty. Empty uses the service ID.",
+      "storageClass": "Storage class",
+      "storageClassDefault": "cluster default",
+      "storageClassHint": "Of the shared asset volume. It must support ReadWriteMany (CephFS, NFS): a task can be generated on one replica and downloaded from another.",
+      "storageSize": "Storage size",
+      "storageSizeHint": "A quota, not a reservation. A CephFS volume grows in place but never shrinks.",
+      "storageClassLocked": "Fixed: the shared volume already exists, and a PVC's storage class cannot change.",
+      "storageSizeGrowOnly": "Can only grow: the volume is kept across upgrades and uninstalls, and a PVC never shrinks. Empty keeps it.",
+      "database": "Database URL",
+      "databaseDefault": "chart default",
+      "databaseHint": "PostgreSQL connection string. Empty uses the chart's default, the platform's PostgreSQL.",
+      "databaseKept": "kept",
+      "databaseKeptHint": "The release already sets one. Empty keeps it; typing a new one replaces it.",
+      "totalGpus": "{n, plural, one {# GPU} other {# GPUs}} in total",
+      "perPod": "{n, plural, one {# GPU} other {# GPUs}} per pod",
+      "poolOff": "Off",
+      "pools": {
+        "fl2va": {
+          "title": "FL2VA pool",
+          "hint": "Text and first/last frame to video. Each pod is one server and one SGLang running one generation at a time."
+        },
+        "ref2va": {
+          "title": "Ref2VA pool",
+          "hint": "Reference images, video and audio to video. Each pod is one server and one SGLang running one generation at a time."
+        }
+      },
+      "replicas": "Replicas",
+      "tpSize": "TP size",
+      "ulyssesDegree": "Ulysses degree",
+      "parallelHint": "GPUs per pod = TP size × Ulysses degree.",
+      "turbo": "Turbo",
+      "turboHint": "The 8-step Turbo LoRA and its sampling settings. Off serves the base model.",
+      "autoscale": "Autoscale / SLO",
+      "autoscaleHint": "Deploys a scaler and an SLO requirement for each pool. A pool is not scaled until its SLO has a maximum: set it, and the queue depth that scales the pool, with Edit SLO once the release is up.",
+      "gpuProductsHint": "Restricts the GPU pods to these products; any one will do.",
+      "problems": {
+        "serviceId": "A service ID is required.",
+        "noPool": "Enable at least one pool.",
+        "zero": "Replicas, TP size and Ulysses degree must each be at least 1."
+      }
     }
   },
   "runsPage": {

@@ -9,13 +9,15 @@ import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent } from "@swiss/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@swiss/components/ui/table";
 import { SLODialog, type SLOTarget } from "@swiss/components/SLOCard";
+import { VideoSLODialog } from "@swiss/components/VideoSLOCard";
 import { Empty, ErrorState, Loading } from "@swiss/components/States";
+import { isVideoDeployment } from "@swiss/lib/video";
 
 const PER_PAGE = 25;
 
 export function Deployments() {
   const [page, setPage] = useState(1);
-  const [slo, setSlo] = useState<SLOTarget | null>(null);
+  const [slo, setSlo] = useState<(SLOTarget & { video: boolean }) | null>(null);
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
   const { data, isPending, error } = useQuery({
     queryKey: ["deployments", page],
@@ -80,7 +82,7 @@ export function Deployments() {
             </TableHeader>
             <TableBody>
               {rows.map((d) => (
-                <Row key={`${d.namespace}/${d.release}`} d={d} onConfigureSLO={() => setSlo(d)} />
+                <Row key={`${d.namespace}/${d.release}`} d={d} onConfigureSLO={() => setSlo({ namespace: d.namespace, release: d.release, video: isVideoDeployment(d) })} />
               ))}
             </TableBody>
           </Table>
@@ -113,7 +115,8 @@ export function Deployments() {
         </div>
       )}
 
-      <SLODialog target={slo} canEdit={!!cluster.data?.allowDeploy} onClose={() => setSlo(null)} />
+      <SLODialog target={slo && !slo.video ? slo : null} canEdit={!!cluster.data?.allowDeploy} onClose={() => setSlo(null)} />
+      <VideoSLODialog target={slo?.video ? slo : null} canEdit={!!cluster.data?.allowDeploy} onClose={() => setSlo(null)} />
     </div>
   );
 }

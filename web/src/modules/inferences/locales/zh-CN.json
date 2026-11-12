@@ -189,7 +189,8 @@
       "failingMessage": "{reason}：{message}",
       "noDecision": "还没有伸缩决策",
       "scaling": "{cur} → {want} 副本",
-      "steady": "{n} 副本，稳定"
+      "steady": "{n} 副本，稳定",
+      "unmanaged": "未设最大副本数，不扩缩"
     },
     "pdScale": {
       "label": "PD 自动伸缩",
@@ -237,6 +238,7 @@
   "slo": {
     "title": "{release} 的 SLO",
     "description": "扩缩容器据此决定副本数：要守住的延迟与吞吐，以及副本数的上下限。",
+    "videoDescription": "每个池的队列目标与副本数上下限。未设置最大副本数的池不会自动扩缩。",
     "setup": "{release} 已开启 SLO 要求，请先在这里完成配置：扩缩容器和 openresty 都以它为目标。",
     "waiting": "正在等待安装生效，SLO 要求创建后即可编辑。"
   },
@@ -722,6 +724,49 @@
     "rollbackSheet": {
       "title": "回滚 {release} 到版本 {revision}",
       "description": "重新应用这个版本当时的计划，原样恢复；要改设置请用升级。"
+    },
+    "video": {
+      "serviceIdHint": "作为 helm release 名和路由名。",
+      "routeHint": "在共享 openresty 上发布 video 类型的 ModelRoute。留空则使用服务 ID。",
+      "storageClass": "存储类",
+      "storageClassDefault": "集群默认",
+      "storageClassHint": "共享素材盘的存储类，必须支持 ReadWriteMany(CephFS、NFS):任务可能在一个副本生成、从另一个副本下载。",
+      "storageSize": "存储容量",
+      "storageSizeHint": "是配额而非预占。CephFS 卷可在线扩容，但不能缩小。",
+      "storageClassLocked": "不可修改：共享盘已创建,PVC 的存储类无法变更。",
+      "storageSizeGrowOnly": "只能扩大：共享盘在升级和卸载后都会保留,PVC 无法缩小。留空保留原值。",
+      "database": "数据库 URL",
+      "databaseDefault": "chart 默认",
+      "databaseHint": "PostgreSQL 连接串。留空则使用 chart 默认值，即平台的 PostgreSQL。",
+      "databaseKept": "保留",
+      "databaseKeptHint": "该 release 已设置过数据库 URL。留空保留原值，填写则替换。",
+      "totalGpus": "共 {n} 张 GPU",
+      "perPod": "每个 Pod {n} 张 GPU",
+      "poolOff": "已关闭",
+      "pools": {
+        "fl2va": {
+          "title": "FL2VA 池",
+          "hint": "文生视频、首尾帧生视频。每个 Pod 是一个 server 加一个 SGLang,一次只跑一个生成任务。"
+        },
+        "ref2va": {
+          "title": "Ref2VA 池",
+          "hint": "参考图片、视频、音频生视频。每个 Pod 是一个 server 加一个 SGLang,一次只跑一个生成任务。"
+        }
+      },
+      "replicas": "副本数",
+      "tpSize": "TP 并行度",
+      "ulyssesDegree": "Ulysses 并行度",
+      "parallelHint": "每个 Pod 的 GPU 数 = TP 并行度 × Ulysses 并行度。",
+      "turbo": "Turbo",
+      "turboHint": "8 步 Turbo LoRA 及其采样参数。关闭则使用基座模型。",
+      "autoscale": "自动扩缩 / SLO",
+      "autoscaleHint": "为每个池部署扩缩器和 SLO 要求。池的 SLO 设置了最大副本数后才会扩缩：release 就绪后在「编辑 SLO」中设置最大副本数和触发扩容的队列深度。",
+      "gpuProductsHint": "将 GPU Pod 限定在这些型号上，满足其一即可。",
+      "problems": {
+        "serviceId": "服务 ID 必填。",
+        "noPool": "至少启用一个池。",
+        "zero": "副本数、TP 并行度和 Ulysses 并行度都至少为 1。"
+      }
     }
   },
   "runsPage": {

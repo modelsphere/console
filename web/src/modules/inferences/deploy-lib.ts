@@ -1,6 +1,7 @@
 import type { ChartVersions, DiffResult, Plan } from "@swiss/lib/api";
 import { DIRECTIVES_BY_KEY } from "@swiss/lib/routeDirectives";
 import type { Form } from "@swiss/components/DeploySettings";
+import { isVideo } from "@swiss/lib/video";
 
 // Ported from swiss's DeploySettings, where they are not exported.
 
@@ -84,6 +85,14 @@ export function whatMoves(current: Plan, proposed: Plan, currentCatalog?: string
 }
 
 export const SECTIONS = ["basic", "resources", "routing", "advanced"] as const;
+// A video variant's: its route takes none of the routing section's tuning.
+export const VIDEO_SECTIONS: Section[] = ["basic", "resources", "advanced"];
+
+// Which deploy form a sheet shows: an upgrade keeps the engine its release was
+// composed with, a deploy takes the picked variant's.
+export function formKind(upgrade: boolean, planEngine: string | undefined, variantEngine: string | undefined): "video" | "llm" {
+  return isVideo(upgrade ? planEngine : variantEngine) ? "video" : "llm";
+}
 export type Section = (typeof SECTIONS)[number];
 
 // The service id names the helm release and the Services the chart renders
