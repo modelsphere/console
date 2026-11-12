@@ -10,7 +10,7 @@ export interface SLOTarget {
 
 // The cluster resources tab shows the stored SLO; editing it is an action, so
 // the form opens here from the header rather than as a tab of its own.
-export function SLOSheet({ target, canEdit, pd = false, setup, waiting, onClose }: { target: SLOTarget | null; canEdit: boolean; pd?: boolean; setup?: boolean; waiting?: boolean; onClose: () => void }) {
+export function SLOSheet({ target, canEdit, setup, waiting, onClose }: { target: SLOTarget | null; canEdit: boolean; setup?: boolean; waiting?: boolean; onClose: () => void }) {
   const t = useT();
   if (!target) return null;
   return (
@@ -33,7 +33,7 @@ export function SLOSheet({ target, canEdit, pd = false, setup, waiting, onClose 
               <Spinner size="lg" text={t("slo.waiting")} />
             </div>
           ) : (
-            <SLOCard namespace={target.namespace} release={target.release} canEdit={canEdit} pd={pd} onSaved={setup ? onClose : undefined} />
+            <SLOCard namespace={target.namespace} release={target.release} canEdit={canEdit} onSaved={setup ? onClose : undefined} />
           )}
         </SheetBody>
       </SheetContent>

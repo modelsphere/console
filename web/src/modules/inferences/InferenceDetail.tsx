@@ -10,7 +10,6 @@ import { useReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { ReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { Endpoint } from "@swiss/components/Endpoint";
 import { Provenance } from "@swiss/components/Provenance";
-import { pdEnabled } from "@swiss/components/SLOCard";
 import { useT } from "@/modules/inferences/i18n";
 import { modelLine, parseTab, releaseState, sloBlocked, visibleTabs, type Tab } from "@/modules/inferences/lib";
 import { statusOf } from "@/modules/inferences/components/StatusDot";
@@ -192,7 +191,7 @@ export function InferenceDetail() {
         )}
       </Tabs>
 
-      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !removing} pd={pdEnabled(plan.data)} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
+      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
       <DeploySheet target={upgrading ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
         target={uninstalling ? { namespace, release } : null}

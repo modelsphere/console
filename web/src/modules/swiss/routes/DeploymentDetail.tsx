@@ -37,7 +37,7 @@ import { ReleaseObjects, pick, useAutoscaling, useReleaseObjects } from "@swiss/
 import { enginesMove, scalerFailing, scalerHold } from "@swiss/lib/scaler";
 import { AccessPoint } from "@swiss/components/Endpoint";
 import { ReleaseStatus } from "@swiss/components/ReleaseStatus";
-import { pdEnabled, SLODialog } from "@swiss/components/SLOCard";
+import { SLODialog } from "@swiss/components/SLOCard";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { METHODS } from "@swiss/components/InstallMethod";
 import { isUninstalling } from "@swiss/lib/phase";
@@ -175,7 +175,6 @@ export function DeploymentDetail() {
       <SLODialog
         target={sloOpen && showSLO ? { namespace, release } : null}
         canEdit={!!cluster.data?.allowDeploy}
-        pd={pdEnabled(plan.data)}
         onClose={() => setSloOpen(false)}
       />
 
