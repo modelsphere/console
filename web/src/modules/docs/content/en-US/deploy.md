@@ -36,14 +36,14 @@ Most fields can stay empty and take the site profile's and chart's defaults.
 
 ## Video models
 
-A variant whose engine is `video` (such as MiniMax H3, chart `minimax-h3`) opens a form of its own: none of the LLM settings (SLO thresholds, CART, compile cache, image override, route tuning) apply.
+A variant whose engine is `video` (such as MiniMax H3, chart `minimax-h3`) uses the same form as an LLM: service ID, route, namespace, model path, GPU products, preset, tolerations, priority class, scheduler, inputs and the plan editor all work as above. The form adds the fields below and leaves out what only an LLM chart takes: replicas and scaler bounds (each pool has its own), route tuning, ServiceMonitor, image override and the compile cache.
 
 | Field | Notes |
 |---|---|
 | Pools | FL2VA (text and first/last frame to video) and Ref2VA (reference media to video), each on or off with its own replicas, TP size and Ulysses degree. GPUs per pod = TP × Ulysses; the form shows the total |
 | Turbo | Ref2VA only: the 8-step Turbo LoRA; off serves the base model |
-| Autoscale / SLO | One switch for the scaler and the SLO requirements. The chart creates one SLO per pool with a minimum of 1 replica and **no maximum, so nothing is scaled yet** |
-| Storage | The shared asset volume: its storage class must support ReadWriteMany; empty uses the cluster default |
+| SLO | The form's SLO switch turns on a scaler and an SLO requirement for each pool. The chart creates each SLO with a minimum of 1 replica and **no maximum, so nothing is scaled yet** |
+| Storage | The shared asset volume: its storage class must support ReadWriteMany. When the variant declares the class as an input, the site profile can answer it and the input field asks for it; otherwise empty uses the cluster default |
 | Database URL | Optional; empty uses the chart's default. On an upgrade, empty keeps the release's own |
 
 To scale a pool, open **Edit SLO** on the release once it is up. There is one section per pool:
