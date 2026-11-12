@@ -19,7 +19,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@modelsphere/ui";
-import { Pencil } from "lucide-react";
+import { Lock, Pencil, TriangleAlert } from "lucide-react";
 import type { HelmValues } from "@swiss/lib/api";
 import { useT } from "@/modules/inferences/i18n";
 import { KeySearch } from "./KeySearch";
@@ -76,6 +76,27 @@ export function OverrideYaml({ value, onChange, source }: {
           className="cursor-pointer font-mono text-xs"
         />
       </FloatingField>
+      {open && <OverrideDialog value={value} source={source} onClose={() => setOpen(false)} onSave={(edits) => (onChange(edits), setOpen(false))} />}
+    </>
+  );
+}
+
+export function OverrideYamlButton({ value, onChange, source, disabled }: {
+  value: string;
+  onChange: (edits: string) => void;
+  source?: HelmValuesSource;
+  disabled?: boolean;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const paths = overridePaths(value);
+  return (
+    <>
+      <Button variant="outline" disabled={disabled} onClick={() => setOpen(true)}>
+        <Pencil className="size-3.5" />
+        {t("deploy.fields.edits")}
+        {!!paths?.length && <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{paths.length}</Badge>}
+      </Button>
       {open && <OverrideDialog value={value} source={source} onClose={() => setOpen(false)} onSave={(edits) => (onChange(edits), setOpen(false))} />}
     </>
   );
@@ -176,6 +197,18 @@ function OverrideDialog({ value, source, onClose, onSave }: {
     }
     setTab(next);
   };
+  // A reload keeps what was typed: the changes go into the overrides first.
+  const loadValues = async () => {
+    const edits = overridesNow();
+    if (edits === undefined || !source) return;
+    const values = await source.load();
+    const l = values && loadedFor(values, edits);
+    if (!l) return;
+    setDraft(edits);
+    setLoaded(l);
+    setFinal(l.computed);
+    setTab("final");
+  };
   const save = () => {
     const edits = overridesNow();
     if (edits !== undefined) onSave(edits);
@@ -216,21 +249,37 @@ function OverrideDialog({ value, source, onClose, onSave }: {
         <Tabs value={tab} onValueChange={(v) => switchTab(v as Tab)} className="min-h-0 min-w-0 flex-1 gap-2">
           <div className="flex items-center gap-2">
             <TabsList>
-              <TabsTrigger value="defaults">{o("chart")}</TabsTrigger>
-              <TabsTrigger value="overrides">{o("swiss")}</TabsTrigger>
+              <TabsTrigger value="defaults" className="text-muted-foreground">
+                <Lock className="size-3 opacity-60" />
+                {o("chart")}
+                <Badge variant="secondary" className="h-4 px-1.5 text-[10px] text-muted-foreground">{o("readOnly")}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="overrides" className="text-muted-foreground">
+                <Lock className="size-3 opacity-60" />
+                {o("swiss")}
+                <Badge variant="secondary" className="h-4 px-1.5 text-[10px] text-muted-foreground">{o("readOnly")}</Badge>
+              </TabsTrigger>
               <TabsTrigger value="edit">{o("edit")}</TabsTrigger>
               <TabsTrigger value="final" className="text-primary data-active:text-primary">
                 {o("final")}
                 <Badge variant="info" className="h-4 px-1.5 text-[10px]">{o("recommended")}</Badge>
               </TabsTrigger>
             </TabsList>
+            {source && (
+              <Button variant="outline" size="xs" className="ml-auto" disabled={source.loading || !!read.error} onClick={loadValues}>
+                {o(source.loading ? "loading" : "load")}
+              </Button>
+            )}
           </div>
           <TabsContent value="defaults" className={TAB}>
             {loaded ? (
               <>
-                <p className="text-xs text-muted-foreground">{o("chartHint")}</p>
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Lock className="size-3 shrink-0" />
+                  <span>{o("chartHint")}</span>
+                </p>
                 <div ref={defaultsBox} className={TAB}>
-                  <ReadOnlyYaml language="yaml" lineNumbers value={loaded.values.defaults} downloadName="values.yaml" maxHeight="100%" className="min-h-0 flex-1" />
+                  <ReadOnlyYaml language="yaml" lineNumbers value={loaded.values.defaults} downloadName="values.yaml" maxHeight="100%" className="min-h-0 flex-1 opacity-90" />
                 </div>
               </>
             ) : (
@@ -240,9 +289,12 @@ function OverrideDialog({ value, source, onClose, onSave }: {
           <TabsContent value="overrides" className={TAB}>
             {loaded ? (
               <>
-                <p className="text-xs text-muted-foreground">{o("swissHint")}</p>
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Lock className="size-3 shrink-0" />
+                  <span>{o("swissHint")}</span>
+                </p>
                 <div ref={overridesBox} className={TAB}>
-                  <ReadOnlyYaml language="yaml" lineNumbers value={loaded.overrides} downloadName="overrides.yaml" maxHeight="100%" className="min-h-0 flex-1" />
+                  <ReadOnlyYaml language="yaml" lineNumbers value={loaded.overrides} downloadName="overrides.yaml" maxHeight="100%" className="min-h-0 flex-1 opacity-90" />
                 </div>
               </>
             ) : (
@@ -250,7 +302,10 @@ function OverrideDialog({ value, source, onClose, onSave }: {
             )}
           </TabsContent>
           <TabsContent value="edit" className={TAB}>
-            <p className="text-xs text-muted-foreground">{o("editHint")}</p>
+            <p className="flex items-center gap-1.5 rounded-md border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-xs text-warning">
+              <TriangleAlert className="size-3.5 shrink-0" />
+              <span>{o("editHint")}</span>
+            </p>
             <YamlTextarea ref={editEditor} aria-label={o("edit")} invalid={tab === "edit" && !!read.error} value={draft} onChange={setDraft} className="min-h-0 flex-1" />
           </TabsContent>
           <TabsContent value="final" className={TAB}>
