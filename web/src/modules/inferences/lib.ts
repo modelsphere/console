@@ -1,4 +1,4 @@
-import { jobSLOs } from "@swiss/lib/video";
+import { poolScalers } from "@swiss/lib/video";
 import type {
   AutoscaleState,
   Deployment,
@@ -197,11 +197,9 @@ function scalerStep({ result, status }: Picked<LLMScalerSpec, LLMScalerStatus>):
 // so it is left out. The step is the worst of the scaled pools', or off when no
 // pool is scaled.
 export function videoScalerStep(objects: ObjectResult[] | undefined): Step {
-  const scaled = new Set(jobSLOs(objects).filter((j) => j.spec?.maximumDeployment).map((j) => j.serviceId));
-  const scalers = (objects ?? []).filter((o) => o.ref.kind === "LLMScaler");
-  if (!scalers.length) return scalerStep({});
-  const steps = scalers
-    .filter((o) => scaled.has((o.live?.spec as LLMScalerSpec | undefined)?.customProvider?.serviceId ?? ""))
+  const { all, scaled } = poolScalers(objects);
+  if (!all.length) return scalerStep({});
+  const steps = scaled
     .map((o) => scalerStep({ result: o, spec: o.live?.spec as LLMScalerSpec | undefined, status: o.live?.status as LLMScalerStatus | undefined }));
   if (!steps.length) return { key: "scaler", state: "off", detail: "unmanaged" };
   const rank: Record<StepState, number> = { bad: 0, wait: 1, ok: 2, off: 3 };
