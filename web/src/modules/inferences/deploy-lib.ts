@@ -1,6 +1,6 @@
-import type { ChartVersions, DiffResult, Plan } from "@swiss/lib/api";
+import type { ChartVersions, DiffResult, Node, Plan } from "@swiss/lib/api";
 import { DIRECTIVES_BY_KEY } from "@swiss/lib/routeDirectives";
-import type { Form } from "@swiss/components/DeploySettings";
+import type { Form, Toleration } from "@swiss/components/DeploySettings";
 
 // Ported from swiss's DeploySettings, where they are not exported.
 
@@ -105,3 +105,48 @@ export function defaultServiceId(model: string): string {
     .slice(0, 53)
     .replace(/-+$/, "");
 }
+
+export interface ClusterTaint {
+  // As /api/nodes lists it: key=value:Effect.
+  taint: string;
+  nodes: number;
+  toleration: Toleration;
+}
+
+// clusterTaints is each taint the nodes carry, once, with how many carry it.
+// Kubernetes' own node.kubernetes.io/* taints (not-ready, unschedulable, ...)
+// follow a node's state, so they are not offered.
+export function clusterTaints(nodes: Node[] | undefined): ClusterTaint[] {
+  const count = new Map<string, number>();
+  for (const n of nodes ?? []) for (const t of new Set(n.Taints ?? [])) count.set(t, (count.get(t) ?? 0) + 1);
+  return [...count]
+    .flatMap(([taint, nodes]) => {
+      const toleration = taintToleration(taint);
+      return toleration && !toleration.key.startsWith("node.kubernetes.io/") ? [{ taint, nodes, toleration }] : [];
+    })
+    .sort((a, b) => a.taint.localeCompare(b.taint));
+}
+
+// taintToleration is the toleration matching key=value:Effect exactly; a taint
+// with no value is matched by Exists.
+export function taintToleration(taint: string): Toleration | undefined {
+  const m = /^([^=:]+)=([^=:]*):(\w+)$/.exec(taint);
+  if (!m) return undefined;
+  const [, key, value, effect] = m;
+  return value ? { key, operator: "Equal", value, effect } : { key, operator: "Exists", value: "", effect };
+}
+
+export const sameToleration = (a: Toleration, b: Toleration) =>
+  a.key.trim() === b.key && a.operator === b.operator && (a.operator === "Exists" || a.value.trim() === b.value) && a.effect === b.effect;
+
+// pickTaints sets rows to tolerate exactly the picked taints among those
+// offered: a row for each picked one, none for the rest, and every row that
+// matches no offered taint kept as it is.
+export function pickTaints(rows: Toleration[], offered: ClusterTaint[], picked: string[]): Toleration[] {
+  const want = new Set(picked);
+  const kept = rows.filter((r) => !offered.some((c) => !want.has(c.taint) && sameToleration(r, c.toleration)));
+  const added = offered.filter((c) => want.has(c.taint) && !kept.some((r) => sameToleration(r, c.toleration))).map((c) => ({ ...c.toleration }));
+  return [...kept, ...added];
+}
+
+export const pickedTaints = (rows: Toleration[], offered: ClusterTaint[]) => offered.filter((c) => rows.some((r) => sameToleration(r, c.toleration))).map((c) => c.taint);

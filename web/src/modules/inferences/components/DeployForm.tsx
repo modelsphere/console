@@ -37,7 +37,7 @@ import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirect
 import { useT } from "@/modules/inferences/i18n";
 import { isAdaptiveOption, toggleAdaptive } from "../adaptive-concurrency";
 import { OverrideYaml, type HelmValuesSource } from "./OverrideYaml";
-import { NAMED_VALUES, extraValue, fracOutOfRange, serviceIdError, type Section } from "@/modules/inferences/deploy-lib";
+import { NAMED_VALUES, extraValue, fracOutOfRange, pickTaints, pickedTaints, serviceIdError, type ClusterTaint, type Section } from "@/modules/inferences/deploy-lib";
 
 const EFFECTS = ["", "NoSchedule", "PreferNoSchedule", "NoExecute"];
 
@@ -72,9 +72,11 @@ export interface DeployFormProps {
   onRemember?: (key: string, on: boolean) => void;
   // The site profile's presets, on a deploy.
   presets?: Record<string, Preset>;
+  // The taints the cluster's nodes carry, to pick tolerations from.
+  taints?: ClusterTaint[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember, presets }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -151,7 +153,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           </FloatingField>
           {capacity && <CapacityHint {...capacity} />}
           {presets && Object.keys(presets).length > 0 && <PresetField presets={presets} value={form.preset} onChange={(preset) => onChange({ preset })} />}
-          <Tolerations rows={form.tolerations} onChange={(v) => onChange({ tolerations: v })} />
+          <Tolerations rows={form.tolerations} taints={taints ?? []} onChange={(v) => onChange({ tolerations: v })} />
           {form.affinity.length > 0 && <AffinityRules rules={form.affinity} onChange={(affinity) => onChange({ affinity })} />}
           <div className="grid grid-cols-2 gap-3">
             <FloatingField value={shown(form.priorityClassName, cluster?.priorityClassName)} label={f("priorityClass")}>
@@ -395,12 +397,17 @@ function GpuResource({ resources, value, onChange }: { resources: string[]; valu
   );
 }
 
-function Tolerations({ rows, onChange }: { rows: Toleration[]; onChange: (v: Toleration[]) => void }) {
+function Tolerations({ rows, taints, onChange }: { rows: Toleration[]; taints: ClusterTaint[]; onChange: (v: Toleration[]) => void }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
   const patch = (i: number, p: Partial<Toleration>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
   return (
     <Group label={f("tolerations")} hint={f("tolerationsHint")}>
+        {taints.length > 0 && (
+          <FloatingField label={f("tolTaints")} hint={f("tolTaintsHint")}>
+            <FieldSelect multiple values={pickedTaints(rows, taints)} onValuesChange={(v) => onChange(pickTaints(rows, taints, v))} options={taints.map((c) => ({ value: c.taint, label: c.taint, description: t("deploy.fields.tolTaintNodes", { n: c.nodes }) }))} />
+          </FloatingField>
+        )}
         {rows.map((r, i) => (
           <div key={i} className="grid grid-cols-[1fr_7rem_1fr_9rem_auto] items-center gap-2">
             <Input value={r.key} onChange={(e) => patch(i, { key: e.target.value })} placeholder={r.raw && !r.raw.key ? f("tolAny") : f("tolKey")} aria-label={f("tolKey")} />
