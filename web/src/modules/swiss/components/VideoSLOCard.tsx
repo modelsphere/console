@@ -184,11 +184,6 @@ function PoolSLO({ namespace, release, slo, canEdit, bare }: { namespace: string
       <Row label="Max queue depth" hint="Queued and running tasks per replica the pool may carry before the decision server adds one.">
         <Input value={form.maxDepth} disabled={!editable} inputMode="numeric" aria-label="max queue depth" placeholder={stored?.maxDepth || "chart default"} onChange={(e) => setForm({ ...form, maxDepth: e.target.value })} />
       </Row>
-      {q.data?.queue?.promql && (
-        <Row label="Queue query" hint="The PromQL the decision server reads this pool's backlog with. Set by the chart; change it there.">
-          <code className="block rounded-md bg-muted/50 px-2 py-1.5 font-mono text-[11px] break-all text-muted-foreground">{q.data.queue.promql}</code>
-        </Row>
-      )}
       {problem && <p className="py-2 text-sm text-destructive">{problem}</p>}
     </div>
   );

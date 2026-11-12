@@ -50,7 +50,7 @@ To scale a pool, open **Edit SLO** on the release once it is up. There is one se
 
 - **Bounds**: the minimum (replicas or concurrency) and the maximum (replicas). An empty maximum is autoscaling off. A save only adds or changes values, so to turn a pool's scaling off again use **Reset**: it removes the maximum and sets the priority back to normal, and keeps the minimum and the queue settings. Set the priority again after a reset if the pool had it high.
 - **Max queue depth**: queued and running tasks per replica before the pool gets another replica.
-- **Priority**: high or normal. The queue query is shown read-only; it comes from the chart.
+- **Priority**: high or normal.
 
 A video release serves a job API rather than chat. Its access card shows how to submit a task (`POST /v2/video_generation`), poll it (`GET /v2/query/video_generation/<task_id>`) and download the result (`GET /v2/video_generation/<task_id>/content`, no key needed). Its **Check** runs a readiness probe of the route's `/readyz`, which answers only when the router, a server and the database behind it are all up. It is not offered in the Playground.
 
