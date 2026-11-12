@@ -19,8 +19,6 @@ import {
   FormSection,
   Input,
   Switch,
-  ToggleGroup,
-  ToggleGroupItem,
   cn,
 } from "@modelsphere/ui";
 import { Plus, RefreshCw, X } from "lucide-react";
@@ -32,6 +30,8 @@ import { unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { CHECK_MS, inputError, rememberable, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { effective, imageChoices, tolerationExtras, type Form, type Toleration } from "@swiss/components/DeploySettings";
+import { imageRows, type ImageSlot } from "@swiss/lib/imageSlots";
+import { Select as SourceSelect } from "@swiss/components/ChartVersion";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
 import { useT } from "@/modules/inferences/i18n";
@@ -64,6 +64,10 @@ export interface DeployFormProps {
   catalogRoute?: string;
   // The chart's values and swissd's layers for the Override YAML editor.
   helmValues?: HelmValuesSource;
+  // Every image the chart renders, from the compose dry run. Absent until that
+  // returns; the engine row still shows from defaults.image.
+  slots?: ImageSlot[];
+  slotsError?: string;
   recovery?: ReactNode;
   // The variant's inputs, each with the answer that applies when its field is left empty.
   inputs?: InputRow[];
@@ -76,13 +80,12 @@ export interface DeployFormProps {
   taints?: ClusterTaint[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
   const forced = unlistedProducts(gpuListed, form.gpuProducts);
-  const images = defaults.image ? imageChoices(defaults.image) : [];
   const byKey = new Map(routeDirectives(routeOptions).map((d) => [d.key, d]));
   const showRuntime = !!upgrade && routeOptions?.route === (catalogRoute ?? (form.route || form.serviceId));
   const label = (key: string, fallback: string) => directiveText(t, byKey.get(key), "label") || f(fallback);
@@ -195,39 +198,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
               </div>
             );
           })}
-          {defaults.image && (
-            <FloatingField
-              layout="inline"
-              label={f("image")}
-              hint={f("imageHint")}
-              expanded={!!form.image.trim()}
-              expandedContent={
-                <div className="space-y-2 pb-3">
-                  <Input value={form.image} onChange={(e) => onChange({ image: e.target.value })} placeholder={defaults.image.site} className="font-mono text-xs" aria-label={f("imageValue")} />
-                  {images.length > 0 && (
-                    <ToggleGroup
-                      size="sm"
-                      variant="outline"
-                      spacing={0}
-                      value={images.filter((c) => c.ref === form.image.trim()).map((c) => c.key)}
-                      onValueChange={(v) => {
-                        const ref = images.find((c) => c.key === v[0])?.ref;
-                        if (ref) onChange({ image: ref });
-                      }}
-                    >
-                      {images.map((c) => (
-                        <ToggleGroupItem key={c.key} value={c.key} title={c.ref}>
-                          {f(c.key === "site" ? "imageSite" : "imageCatalog")}
-                        </ToggleGroupItem>
-                      ))}
-                    </ToggleGroup>
-                  )}
-                </div>
-              }
-            >
-              <Switch aria-label={f("image")} checked={!!form.image.trim()} onCheckedChange={(v) => onChange({ image: v ? defaults.image!.site : "" })} />
-            </FloatingField>
-          )}
+          <ImageRows form={form} onChange={onChange} image={defaults.image} slots={slots} error={slotsError} />
         </>,
       )}
 
@@ -301,6 +272,71 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
         </>,
       )}
     </div>
+  );
+}
+
+function imagePatch(form: Form, path: string, value: string): Partial<Form> {
+  const images = { ...form.images, [path]: value };
+  return path === "image" ? { image: value, images } : { images };
+}
+
+// One row per chart image. Empty leaves the value to the layer named beside it.
+function ImageRows({
+  form,
+  onChange,
+  image,
+  slots,
+  error,
+}: {
+  form: Form;
+  onChange: (patch: Partial<Form>) => void;
+  image?: { catalog: string; site: string };
+  slots?: ImageSlot[];
+  error?: string;
+}) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+  const rows = imageRows(slots, image);
+  if (!rows.length && !error) return null;
+  const edited = (path: string) => (path === "image" ? form.image : (form.images[path] ?? ""));
+  return (
+    <div className="flex flex-col gap-3 rounded-md border p-3">
+      <div>
+        <div className="text-sm font-medium">{f("images")}</div>
+        <p className="text-xs text-muted-foreground">{f("imagesHint")}</p>
+        {error && <p className="text-xs text-warning">{error}</p>}
+      </div>
+      {rows.map((slot) => {
+        const value = edited(slot.path);
+        return (
+          <div key={slot.path} className="flex flex-col gap-1.5">
+            <FloatingField value={value || slot.value} label={slot.path} hint={t("deploy.fields.imageLayer", { layer: slot.layer })}>
+              <Input value={value} onChange={(e) => onChange(imagePatch(form, slot.path, e.target.value))} placeholder={slot.value || "repository:tag"} aria-label={slot.path} className="font-mono text-xs" />
+            </FloatingField>
+            {slot.path === "image" && image && (
+              <ImageSource image={image} value={value} onPick={(v) => onChange(imagePatch(form, "image", v))} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ImageSource({ image, value, onPick }: { image: { catalog: string; site: string }; value: string; onPick: (ref: string) => void }) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+  const choices = imageChoices(image);
+  if (!choices.length) return null;
+  const selected = choices.find((c) => c.ref === value.trim())?.ref ?? "";
+  return (
+    <SourceSelect
+      ariaLabel={f("imageSource")}
+      value={selected}
+      onChange={onPick}
+      options={choices.map((c) => ({ value: c.ref, label: f(c.key === "site" ? "imageSite" : "imageCatalog") }))}
+      emptyLabel={value.trim() ? f("imageCustom") : f("imageInherited")}
+    />
   );
 }
 

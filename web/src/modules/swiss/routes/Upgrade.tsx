@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { ArrowRight, Check, ChevronLeft, ChevronsUpDown, TriangleAlert, Undo2 } from "lucide-react";
@@ -11,6 +11,7 @@ import {
   type ModelVariant,
   type Node,
   type Plan,
+  type PlanRequest,
   type CatalogRevision,
   type Tuning,
 } from "@swiss/lib/api";
@@ -25,6 +26,8 @@ import {
   planRequest,
   type Form,
 } from "@swiss/components/DeploySettings";
+import { imageOverrideLayer, provenanceLayers, type ImageSlot } from "@swiss/lib/imageSlots";
+import { useImageSlots } from "@swiss/lib/useImageSlots";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, SchemaBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
@@ -155,11 +158,29 @@ export function Upgrade() {
     reset();
   };
 
-  const planM = useMutation({
-    mutationFn: () =>
-      deployApi.plan(
-        planRequest(form, {
-          model: current.data!.source.model,
+  // Before the early returns: the image dry run is a hook and has to see the
+  // same request compose sends. A rollback reapplies an archived plan, so it
+  // does not ask the chart what it would render.
+  const pin = entry.data?.variant;
+  const chart = chartVersionChoice({
+    running: current.data?.chart,
+    list: chartVersions,
+    value: chartVersion,
+    onChange: (v) => {
+      setChartVersion(v);
+      reset();
+    },
+  });
+  const cache = cacheCard(
+    profile.data?.profile,
+    pin,
+    { name: pin?.chart.name ?? current.data?.chart.name, version: chart.resolved ?? pin?.chart.version ?? current.data?.chart.version },
+  );
+  const slotsRef = useRef<ImageSlot[]>([]);
+  const requestOf = (): PlanRequest | undefined =>
+    current.data
+      ? planRequest(form, {
+          model: current.data.source.model,
           version: version || undefined,
           variant: variant || undefined,
           catalog: moving ? targetCatalog : undefined,
@@ -171,11 +192,30 @@ export function Upgrade() {
           fromRelease: release,
           cacheUnsupported: !!cache.unsupported,
           inputs: entry.data?.variant.inputs,
-          formLayer: current.data!.layers?.form,
-          values: entry.data?.variant.values ?? current.data!.layers?.catalog,
+          formLayer: current.data.layers?.form,
+          values: entry.data?.variant.values ?? current.data.layers?.catalog,
           siteEnv: profile.data?.profile?.extra,
-        }),
-      ),
+          imageSlots: slotsRef.current,
+        })
+      : undefined;
+  const imageRequest = !rollbackTo && current.data ? requestOf() : undefined;
+  const imageLayers = useMemo(
+    () =>
+      provenanceLayers({
+        planLayers: plan?.layers ?? current.data?.layers,
+        variantValues: entry.data?.variant.values,
+        variantImage: entry.data?.variant.image,
+        mirroredRepository: entry.data?.variant ? entry.data.imageRepository?.[entry.data.variant.id] : undefined,
+        formLayer: imageOverrideLayer(form, slotsRef.current, current.data?.layers?.form),
+        edits: form.edits,
+      }),
+    [plan, current.data, entry.data, form],
+  );
+  const discovered = useImageSlots(imageRequest, imageLayers, !rollbackTo && !!current.data && cluster.data?.allowDeploy !== false);
+  slotsRef.current = discovered.slots;
+
+  const planM = useMutation({
+    mutationFn: () => deployApi.plan(requestOf()!),
     // The previous plan is superseded the moment a recompose starts. Dropping
     // it here rather than on the way back means a failed compose leaves
     // nothing to act on, instead of a stale plan the error message sits behind.
@@ -227,21 +267,6 @@ export function Upgrade() {
     setPicking(false);
     reset();
   };
-  const chart = chartVersionChoice({
-    running: cur.chart,
-    list: chartVersions,
-    value: chartVersion,
-    onChange: (v) => {
-      setChartVersion(v);
-      reset();
-    },
-  });
-  const pin = entry.data?.variant;
-  const cache = cacheCard(
-    profile.data?.profile,
-    pin,
-    { name: pin?.chart.name ?? cur.chart.name, version: chart.resolved ?? pin?.chart.version ?? cur.chart.version },
-  );
   // What the pipeline acts on: a composed plan on an upgrade, the archive on a
   // rollback. Nothing else about the page differs.
   const target = rollbackTo ? (archived.data ?? null) : plan;
@@ -486,6 +511,8 @@ export function Upgrade() {
         remember={remember}
         onRemember={siteSaver.onRemember}
         image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
+        slots={rollbackTo ? undefined : discovered.slots}
+        slotsError={rollbackTo ? undefined : discovered.error}
         cache={cache}
         lockIdentity
         readOnly={rollbackTo > 0}

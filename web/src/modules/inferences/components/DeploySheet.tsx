@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -29,6 +29,8 @@ import { useModulePath } from "@/shell";
 import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
 import { applyFlags, imageOf, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
 import { EMPTY, formFromPlan, planRequest } from "../deployment-settings";
+import { imageOverrideLayer, provenanceLayers, type ImageSlot } from "@swiss/lib/imageSlots";
+import { useImageSlots } from "@swiss/lib/useImageSlots";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
 import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
@@ -210,13 +212,31 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const canRemember = profile.data?.yaml !== undefined && !profile.data.error && !!cluster.data?.allowDeploy;
   const saves = canRemember ? siteSaves(inputs, form.inputs, remember) : [];
   // What a compose of f sends; the Override YAML editor's preview sends the same.
+  // imageSlots is read at call time: the dry run and the compose both see the
+  // kinds the previous dry run discovered.
+  const slotsRef = useRef<ImageSlot[]>([]);
   const requestFor = (f: Form) => planRequest(
     { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
     upgrade
-      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, formLayer: seedPlan?.layers?.form, values: v?.values ?? seedPlan?.layers?.catalog }
-      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, values: v?.values },
+      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, formLayer: seedPlan?.layers?.form, values: v?.values ?? seedPlan?.layers?.catalog, imageSlots: slotsRef.current }
+      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, values: v?.values, imageSlots: slotsRef.current },
     profile.data?.profile,
   );
+  const imageRequest = upgrade && !recorded ? undefined : requestFor(form);
+  const imageLayers = useMemo(
+    () =>
+      provenanceLayers({
+        planLayers: plan?.layers ?? (upgrade ? (seedPlan ?? current.data)?.layers : undefined),
+        variantValues: v?.values,
+        variantImage: v?.image,
+        mirroredRepository: v ? entry.data?.imageRepository?.[v.id] : undefined,
+        formLayer: imageOverrideLayer(form, slotsRef.current, upgrade ? seedPlan?.layers?.form : undefined),
+        edits: form.edits,
+      }),
+    [plan, upgrade, seedPlan, current.data, v, entry.data, form],
+  );
+  const discovered = useImageSlots(imageRequest, imageLayers, !!imageRequest && cluster.data?.allowDeploy !== false);
+  slotsRef.current = discovered.slots;
   // The chart's values and swissd's layers for this form, without the
   // overrides, which the editor merges itself. Cached per request while the
   // sheet is open, so saving the overrides and editing them again does not
@@ -497,6 +517,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               target={targetFields}
               cluster={cluster.data}
               defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), cache }}
+              slots={discovered.slots}
+              slotsError={discovered.error}
               gpuOptions={productChoices(v?.requires.gpuProduct, pickableProducts(nodes.data?.nodes, v?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource), form.gpuProducts)}
               gpuListed={v?.requires.gpuProduct}
               gpuResources={v?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, v.requires.vendor) : undefined}

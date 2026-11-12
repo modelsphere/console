@@ -159,18 +159,21 @@ export function Select({
   options,
   emptyLabel,
   disabled,
+  ariaLabel,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: Option[];
   emptyLabel: string;
   disabled?: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <select
       className="h-9 w-full rounded-md border bg-background px-3 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-1 disabled:cursor-not-allowed disabled:opacity-60"
       value={value}
       disabled={disabled}
+      aria-label={ariaLabel}
       onChange={(e) => onChange(e.target.value)}
     >
       <option value="">{emptyLabel}</option>

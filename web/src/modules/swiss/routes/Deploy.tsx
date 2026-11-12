@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, TriangleAlert } from "lucide-react";
-import { api, deployApi, type ApplyResult, type ApplyWith, type DiffResult, type Plan } from "@swiss/lib/api";
+import { api, deployApi, type ApplyResult, type ApplyWith, type DiffResult, type Plan, type PlanRequest } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
 import { applyFlags, DeploySettings, EMPTY, imageOf, planRequest, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
+import { imageOverrideLayer, provenanceLayers, type ImageSlot } from "@swiss/lib/imageSlots";
+import { useImageSlots } from "@swiss/lib/useImageSlots";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
@@ -114,23 +116,58 @@ export function Deploy() {
     setTab((t) => (t === "status" ? t : "plan"));
   };
 
-  const planM = useMutation({
-    mutationFn: () =>
-      deployApi.plan(
-        planRequest(form, {
+  // Computed before the early returns so the image dry run, a hook, can use the
+  // same request the compose button sends.
+  const variantNow = model.data?.variant;
+  const chart = chartVersionChoice({
+    list: chartVersions,
+    value: chartVersion,
+    onChange: (v) => {
+      setChartVersion(v);
+      update({});
+    },
+  });
+  const cache = cacheCard(
+    profile.data?.profile,
+    variantNow,
+    { name: variantNow?.chart.name, version: chart.resolved ?? variantNow?.chart.version },
+  );
+  const slotsRef = useRef<ImageSlot[]>([]);
+  const requestOf = (f: Form): PlanRequest | undefined =>
+    catalog && model.data
+      ? planRequest(f, {
           model: name,
           version,
           variant: variantId,
           catalog,
           chartVersion: chartVersion || undefined,
-          forceGpuProducts: unlistedProducts(model.data?.variant.requires.gpuProduct, form.gpuProducts).length > 0,
+          forceGpuProducts: unlistedProducts(model.data.variant.requires.gpuProduct, f.gpuProducts).length > 0,
           cacheUnsupported: !!cache.unsupported,
-          inputs: model.data?.variant.inputs,
-          preset: presetValues(profile.data?.profile, form.preset),
-          values: model.data?.variant.values,
+          inputs: model.data.variant.inputs,
+          preset: presetValues(profile.data?.profile, f.preset),
+          values: model.data.variant.values,
           siteEnv: profile.data?.profile?.extra,
-        }),
-      ),
+          imageSlots: slotsRef.current,
+        })
+      : undefined;
+  const imageRequest = requestOf(form);
+  const imageLayers = useMemo(
+    () =>
+      provenanceLayers({
+        planLayers: plan?.layers,
+        variantValues: model.data?.variant.values,
+        variantImage: model.data?.variant.image,
+        mirroredRepository: model.data ? model.data.imageRepository?.[model.data.variant.id] : undefined,
+        formLayer: imageOverrideLayer(form, slotsRef.current),
+        edits: form.edits,
+      }),
+    [plan, model.data, form],
+  );
+  const discovered = useImageSlots(imageRequest, imageLayers, !!model.data && !!catalog && cluster.data?.allowDeploy !== false);
+  slotsRef.current = discovered.slots;
+
+  const planM = useMutation({
+    mutationFn: () => deployApi.plan(requestOf(form)!),
     // The previous plan is superseded the moment a recompose starts. Dropping
     // it here rather than on the way back means a failed compose leaves
     // nothing to act on, instead of a stale plan the error message sits behind.
@@ -155,19 +192,6 @@ export function Deploy() {
   const current = m.variants.find((v) => v.id === variant.id)?.version;
   const llm = cluster.data?.llmservice;
   const method = installMethod(picked, llm, schema);
-  const chart = chartVersionChoice({
-    list: chartVersions,
-    value: chartVersion,
-    onChange: (v) => {
-      setChartVersion(v);
-      update({});
-    },
-  });
-  const cache = cacheCard(
-    profile.data?.profile,
-    variant,
-    { name: variant.chart.name, version: chart.resolved ?? variant.chart.version },
-  );
   const inputs = inputRows(variant.inputs, profile.data?.profile, m.source?.hf ?? "", name, variant.values);
   const saves = siteSaver.remember ? siteSaves(inputs, form.inputs, siteSaver.remember) : [];
 
@@ -280,6 +304,8 @@ export function Deploy() {
         remember={siteSaver.remember}
         onRemember={siteSaver.onRemember}
         image={imageOf(variant, model.data.imageRepository)}
+        slots={discovered.slots}
+        slotsError={discovered.error}
         supportedGPUs={variant?.requires.gpuProduct}
         clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
         gpuResources={variant?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, variant.requires.vendor) : undefined}

@@ -157,16 +157,16 @@ describe("image override", () => {
         onExpand={() => {}} idPrefix="test-"
       />,
     );
-  const pressed = (html: string, label: string) => new RegExp(`<button[^>]*aria-pressed="true"[^>]*>${label}<`).test(html);
+  const selected = (html: string, label: string) => new RegExp(`<option[^>]*selected[^>]*>${label}</option>`).test(html);
 
   it("offers both the site's mirror and the catalog's own image, marking the one in the field", () => {
     const mirrored = render({ ...EMPTY, serviceId: "model", image: image.site });
     expect(mirrored).toContain("站点镜像仓库");
     expect(mirrored).toContain("目录原始镜像");
-    expect(pressed(mirrored, "站点镜像仓库")).toBe(true);
-    expect(pressed(render({ ...EMPTY, serviceId: "model", image: image.catalog }), "目录原始镜像")).toBe(true);
+    expect(selected(mirrored, "站点镜像仓库")).toBe(true);
+    expect(selected(render({ ...EMPTY, serviceId: "model", image: image.catalog }), "目录原始镜像")).toBe(true);
     const typed = render({ ...EMPTY, serviceId: "model", image: "ghcr.io/me/sglang:rc1" });
-    expect(pressed(typed, "站点镜像仓库") || pressed(typed, "目录原始镜像")).toBe(false);
+    expect(selected(typed, "站点镜像仓库") || selected(typed, "目录原始镜像")).toBe(false);
   });
 
   it("offers nothing to pick between without a mirror", () => {

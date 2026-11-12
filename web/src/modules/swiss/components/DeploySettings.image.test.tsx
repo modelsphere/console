@@ -5,18 +5,34 @@ import { DeploySettings, EMPTY } from "./DeploySettings";
 const image = { catalog: "lmsysorg/sglang:v0.5.4", site: "ghcr.io/modelsphere/sglang:v0.5.4" };
 const render = (img: string, pair = image) =>
   renderToStaticMarkup(<DeploySettings form={{ ...EMPTY, serviceId: "m", image: img }} onChange={() => {}} image={pair} />);
-const pressed = (html: string, label: string) => new RegExp(`<button[^>]*aria-pressed="true"[^>]*>${label}<`).test(html);
+const selected = (html: string, label: string) => new RegExp(`<option[^>]*selected[^>]*>${label}</option>`).test(html);
 
 describe("image override", () => {
   it("offers the site's mirror and the catalog's own image, marking the one in the field", () => {
-    expect(pressed(render(image.site), "site mirror")).toBe(true);
-    expect(pressed(render(image.catalog), "catalog")).toBe(true);
+    expect(selected(render(image.site), "site mirror")).toBe(true);
+    expect(selected(render(image.catalog), "catalog original")).toBe(true);
     const typed = render("ghcr.io/me/sglang:rc1");
     expect(typed).toContain(">site mirror<");
-    expect(pressed(typed, "site mirror") || pressed(typed, "catalog")).toBe(false);
+    expect(typed).toContain(">catalog original<");
+    expect(selected(typed, "site mirror") || selected(typed, "catalog original")).toBe(false);
+    expect(selected(typed, "custom")).toBe(true);
   });
 
   it("offers nothing to pick between without a mirror", () => {
     expect(render(image.catalog, { catalog: image.catalog, site: image.catalog })).not.toContain(">site mirror<");
+  });
+
+  it("lists a discovered slot by its values path and the layer that set it", () => {
+    const html = renderToStaticMarkup(
+      <DeploySettings
+        form={{ ...EMPTY, serviceId: "m" }}
+        onChange={() => {}}
+        image={image}
+        slots={[{ path: "image", kind: "map", value: image.site, layer: "site" }, { path: "hangWatcher.image", kind: "map", value: "example.com/hang:1", layer: "chart" }]}
+      />,
+    );
+    expect(html).toContain("hangWatcher.image");
+    expect(html).toContain("set by chart");
+    expect(html).toContain("set by site");
   });
 });

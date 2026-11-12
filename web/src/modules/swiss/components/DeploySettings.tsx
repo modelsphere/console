@@ -8,9 +8,11 @@ import { CHECK_MS, inputError, inputProblem, rememberable, setInputOverrides, ty
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, affinityRules, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
 import { envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
+import { applyImageEdits, dropClearedImages, imageEditsFromLayer, imageRows, joinImage, type ImageSlot, type ImageSlotKind } from "@swiss/lib/imageSlots";
 import { toYaml } from "@swiss/lib/yaml";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
+import { Select as SourceSelect } from "@swiss/components/ChartVersion";
 import {
   DIRECTIVES,
   DIRECTIVES_BY_KEY,
@@ -72,10 +74,12 @@ export interface Form {
   scalerMax: string;
   replicaCount: string;
   route: string;
-  // image is repository:tag for this deploy alone. Empty is the site's answer,
-  // which is the mirror when one is configured -- the switch beside the field
-  // is a view of this one value, so the two cannot name different registries.
+  // image is repository:tag for the engine on this deploy alone. Empty leaves
+  // the catalog's tag and the site's mirror.
   image: string;
+  // Other image slots, by values path. "" is an explicit clear: on an upgrade
+  // that drops the form-layer override. A path that is absent was not edited.
+  images: Record<string, string>;
   // Named model-route knobs. Empty number fields leave chart defaults.
   exposeRoutedPeer: boolean;
   backendMaxConcurrency: string;
@@ -130,6 +134,7 @@ export const EMPTY: Form = {
   replicaCount: "",
   route: "",
   image: "",
+  images: {},
   exposeRoutedPeer: true,
   backendMaxConcurrency: "",
   cartMaxLoad: "",
@@ -202,6 +207,8 @@ export function DeploySettings({
   localPathPlaceholder,
   inputs,
   image,
+  slots,
+  slotsError,
   supportedGPUs,
   clusterGPUs,
   gpuResources,
@@ -232,6 +239,10 @@ export function DeploySettings({
   // to. Equal when this site mirrors nothing, which is when there is no rewrite
   // to offer a choice about.
   image?: { catalog: string; site: string };
+  // Every image the chart renders, from the compose dry run. Absent until that
+  // returns; the engine row still shows from `image`.
+  slots?: ImageSlot[];
+  slotsError?: string;
   lockIdentity?: boolean;
   readOnly?: boolean;
   // Products the chosen variant declares, and those this cluster reports on
@@ -740,38 +751,6 @@ export function DeploySettings({
             }
           />
 
-          {/* Off is the answer almost always: the catalog pins the tag and the
-              site rewrites the repository to its mirror, and between them the
-              image is already decided. The switch is the escape hatch for the
-              one deploy that has to pull something else -- a release-candidate
-              engine build, or the original registry when the mirror is behind.
-
-              Off empties the field, so turning it off puts the inherited answer
-              back rather than leaving a stale override behind. */}
-          {image && (
-            <Row
-              label="Image"
-              note="repository:tag — off inherits the catalog's tag and the site's mirror"
-              toggle={
-                <Switch
-                  checked={!!form.image.trim()}
-                  onChange={(v) => onChange({ image: v ? image.site : "" })}
-                  label="override"
-                />
-              }
-            >
-              {form.image.trim() ? (
-                <div className="w-full min-w-0 space-y-1.5">
-                  <Suggest value={form.image} onChange={(v) => onChange({ image: v })} placeholder={image.site} />
-                  <ImageChoices image={image} value={form.image} onPick={(v) => onChange({ image: v })} />
-                </div>
-              ) : (
-                <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" title={image.site}>
-                  {image.site}
-                </span>
-              )}
-            </Row>
-          )}
           {gpuResources && (
             <Row
               label="GPU resource"
@@ -882,6 +861,8 @@ export function DeploySettings({
 
       </details>
 
+      <ImagesSection form={form} onChange={onChange} image={image} slots={slots} error={slotsError} />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Plan editor</CardTitle>
@@ -961,30 +942,80 @@ function Row({
   );
 }
 
-function ImageChoices({ image, value, onPick }: { image: { catalog: string; site: string }; value: string; onPick: (ref: string) => void }) {
-  const choices = imageChoices(image);
-  if (choices.length === 0) return null;
+function imagePatch(form: Form, path: string, value: string): Partial<Form> {
+  const images = { ...form.images, [path]: value };
+  return path === "image" ? { image: value, images } : { images };
+}
+
+// One row per chart image. Empty leaves the value to whichever layer set it;
+// a typed ref is the form layer. The engine row keeps the mirror choice.
+function ImagesSection({
+  form,
+  onChange,
+  image,
+  slots,
+  error,
+}: {
+  form: Form;
+  onChange: (patch: Partial<Form>) => void;
+  image?: { catalog: string; site: string };
+  slots?: ImageSlot[];
+  error?: string;
+}) {
+  const rows = imageRows(slots, image);
+  if (!rows.length && !error) return null;
+  const edited = (path: string) => (path === "image" ? form.image : (form.images[path] ?? ""));
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {choices.map((c) => {
-        const active = value.trim() === c.ref;
-        return (
-          <button
-            key={c.key}
-            type="button"
-            aria-pressed={active}
-            title={c.ref}
-            onClick={() => onPick(c.ref)}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors",
-              active ? "border-success/40 bg-success/15 font-medium text-success" : "bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground",
-            )}
-          >
-            {c.key === "site" ? "site mirror" : "catalog"}
-          </button>
-        );
-      })}
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Images</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Each row is a values path. Empty leaves that image to the layer named beside it; a value is written on the form layer.
+        </p>
+      </CardHeader>
+      <CardContent className="divide-y pt-0">
+        {error && <p className="py-2 text-xs text-warning">{error}</p>}
+        {rows.map((slot) => {
+          const value = edited(slot.path);
+          return (
+            <Row key={slot.path} label={slot.path} caption={`set by ${slot.layer}`}>
+              <div className="w-full min-w-0 space-y-1.5 py-1">
+                {slot.value && slot.value !== value.trim() && (
+                  <div className="truncate font-mono text-xs text-muted-foreground" title={slot.value}>
+                    {slot.value}
+                  </div>
+                )}
+                <Input
+                  value={value}
+                  onChange={(e) => onChange(imagePatch(form, slot.path, e.target.value))}
+                  placeholder={slot.value || "repository:tag"}
+                  aria-label={slot.path}
+                  className="font-mono text-xs"
+                />
+                {slot.path === "image" && image && (
+                  <ImageSource image={image} value={value} onPick={(v) => onChange(imagePatch(form, "image", v))} />
+                )}
+              </div>
+            </Row>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ImageSource({ image, value, onPick }: { image: { catalog: string; site: string }; value: string; onPick: (ref: string) => void }) {
+  const choices = imageChoices(image);
+  if (!choices.length) return null;
+  const selected = choices.find((c) => c.ref === value.trim())?.ref ?? "";
+  return (
+    <SourceSelect
+      ariaLabel="engine image source"
+      value={selected}
+      onChange={onPick}
+      options={choices.map((c) => ({ value: c.ref, label: c.key === "site" ? "site mirror" : "catalog original" }))}
+      emptyLabel={value.trim() ? "custom" : "inherited"}
+    />
   );
 }
 
@@ -1768,22 +1799,7 @@ export function imageChoices(image: { catalog: string; site: string }): { key: "
   return image.site === image.catalog ? [] : [{ key: "site", ref: image.site }, { key: "catalog", ref: image.catalog }];
 }
 
-// splitImage turns what was typed into the two values the chart takes. The last
-// colon separates the tag only when it comes after the last slash:
-// registry.example.com:5000/sglang is a registry port, not a tag.
-//
-// Only repository and tag. A digest pin is not expressible here on purpose --
-// it would need a third field and the plan editor already takes one.
-export function splitImage(ref: string): { repository: string; tag?: string } {
-  const s = ref.trim();
-  const colon = s.lastIndexOf(":");
-  if (colon === -1 || colon < s.lastIndexOf("/")) return { repository: s };
-  return { repository: s.slice(0, colon), tag: s.slice(colon + 1) };
-}
-
-function joinImage(repository: string, tag: string): string {
-  return repository && tag ? `${repository}:${tag}` : repository;
-}
+export { splitImage } from "@swiss/lib/imageSlots";
 
 // Naming a route turns routing on, so the toggle and the request cannot
 // disagree about what this deploy is asking for.
@@ -1812,6 +1828,9 @@ export function planRequest(
     // The release's form layer, on an upgrade: the form's values are put over
     // it, so the request carries the whole layer rebuilt.
     formLayer?: Record<string, unknown>;
+    // Kinds from the last dry run, so a string slot is written as a string.
+    // Without them the form layer's own shape decides, and a fresh deploy writes a map.
+    imageSlots?: ImageSlotKind[];
     values?: Record<string, unknown>;
     siteEnv?: Record<string, unknown>;
   },
@@ -1901,20 +1920,19 @@ export function planRequest(
   const tolerations = f.tolerations.flatMap((t) => tolerationValue(t) ?? []);
   if (tolerations.length || opts.formLayer?.tolerations !== undefined) overrides.tolerations = tolerations;
 
-  // Only the repository: the tag and digest are the catalog's, and a form that
-  // wrote the whole image section would drop them.
-  // The tag lands in the form layer, which merges after the catalog's -- so it
-  // wins, and the plan reports it as shadowed rather than the two disagreeing
-  // quietly.
-  if (f.image.trim()) overrides.image = splitImage(f.image);
-
+  // A typed ref is this deploy's form layer. An empty row is not an override;
+  // on an upgrade it is a clear, so the release's copy of that path is dropped
+  // before the overlay, the same way an emptied toleration list replaces the old one.
+  applyImageEdits(overrides, f, opts.imageSlots, opts.formLayer);
   if (f.priorityClassName.trim()) overrides.priorityClassName = f.priorityClassName.trim();
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
 
   setInputOverrides(overrides, opts.inputs, f.inputs);
   const siteEnv = envBase(opts.siteEnv);
   const preset = Object.keys(siteEnv).length ? (opts.preset ? withPreset(opts.preset, siteEnv) : siteEnv) : opts.preset;
-  const layer = withEnv(opts.values, withPreset(opts.formLayer ? overlay(opts.formLayer, overrides) : overrides, preset));
+  const base = opts.formLayer ? structuredClone(opts.formLayer) : undefined;
+  if (base) dropClearedImages(base, f.image, f.images);
+  const layer = withEnv(opts.values, withPreset(base ? overlay(base, overrides) : overrides, preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
 
   return {
@@ -1972,6 +1990,9 @@ export function formFromPlan(plan: Plan): Form {
     return typeof v === "boolean" ? v : fallback;
   };
   const nv = nginxValuesMap(at("modelRoute.nginx.values"));
+  // The engine stays on form.image. Every other image the form layer already set
+  // is seeded so an upgrade shows it and sends it back; a clear is not seeded.
+  const { image: seededImage, ...imageEdits } = imageEditsFromLayer(o);
 
   return {
     ...EMPTY,
@@ -1990,7 +2011,8 @@ export function formFromPlan(plan: Plan): Form {
     affinity: affinityRules(o),
     replicaCount: str("replicaCount"),
     route: str("modelRoute.nginx.route"),
-    image: joinImage(str("image.repository"), str("image.tag")),
+    image: seededImage ?? joinImage(str("image.repository"), str("image.tag")),
+    images: imageEdits,
     cart: bool("cart.enabled", true),
     modelRoute: bool("modelRoute.enabled"),
     slo: bool("sloRequirement.enabled", true),
