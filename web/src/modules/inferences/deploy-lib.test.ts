@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DiffResult, Plan } from "@swiss/lib/api";
-import { SECTIONS, chartChoice, defaultServiceId, extraValue, fracOutOfRange, initialValue, pipelineState, serviceIdError, whatMoves } from "@/modules/inferences/deploy-lib";
+import type { Node } from "@swiss/lib/api";
+import { SECTIONS, chartChoice, clusterTaints, defaultServiceId, extraValue, fracOutOfRange, initialValue, pickTaints, pickedTaints, pipelineState, serviceIdError, taintToleration, whatMoves } from "@/modules/inferences/deploy-lib";
 
 const diff = (over: Partial<DiffResult>): DiffResult => ({ planHash: "h", changed: true, output: "", revision: 3, exists: true, ...over });
 
@@ -86,5 +87,36 @@ describe("service id", () => {
     expect(defaultServiceId("Qwen3.6-35B-A3B")).toBe("qwen3-6-35b-a3b");
     expect(defaultServiceId("1st.model")).toBe("st-model");
     expect(serviceIdError(defaultServiceId("x".repeat(60) + "-y"))).toBeUndefined();
+  });
+});
+
+describe("cluster taints", () => {
+  const node = (Name: string, Taints?: string[]) => ({ Name, GPUProduct: "", GPUs: 0, Schedulable: true, Ready: true, Taints }) as Node;
+  const nodes = [
+    node("a", ["storage=nof:NoSchedule", "node.kubernetes.io/unschedulable=:NoSchedule"]),
+    node("b", ["storage=nof:NoSchedule", "gpu=:NoExecute"]),
+    node("c"),
+  ];
+
+  it("lists each taint once with its node count, without Kubernetes' own", () => {
+    expect(clusterTaints(nodes).map((c) => [c.taint, c.nodes])).toEqual([
+      ["gpu=:NoExecute", 1],
+      ["storage=nof:NoSchedule", 2],
+    ]);
+  });
+
+  it("matches a taint exactly, and one with no value by Exists", () => {
+    expect(taintToleration("storage=nof:NoSchedule")).toEqual({ key: "storage", operator: "Equal", value: "nof", effect: "NoSchedule" });
+    expect(taintToleration("example.com/gpu=:NoExecute")).toEqual({ key: "example.com/gpu", operator: "Exists", value: "", effect: "NoExecute" });
+    expect(taintToleration("bad")).toBeUndefined();
+  });
+
+  it("adds and removes rows for picked taints, keeping every other row", () => {
+    const offered = clusterTaints(nodes);
+    const own = { key: "custom", operator: "Exists" as const, value: "", effect: "" };
+    const rows = pickTaints([own], offered, ["storage=nof:NoSchedule"]);
+    expect(rows).toEqual([own, { key: "storage", operator: "Equal", value: "nof", effect: "NoSchedule" }]);
+    expect(pickedTaints(rows, offered)).toEqual(["storage=nof:NoSchedule"]);
+    expect(pickTaints(rows, offered, [])).toEqual([own]);
   });
 });

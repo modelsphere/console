@@ -43,7 +43,7 @@ import { cacheCard } from "@swiss/lib/cache";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
-import { SECTIONS, chartChoice, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
+import { SECTIONS, chartChoice, clusterTaints, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
 import type { HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
@@ -75,7 +75,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const upgrade = target.kind === "upgrade";
 
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
-  const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes, retry: false });
+  // One read per deploy, shared by the whole sheet: its own entry, never
+  // refetched unless asked, and dropped when the sheet closes.
+  const nodes = useQuery({ queryKey: ["deploy-nodes"], queryFn: api.nodes, retry: false, staleTime: Infinity, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false });
   // A fresh deploy's switches start from the site's defaults; a profile it
   // cannot read leaves them at EMPTY's. An upgrade starts from its own plan.
   const profile = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false });
@@ -513,6 +515,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               remember={canRemember ? remember : undefined}
               onRemember={(key, on) => setRemember((r) => ({ ...r, [key]: on }))}
               presets={upgrade ? undefined : profile.data?.profile?.presets}
+              taints={clusterTaints(nodes.data?.nodes)}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />
           </>
