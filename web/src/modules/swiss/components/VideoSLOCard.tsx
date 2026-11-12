@@ -129,6 +129,9 @@ function PoolSLO({ namespace, release, slo, canEdit, bare }: { namespace: string
   const written = (next: SLOConfig) => {
     qc.setQueryData(key, next);
     setForm(draftOf(next));
+    // The write answers with the fields it took, not the queue query the chart
+    // set: read the whole SLO back.
+    void qc.invalidateQueries({ queryKey: key });
     void qc.invalidateQueries({ queryKey: ["objects", namespace, release] });
   };
   const save = useMutation({
@@ -192,7 +195,7 @@ function PoolSLO({ namespace, release, slo, canEdit, bare }: { namespace: string
 
   const actions = canEdit && form && (
     <div className="flex shrink-0 gap-2">
-      <Button variant="outline" size="sm" onClick={() => reset.mutate()} disabled={busy || !found} title="Return every field to the CRD defaults: no maximum, so not scaled">
+      <Button variant="outline" size="sm" onClick={() => reset.mutate()} disabled={busy || !found} title="Back to the CRD defaults: no maximum (not scaled) and normal priority; the minimum and the queue are kept">
         {reset.isPending ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />} Reset
       </Button>
       <Button size="sm" onClick={() => save.mutate()} disabled={busy || !editable || !changed || !!problem}>
