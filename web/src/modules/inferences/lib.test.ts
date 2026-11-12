@@ -12,6 +12,7 @@ import {
   releaseState,
   revisionRows,
   rowState,
+  externalLLMService,
   sloBlocked,
   visibleTabs,
 } from "@/modules/inferences/lib";
@@ -133,6 +134,20 @@ describe("tabs", () => {
     expect(sloBlocked(status({ planStatus: { phase: "applying" } }), plan)).toBe("pending");
     expect(sloBlocked(status({ planStatus: { phase: "applied" } }), { layers: {} } as unknown as Plan)).toBe("off");
     expect(sloBlocked(status({ planStatus: { phase: "applied" } }))).toBe("off");
+  });
+});
+
+describe("externalLLMService", () => {
+  const plan = (catalog?: string) => ({ source: { catalog, model: "m", variant: "v" } }) as Plan;
+  it("is an LLMService whose loaded plan records no catalog", () => {
+    expect(externalLLMService({ backend: "llmsvc" }, plan())).toBe(true);
+    expect(externalLLMService({ backend: "llmsvc" }, plan(""))).toBe(true);
+  });
+  it("is not a release swiss composed, a helm release, or a plan still loading", () => {
+    expect(externalLLMService({ backend: "llmsvc" }, plan("https://catalog.example"))).toBe(false);
+    expect(externalLLMService({ backend: "helm" }, plan())).toBe(false);
+    expect(externalLLMService({}, plan())).toBe(false);
+    expect(externalLLMService({ backend: "llmsvc" })).toBe(false);
   });
 });
 

@@ -81,6 +81,11 @@ export function sloBlocked(status: ReleaseStatus, plan?: Plan): "off" | "pending
   return undefined;
 }
 
+// swiss writes source.catalog on every plan it composes. An external LLMService has none.
+export function externalLLMService(status: Pick<ReleaseStatus, "backend">, plan?: Pick<Plan, "source">): boolean {
+  return status.backend === "llmsvc" && !!plan && !plan.source.catalog;
+}
+
 export function detailPath(release: string, namespace: string, tab?: Tab): string {
   const q = new URLSearchParams({ namespace });
   if (tab && tab !== "overview") q.set("tab", tab);

@@ -128,6 +128,11 @@ function Row({ d, onConfigureSLO }: { d: Deployment; onConfigureSLO: () => void 
         >
           {d.release}
         </Link>
+        {d.editedInPlace && (
+          <div className="mt-0.5">
+            <Badge variant="muted">Edited outside swiss</Badge>
+          </div>
+        )}
         {d.drift && <div className="mt-0.5 text-xs text-muted-foreground">{d.drift}</div>}
       </TableCell>
       <TableCell className="text-muted-foreground">{d.namespace}</TableCell>
@@ -150,11 +155,18 @@ function Row({ d, onConfigureSLO }: { d: Deployment; onConfigureSLO: () => void 
         <div className="flex items-center justify-end gap-2">
           {/* Applied is when the chart has created the requirement; whether
               this release has one at all, the popup asks slo-api. */}
-          {rowPhase(d.phase) === "applied" && !isUninstalling(d) && (
-            <Button size="sm" variant="outline" title="Configure SLO" onClick={onConfigureSLO}>
-              <Settings2 className="size-4" /> SLO
-            </Button>
-          )}
+          {rowPhase(d.phase) === "applied" && !isUninstalling(d) &&
+            (d.external ? (
+              <span title="Not deployed by swiss" className="inline-flex cursor-not-allowed">
+                <Button size="sm" variant="outline" disabled>
+                  <Settings2 className="size-4" /> SLO
+                </Button>
+              </span>
+            ) : (
+              <Button size="sm" variant="outline" title="Configure SLO" onClick={onConfigureSLO}>
+                <Settings2 className="size-4" /> SLO
+              </Button>
+            ))}
           <Link to={`/deployments/${encodeURIComponent(d.namespace)}/${encodeURIComponent(d.release)}`}>
             <Button size="sm" variant="outline">
               <Eye className="size-4" /> Details

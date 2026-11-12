@@ -159,3 +159,23 @@ describe("inference detail write actions", () => {
     });
   }
 });
+
+describe("an external LLMService", () => {
+  it("disables upgrade and SLO edit on the detail page and leaves uninstall", () => {
+    const html = renderDetail(release({ backend: "llmsvc" }));
+    for (const label of ["升级", "编辑 SLO"]) {
+      const found = button(html, label);
+      expect(found?.disabled, label).toBe(true);
+    }
+    expect(button(html, "卸载")?.disabled).toBe(false);
+    expect(button(html, "服务检查")?.disabled).toBe(false);
+  });
+
+  it("notes an in-place edit without blocking upgrade", () => {
+    const html = renderDetail(release({ editedInPlace: true }));
+    expect(html).toContain("已在 swiss 外修改");
+    expect(button(html, "升级")?.disabled).toBe(false);
+    const list = renderList([deployment({ release: "tweaked", editedInPlace: true, model: "qwen", phase: "applied", status: "deployed" })]);
+    expect(list).toContain("已在 swiss 外修改");
+  });
+});
