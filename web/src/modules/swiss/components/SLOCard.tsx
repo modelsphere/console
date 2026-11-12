@@ -24,7 +24,7 @@ const TYPES = ["avg", "p50", "p80", "p90", "p95", "p99"];
 // stores priority as high or normal and no tier in between, a save merges so
 // only Reset clears a field, and it never creates a requirement — so with none
 // installed there is nothing here to edit.
-function useSLOForm(namespace: string, release: string, onSaved?: () => void) {
+function useSLOForm(namespace: string, release: string, pd: boolean, onSaved?: () => void) {
   const qc = useQueryClient();
   const slo = useQuery({
     queryKey: ["slo", namespace, release],
@@ -37,12 +37,12 @@ function useSLOForm(namespace: string, release: string, onSaved?: () => void) {
   // and a draft seeded from it would save over whatever changed since.
   useEffect(() => {
     if (!slo.data || slo.isFetching || form) return;
-    setForm(draftOf(slo.data));
-  }, [slo.data, slo.isFetching, form]);
+    setForm(draftOf(slo.data, pd));
+  }, [slo.data, slo.isFetching, form, pd]);
 
   const written = (next: SLOConfig) => {
     qc.setQueryData(["slo", namespace, release], next);
-    setForm(draftOf(next));
+    setForm(draftOf(next, pd));
     void followWrite(qc, namespace, release);
   };
 
@@ -115,7 +115,7 @@ export function SLOCard({
   pd?: boolean;
   onSaved?: () => void;
 }) {
-  const f = useSLOForm(namespace, release, onSaved);
+  const f = useSLOForm(namespace, release, pd, onSaved);
   const { slo, form } = f;
 
   if (!form) return slo.error ? <ErrorState what="SLO" error={slo.error} /> : <Loading what="SLO" />;
@@ -176,7 +176,7 @@ function SLODialogBody({
   pd,
   onClose,
 }: SLOTarget & { canEdit: boolean; pd: boolean; onClose: () => void }) {
-  const f = useSLOForm(namespace, release, onClose);
+  const f = useSLOForm(namespace, release, pd, onClose);
   const { slo, form } = f;
   const ready = !!form;
 
@@ -310,7 +310,7 @@ function SLOFields({ f, canEdit, pd }: { f: SLOForm; canEdit: boolean; pd: boole
 
       <Row
         label="Bounds"
-        hint="The floor the scaler never goes below and the ceiling it never passes. Replica and pdengine bounds share one type; a concurrency floor still caps replicas. On a pd release the floor can count engines. An empty ceiling leaves the stored value alone — only Reset clears it."
+        hint="The floor the scaler never goes below and the ceiling it never passes. A pd release counts engines for both bounds. Otherwise the floor counts replicas or concurrency and the ceiling counts replicas. An empty ceiling leaves the stored value alone — only Reset clears it."
       >
         <div className="flex items-center gap-2">
           <Select
@@ -414,17 +414,18 @@ export function pdEnabled(plan?: Plan): boolean {
   return on;
 }
 
-// The CRD's bound types are replica and pdengine, for any service. Concurrency
-// is a floor the non-pd form already offered; a pd release has no such unit.
+// replica has no defined meaning on a pd service yet, so that select offers
+// only pdengine. A non-pd release keeps replica and concurrency.
 export function boundTypes(pd: boolean): string[] {
-  return pd ? ["pdengine", "replica"] : ["replica", "concurrency"];
+  return pd ? ["pdengine"] : ["replica", "concurrency"];
 }
 
-export function draftOf(data: SLOConfig): Draft {
+export function draftOf(data: SLOConfig, pd = false): Draft {
   // swissd sends both; highPriority is what the SLO server actually stored.
+  // A pd release defaults to pdengine, including when the CR still says replica.
   return {
     highPriority: data.highPriority ?? (data.priority ?? 0) >= 10,
-    minType: data.minimumDeployment?.type || "replica",
+    minType: pd ? "pdengine" : data.minimumDeployment?.type || "replica",
     minValue: data.minimumDeployment ? String(data.minimumDeployment.value) : "1",
     maxValue: data.maximumDeployment ? String(data.maximumDeployment.value) : "",
     ttft: rowsOf(data.ttft),

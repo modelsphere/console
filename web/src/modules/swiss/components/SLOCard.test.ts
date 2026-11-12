@@ -51,29 +51,26 @@ describe("SLO edit payload", () => {
     expect(body.maximumDeployment).toBeUndefined();
   });
 
-  it("can send pdengine for both bounds when a pd release stored no floor", () => {
-    expect(boundTypes(true)).toEqual(["pdengine", "replica"]);
-    const draft = draftOf({ found: true });
-    expect(draft.minType).toBe("replica");
-    const body = editOf({ ...draft, minType: "pdengine", minValue: "2", maxValue: "4" });
+  it("defaults a pd release with no stored floor to pdengine for both bounds", () => {
+    expect(boundTypes(true)).toEqual(["pdengine"]);
+    const draft = draftOf({ found: true }, true);
+    expect(draft.minType).toBe("pdengine");
+    const body = editOf({ ...draft, minValue: "2", maxValue: "4" });
     expect(body.minimumDeployment).toEqual({ type: "pdengine", value: 2 });
     expect(body.maximumDeployment).toEqual({ type: "pdengine", value: 4 });
   });
 
-  it("keeps a stored replica floor on a pd release and can switch both bounds to pdengine", () => {
+  it("saves a stored replica floor on a pd release as pdengine", () => {
+    expect(boundTypes(true)).toEqual(["pdengine"]);
     const draft = draftOf({
       found: true,
       minimumDeployment: { type: "replica", value: 1 },
       maximumDeployment: { type: "replica", value: 4 },
-    });
-    expect(draft.minType).toBe("replica");
-    expect(boundTypes(true)).toContain("pdengine");
-    const kept = editOf(draft);
-    expect(kept.minimumDeployment).toEqual({ type: "replica", value: 1 });
-    expect(kept.maximumDeployment).toEqual({ type: "replica", value: 4 });
-    const switched = editOf({ ...draft, minType: "pdengine", minValue: "2", maxValue: "4" });
-    expect(switched.minimumDeployment).toEqual({ type: "pdengine", value: 2 });
-    expect(switched.maximumDeployment).toEqual({ type: "pdengine", value: 4 });
+    }, true);
+    expect(draft.minType).toBe("pdengine");
+    const body = editOf(draft);
+    expect(body.minimumDeployment).toEqual({ type: "pdengine", value: 1 });
+    expect(body.maximumDeployment).toEqual({ type: "pdengine", value: 4 });
   });
 
   it("keeps replica and concurrency when the release is not pd", () => {
