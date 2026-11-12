@@ -303,13 +303,13 @@ function SLOFields({ f, canEdit }: { f: SLOForm; canEdit: boolean }) {
 
       <Row
         label="Bounds"
-        hint="The floor the scaler never goes below and the ceiling it never passes. The floor counts replicas or concurrency; the ceiling is always replicas. An empty ceiling leaves the stored value alone — only Reset clears it."
+        hint="The floor the scaler never goes below and the ceiling it never passes. The floor counts replicas, pdengine or concurrency. The ceiling shares the floor type, and a concurrency floor caps replicas. On a pd release replica means slices and pdengine means total engines. An empty ceiling leaves the stored value alone — only Reset clears it."
       >
         <div className="flex items-center gap-2">
           <Select
             value={form.minType}
             disabled={!editable}
-            options={["replica", "concurrency"]}
+            options={["replica", "pdengine", "concurrency"]}
             className="w-32"
             onChange={(minType) => setForm({ ...form, minType })}
           />
@@ -393,7 +393,7 @@ interface Draft {
   otps: MetricRow[];
 }
 
-function draftOf(data: SLOConfig): Draft {
+export function draftOf(data: SLOConfig): Draft {
   // swissd sends both; highPriority is what the SLO server actually stored.
   return {
     highPriority: data.highPriority ?? (data.priority ?? 0) >= 10,
@@ -411,7 +411,7 @@ function rowsOf(section?: SLOSection): MetricRow[] {
   return metrics.map((m) => ({ type: m.type, threshold: String(m.threshold) }));
 }
 
-function editOf(form: Draft) {
+export function editOf(form: Draft) {
   const body: {
     highPriority?: boolean;
     minimumDeployment?: SLOBound;
@@ -423,7 +423,8 @@ function editOf(form: Draft) {
   const min = intOf(form.minValue);
   if (min != null) body.minimumDeployment = { type: form.minType, value: min };
   const max = intOf(form.maxValue);
-  if (max != null) body.maximumDeployment = { type: "replica", value: max };
+  // The ceiling uses the floor's type. A concurrency floor still caps replicas.
+  if (max != null) body.maximumDeployment = { type: form.minType === "concurrency" ? "replica" : form.minType, value: max };
   const ttft = metricsOf(form.ttft);
   const otps = metricsOf(form.otps);
   if (ttft) body.ttft = { default: { metrics: ttft } };
