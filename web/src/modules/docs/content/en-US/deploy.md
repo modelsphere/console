@@ -48,7 +48,7 @@ A variant whose engine is `video` (such as MiniMax H3, chart `minimax-h3`) opens
 
 To scale a pool, open **Edit SLO** on the release once it is up. There is one section per pool:
 
-- **Bounds**: the minimum (replicas or concurrency) and the maximum (replicas). An empty maximum is autoscaling off. A save only adds or changes values, so to turn a pool's scaling off again use **Reset**, which returns its SLO to the chart's defaults.
+- **Bounds**: the minimum (replicas or concurrency) and the maximum (replicas). An empty maximum is autoscaling off. A save only adds or changes values, so to turn a pool's scaling off again use **Reset**: it removes the maximum and sets the priority back to normal, and keeps the minimum and the queue settings. Set the priority again after a reset if the pool had it high.
 - **Max queue depth**: queued and running tasks per replica before the pool gets another replica.
 - **Priority**: high or normal. The queue query is shown read-only; it comes from the chart.
 
