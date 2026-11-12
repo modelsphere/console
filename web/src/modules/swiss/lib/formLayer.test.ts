@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Plan } from "@swiss/lib/api";
 import { EMPTY, formFromPlan, planRequest, type Form } from "@swiss/components/DeploySettings";
 import { affinityInvalid, affinityRules, editRule, setAffinity } from "./affinity";
-import { editsWithEnv, envBase, mergeEnv, overlay, withEnv, withPreset } from "./formLayer";
+import { envBase, mergeEnv, overlay, withEnv, withPreset } from "./formLayer";
 
 const storageNet = { key: "ebof.modelsphere.io/storage-net", operator: "In", values: ["true"] };
 const gpuTerm = { matchExpressions: [{ key: "nvidia.com/gpu.product", operator: "In", values: ["B300"] }] };
@@ -222,7 +222,7 @@ describe("env and pd.<role>.env merging", () => {
     });
   });
 
-  it("planRequest merges edit layer env and pd.<role>.env over catalog and form env", () => {
+  it("planRequest passes edit.yaml untouched without merging catalog or form env into it", () => {
     const f: Form = {
       ...EMPTY,
       preset: "roce",
@@ -232,24 +232,18 @@ describe("env and pd.<role>.env merging", () => {
         "    value: WARN",
         "  - name: EDIT_ONLY",
         '    value: "1"',
-        "pd:",
-        "  decode:",
-        "    env:",
-        "      - name: PYTORCH_CUDA_ALLOC_CONF",
-        "        value: expandable_segments:False",
       ].join("\n"),
     };
     const preset = {
       env: [{ name: "NCCL_DEBUG", value: "INFO" }],
     };
     const req = planRequest(f, { model: "m", preset, values: catalogValues });
-    expect(editsWithEnv(f.edits, envBase(catalogValues, req.overrides))).toBe(req.editsYAML);
-    expect(req.editsYAML).toContain("name: NCCL_IB_QPS_PER_CONNECTION");
-    expect(req.editsYAML).toContain("name: SGLANG_HOST_IP");
-    expect(req.editsYAML).toContain("value: WARN");
-    expect(req.editsYAML).toContain('value: "1"');
-    expect(req.editsYAML).toContain("name: SGLANG_DISAGGREGATION_WAITING_TIMEOUT");
-    expect(req.editsYAML).toContain("value: expandable_segments:False");
+    expect(req.editsYAML).toBe(f.edits);
+    expect(envBase(catalogValues, req.overrides).env).toEqual([
+      { name: "NCCL_IB_QPS_PER_CONNECTION", value: "8" },
+      { name: "SGLANG_HOST_IP", valueFrom: { fieldRef: { fieldPath: "status.podIP" } } },
+      { name: "NCCL_DEBUG", value: "INFO" },
+    ]);
   });
 
   it("formFromPlan preserves quoted numeric string env values in edit layer on upgrade", () => {

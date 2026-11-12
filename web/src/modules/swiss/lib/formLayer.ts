@@ -1,4 +1,3 @@
-import { isMap as isYamlMap, parseDocument } from "yaml";
 import type { SiteProfile } from "@swiss/lib/api";
 
 type Tree = Record<string, unknown>;
@@ -12,8 +11,8 @@ const canon = (v: unknown) =>
 // mergeEnv merges over onto base by env var name: a matching name replaces the
 // existing entry in place (preserving order, whether value or valueFrom), and a
 // new name appends at the end. Note: because entries merge by name, a catalog
-// or site extra env var can be overridden in place by form/edit layers but not
-// deleted from the list.
+// or site extra env var can be overridden in place by the form layer, while
+// removing one requires editing Final values / edit.yaml.
 export function mergeEnv(base: unknown[], over: unknown[]): unknown[] {
   const out: unknown[] = [];
   const byName = new Map<string, number>();
@@ -66,27 +65,6 @@ export function withEnv(base: Tree | undefined, layer: Tree): Tree {
     if (pd) out = { ...out, pd };
   }
   return out;
-}
-
-export function editsWithEnv(editsYAML: string, base: Tree | undefined): string {
-  const trimmed = editsYAML.trim();
-  if (!trimmed) return "";
-  try {
-    const doc = parseDocument(trimmed, { uniqueKeys: true });
-    if (doc.errors.length || !isYamlMap(doc.contents)) return trimmed;
-    const parsed = doc.toJS() as Tree;
-    const merged = withEnv(base, parsed);
-    if (merged === parsed) return trimmed;
-    if (Array.isArray(merged.env)) doc.setIn(["env"], doc.createNode(merged.env));
-    if (isMap(merged.pd)) {
-      for (const [role, rv] of Object.entries(merged.pd)) {
-        if (isMap(rv) && Array.isArray(rv.env)) doc.setIn(["pd", role, "env"], doc.createNode(rv.env));
-      }
-    }
-    return doc.toString().trimEnd();
-  } catch {
-    return trimmed;
-  }
 }
 
 export function presetValues(profile: SiteProfile | undefined, name: string): Tree | undefined {

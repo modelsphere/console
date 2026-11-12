@@ -7,7 +7,7 @@ import { productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/g
 import { CHECK_MS, inputError, inputProblem, rememberable, setInputOverrides, type InputChoice, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, affinityRules, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
-import { editsWithEnv, envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
+import { envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
 import { toYaml } from "@swiss/lib/yaml";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
@@ -1916,7 +1916,6 @@ export function planRequest(
   const preset = Object.keys(siteEnv).length ? (opts.preset ? withPreset(opts.preset, siteEnv) : siteEnv) : opts.preset;
   const layer = withEnv(opts.values, withPreset(opts.formLayer ? overlay(opts.formLayer, overrides) : overrides, preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
-  const edits = editsWithEnv(f.edits, envBase(opts.values, siteEnv, layer));
 
   return {
     catalog: opts.catalog || undefined,
@@ -1924,7 +1923,7 @@ export function planRequest(
     fromRelease: opts.fromRelease,
     chartVersion: opts.chartVersion || undefined,
     version: opts.version || undefined,
-    editsYAML: edits || undefined,
+    editsYAML: f.edits.trim() || undefined,
     gpuProducts: f.gpuProducts.length ? f.gpuProducts : undefined,
     forceGpuProducts: f.gpuProducts.length > 0 && opts.forceGpuProducts ? true : undefined,
     gpuResource: f.gpuResource || undefined,

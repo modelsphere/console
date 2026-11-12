@@ -687,6 +687,7 @@
       "edit": "edit.yaml",
       "editHint": "The overrides as stored: applied over everything this deploy sets. Delete a line to drop that override; null deletes a chart default.",
       "final": "Final values",
+      "recommended": "Recommended",
       "finalHint": "Edit here; a key you delete becomes null",
       "changes": "{n, plural, =0 {No changes} one {# change} other {# changes}}",
       "notLoaded": "Load chart values to see them.",

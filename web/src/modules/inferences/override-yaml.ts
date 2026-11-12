@@ -1,5 +1,4 @@
 import { isMap as isYamlMap, isNode, isScalar, isSeq, parseDocument, stringify, type Document } from "yaml";
-import { withEnv } from "@swiss/lib/formLayer";
 
 export type Values = Record<string, unknown>;
 const isMap = (value: unknown): value is Values => !!value && typeof value === "object" && !Array.isArray(value);
@@ -58,11 +57,10 @@ export function computedYaml(defaults: string, overrides: string): string {
 
 // Helm's merge of next over previous, a null kept for helm to read as delete.
 export function mergeValues(previous: Values, next: Values): Values {
-  const merged = Object.fromEntries([...new Set([...Object.keys(previous), ...Object.keys(next)])].map((key) => {
+  return Object.fromEntries([...new Set([...Object.keys(previous), ...Object.keys(next)])].map((key) => {
     if (!Object.hasOwn(next, key)) return [key, previous[key]];
     return [key, isMap(next[key]) ? mergeValues(isMap(previous[key]) ? previous[key] : {}, next[key]) : next[key]];
   }));
-  return withEnv(previous, merged);
 }
 
 function sameValue(previous: unknown, next: unknown): boolean {

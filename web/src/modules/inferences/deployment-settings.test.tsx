@@ -66,7 +66,7 @@ describe("Monitor", () => {
     expect(html).toContain("models/routes");
   });
 
-  it("merges preset and edit env with catalog and site extra env without replacing them", () => {
+  it("merges preset and site extra env with catalog env in form overrides while leaving edit.yaml untouched", () => {
     const profile: SiteProfile = {
       name: "site",
       model: { pathTemplate: "/models/{{name}}" },
@@ -103,10 +103,7 @@ describe("Monitor", () => {
         ],
       },
     });
-    expect(req.editsYAML).toContain("name: CATALOG_ENV");
-    expect(req.editsYAML).toContain("name: SITE_ENV");
-    expect(req.editsYAML).toContain("name: PRESET_ENV");
-    expect(req.editsYAML).toContain("name: EDIT_ENV");
+    expect(req.editsYAML).toBe("env:\n  - name: EDIT_ENV\n    value: from-edit");
 
     const noPresetReq = planRequest(EMPTY, { model: "model", values }, profile);
     expect(noPresetReq.overrides?.env).toEqual([

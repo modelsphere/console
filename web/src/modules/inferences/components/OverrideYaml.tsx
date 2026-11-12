@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AlertDescription,
+  Badge,
   Button,
   CodeBlock,
   Dialog,
@@ -20,7 +21,6 @@ import {
 } from "@modelsphere/ui";
 import { Pencil } from "lucide-react";
 import type { HelmValues } from "@swiss/lib/api";
-import { editsWithEnv, withEnv } from "@swiss/lib/formLayer";
 import { useT } from "@/modules/inferences/i18n";
 import { KeySearch } from "./KeySearch";
 import { YamlTextarea, type YamlTextareaHandle } from "./YamlTextarea";
@@ -83,7 +83,6 @@ export function OverrideYaml({ value, onChange, source }: {
 
 interface Loaded {
   values: HelmValues;
-  layers: Values;
   // The overrides merged in, and swissd's layers with them over.
   edits: Values;
   overrides: string;
@@ -94,13 +93,12 @@ interface Loaded {
 
 // The tabs for these overrides: merged over swissd's layers, as the edit layer
 // is, and those over the chart's values.
-export function loadedFor(values: HelmValues, editsText: string): Loaded | undefined {
+function loadedFor(values: HelmValues, editsText: string): Loaded | undefined {
   try {
-    const layers = parseValues(values.overrides);
-    const edits = withEnv(layers, parseValues(editsText));
-    const overrides = valuesYaml(mergeValues(layers, edits));
+    const edits = parseValues(editsText);
+    const overrides = valuesYaml(mergeValues(parseValues(values.overrides), edits));
     const computed = computedYaml(values.defaults, overrides);
-    return { values, layers, edits, overrides, computed, base: parseValues(computed) };
+    return { values, edits, overrides, computed, base: parseValues(computed) };
   } catch {
     return undefined;
   }
@@ -114,21 +112,29 @@ function OverrideDialog({ value, source, onClose, onSave }: {
 }) {
   const t = useT();
   const o = (k: string, params?: Record<string, string | number>) => t(`deploy.overrides.${k}`, params);
-  // Values read earlier for this form open the tabs straight away.
+  const [draft, setDraft] = useState(value);
+  // Values read earlier for this form open the tabs straight away; otherwise load them on open.
   const [loaded, setLoaded] = useState(() => (source?.data ? loadedFor(source.data, value) : undefined));
-  const [draft, setDraft] = useState(() => (loaded ? editsWithEnv(value, loaded.layers) : value));
   const [final, setFinal] = useState(() => loaded?.computed ?? "");
-  // Values that arrive with the dialog open, as when the form settles onto a
-  // request read before, fill the tabs with the overrides as they stand.
   useEffect(() => {
-    if (loaded || !source?.data) return;
-    const l = loadedFor(source.data, draft);
-    if (!l) return;
-    setDraft(editsWithEnv(draft, l.layers));
-    setLoaded(l);
-    setFinal(l.computed);
+    if (loaded || !source) return;
+    if (source.data) {
+      const l = loadedFor(source.data, draft);
+      if (!l) return;
+      setLoaded(l);
+      setFinal(l.computed);
+      return;
+    }
+    if (!source.loading && !source.error) {
+      void source.load().then((values) => {
+        const l = values && loadedFor(values, draft);
+        if (!l) return;
+        setLoaded(l);
+        setFinal(l.computed);
+      });
+    }
   }, [source?.data]);
-  const [tab, setTab] = useState<Tab>(loaded ? "final" : "edit");
+  const [tab, setTab] = useState<Tab>(source ? "final" : "edit");
   // Two editors: edit.yaml is the overrides as stored, Final values the merged
   // values once the chart's are loaded. Switching tabs carries one into the other.
   const onFinal = tab === "final" && !!loaded;
@@ -147,13 +153,14 @@ function OverrideDialog({ value, source, onClose, onSave }: {
   const overridesNow = (): string | undefined => {
     const now = readYaml(text).values;
     if (!now) return undefined;
-    if (!onFinal || !loaded) return loaded ? editsWithEnv(draft, loaded.layers) : draft;
+    if (!onFinal || !loaded) return draft;
     const e = overrideEdit(loaded.base, loaded.edits, now);
-    return e.changes ? valuesYaml(e.edits) : editsWithEnv(draft, loaded.layers);
+    return e.changes ? valuesYaml(e.edits) : draft;
   };
   // Rebuilds the merged tabs over these overrides, with the values already read.
   const rebuild = (edits: string) => {
-    const l = loaded && loadedFor(loaded.values, edits);
+    const values = loaded?.values ?? source?.data;
+    const l = values && loadedFor(values, edits);
     if (!l) return;
     setLoaded(l);
     setFinal(l.computed);
@@ -168,18 +175,6 @@ function OverrideDialog({ value, source, onClose, onSave }: {
       rebuild(edits);
     }
     setTab(next);
-  };
-  // A reload keeps what was typed: the changes go into the overrides first.
-  const loadValues = async () => {
-    const edits = overridesNow();
-    if (edits === undefined || !source) return;
-    const values = await source.load();
-    const l = values && loadedFor(values, edits);
-    if (!l) return;
-    setDraft(editsWithEnv(edits, l.layers));
-    setLoaded(l);
-    setFinal(l.computed);
-    setTab("final");
   };
   const save = () => {
     const edits = overridesNow();
@@ -220,16 +215,14 @@ function OverrideDialog({ value, source, onClose, onSave }: {
         {/* In merge order: what the chart ships, what this deploy sets over it, the overrides as stored, and the result. */}
         <Tabs value={tab} onValueChange={(v) => switchTab(v as Tab)} className="min-h-0 min-w-0 flex-1 gap-2">
           <div className="flex items-center gap-2">
-            {source && (
-              <Button onClick={loadValues} disabled={source.loading || !!read.error}>
-                {source.loading ? o("loading") : o("load")}
-              </Button>
-            )}
             <TabsList>
               <TabsTrigger value="defaults">{o("chart")}</TabsTrigger>
               <TabsTrigger value="overrides">{o("swiss")}</TabsTrigger>
               <TabsTrigger value="edit">{o("edit")}</TabsTrigger>
-              <TabsTrigger value="final">{o("final")}</TabsTrigger>
+              <TabsTrigger value="final" className="text-primary data-active:text-primary">
+                {o("final")}
+                <Badge variant="info" className="h-4 px-1.5 text-[10px]">{o("recommended")}</Badge>
+              </TabsTrigger>
             </TabsList>
           </div>
           <TabsContent value="defaults" className={TAB}>
@@ -241,7 +234,7 @@ function OverrideDialog({ value, source, onClose, onSave }: {
                 </div>
               </>
             ) : (
-              <NotLoaded text={o("notLoaded")} />
+              <NotLoaded text={o(source?.loading ? "loading" : "notLoaded")} />
             )}
           </TabsContent>
           <TabsContent value="overrides" className={TAB}>
@@ -253,7 +246,7 @@ function OverrideDialog({ value, source, onClose, onSave }: {
                 </div>
               </>
             ) : (
-              <NotLoaded text={o("notLoaded")} />
+              <NotLoaded text={o(source?.loading ? "loading" : "notLoaded")} />
             )}
           </TabsContent>
           <TabsContent value="edit" className={TAB}>
@@ -267,7 +260,7 @@ function OverrideDialog({ value, source, onClose, onSave }: {
                 <YamlTextarea ref={finalEditor} aria-label={o("final")} invalid={onFinal && !!read.error} value={final} onChange={setText} className="min-h-0 flex-1" />
               </>
             ) : (
-              <NotLoaded text={o("notLoaded")} />
+              <NotLoaded text={o(source?.loading ? "loading" : "notLoaded")} />
             )}
           </TabsContent>
         </Tabs>

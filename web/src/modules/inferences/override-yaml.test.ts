@@ -129,45 +129,29 @@ describe("mergeValues", () => {
     });
   });
 
-  it("merges edit.yaml env and pd.<role>.env over swissd's layers by name", () => {
-    const layers = parseValues([
+  it("picks the whole modified env list into edits when edited in Final values", () => {
+    const base = parseValues([
       "env:",
       "  - name: CAT_A",
       '    value: "1"',
       "  - name: CAT_B",
       '    value: "2"',
-      "pd:",
-      "  decode:",
-      "    env:",
-      "      - name: DEC_A",
-      "        value: old",
     ].join("\n"));
-    const edits = parseValues([
+    const now = parseValues([
       "env:",
       "  - name: CAT_B",
       '    value: "20"',
       "  - name: EDIT_C",
       '    value: "3"',
-      "pd:",
-      "  decode:",
-      "    env:",
-      "      - name: DEC_B",
-      "        value: added",
     ].join("\n"));
-    expect(mergeValues(layers, edits)).toEqual({
-      env: [
-        { name: "CAT_A", value: "1" },
-        { name: "CAT_B", value: "20" },
-        { name: "EDIT_C", value: "3" },
-      ],
-      pd: {
-        decode: {
-          env: [
-            { name: "DEC_A", value: "old" },
-            { name: "DEC_B", value: "added" },
-          ],
-        },
+    expect(overrideEdit(base, {}, now)).toEqual({
+      edits: {
+        env: [
+          { name: "CAT_B", value: "20" },
+          { name: "EDIT_C", value: "3" },
+        ],
       },
+      changes: 1,
     });
   });
 });
