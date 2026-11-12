@@ -37,6 +37,7 @@ import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirect
 import { useT } from "@/modules/inferences/i18n";
 import { isAdaptiveOption, toggleAdaptive } from "../adaptive-concurrency";
 import { OverrideYaml, type HelmValuesSource } from "./OverrideYaml";
+import { VideoPools, VideoStorage, declaresStorageClass } from "./VideoFields";
 import { NAMED_VALUES, extraValue, fracOutOfRange, serviceIdError, type Section } from "@/modules/inferences/deploy-lib";
 
 const EFFECTS = ["", "NoSchedule", "PreferNoSchedule", "NoExecute"];
@@ -72,9 +73,13 @@ export interface DeployFormProps {
   onRemember?: (key: string, on: boolean) => void;
   // The site profile's presets, on a deploy.
   presets?: Record<string, Preset>;
+  // A video variant: the form adds the video chart's own fields (form.video)
+  // and leaves out what only an LLM chart takes -- route tuning, the compile
+  // cache and the engine image.
+  video?: boolean;
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember, presets }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember, presets, video }: DeployFormProps) {
   const t = useT();
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
@@ -135,15 +140,17 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
               </FloatingField>
             )}
           </div>
-          <FloatingField layout="inline" label={f("slo")} hint={f("sloHint")}>
+          <FloatingField layout="inline" label={f("slo")} hint={video ? t("deploy.video.autoscaleHint") : f("sloHint")}>
             {sw("slo", f("slo"))}
           </FloatingField>
+          {video && <VideoStorage value={form.video} onChange={(v) => onChange({ video: v })} upgrade={upgrade} classInput={declaresStorageClass(inputs)} />}
         </>,
       )}
 
       {section(
         "resources",
         <>
+          {video && <VideoPools value={form.video} onChange={(v) => onChange({ video: v })} submitted={submitted} />}
           {gpuResources && <GpuResource resources={gpuResources} value={form.gpuResource} onChange={(gpuResource) => onChange({ gpuResource })} />}
           <FloatingField label={f("gpuProducts")} hint={f("gpuProductsHint")} notice={forced.length > 0 ? t("deploy.fields.gpuForced", { products: forced.join(", ") }) : undefined}>
             <FieldSelect multiple values={form.gpuProducts} onValuesChange={(v) => onChange({ gpuProducts: v })} options={gpuOptions.map((o) => ({ value: o, label: o, badge: unlistedProducts(gpuListed, [o]).length ? <Badge variant="warning">{f("gpuUnverified")}</Badge> : <Badge variant="success">{f("gpuVerified")}</Badge> }))} placeholder={gpuOptions.length ? undefined : f("gpuProductsEmpty")} disabled={!gpuOptions.length} />
@@ -165,7 +172,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
             <Suggest value={form.localPath} onChange={(localPath) => onChange({ localPath })} suggestion={defaults.localPath} placeholder={defaults.localPath || defaults.localPathTemplate} />
           </FloatingField>
           {inputs && <InputFields inputs={inputs} values={form.inputs} onChange={(v) => onChange({ inputs: v })} remember={remember} onRemember={onRemember} />}
-          {defaults.image && (
+          {defaults.image && !video && (
             <FloatingField
               layout="inline"
               label={f("image")}
@@ -201,7 +208,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
         </>,
       )}
 
-      {section(
+      {!video && section(
         "routing",
         <>
           {recovery}
@@ -250,7 +257,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
       {section(
         "advanced",
         <>
-          {cache && (
+          {cache && !video && (
             <FloatingField
               layout="inline"
               label={f("cache")}

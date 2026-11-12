@@ -1,155 +1,126 @@
 import { describe, expect, it } from "vitest";
 import type { Plan } from "@swiss/lib/api";
-import { isVideoDeployment, VIDEO_EMPTY, videoDefaults, videoFormFromPlan, videoGpus, videoOverrides, videoPlanRequest, videoProblem, type VideoForm } from "./video";
+import { EMPTY, formFromPlan, planRequest, videoForm, type Form } from "@swiss/components/DeploySettings";
+import { isVideoDeployment, VIDEO_EMPTY, videoFields, videoGpus, videoOverrides, videoProblem, type VideoFields } from "./video";
 
-const form = (patch: Partial<VideoForm> = {}): VideoForm => ({ ...VIDEO_EMPTY, serviceId: "h3", ...patch });
-const withPool = (f: VideoForm, p: "fl2va" | "ref2va", patch: Partial<VideoForm["pools"]["fl2va"]>): VideoForm => ({
+const fields = (patch: Partial<VideoFields> = {}): VideoFields => ({ ...VIDEO_EMPTY, ...patch });
+const withPool = (f: VideoFields, p: "fl2va" | "ref2va", patch: Partial<VideoFields["pools"]["fl2va"]>): VideoFields => ({
   ...f,
   pools: { ...f.pools, [p]: { ...f.pools[p], ...patch } },
 });
+const form = (patch: Partial<Form> = {}): Form => ({ ...videoForm({ ...EMPTY, serviceId: "h3" }, undefined), ...patch });
+const request = (f: Form, opts: Partial<Parameters<typeof planRequest>[1]> = {}) => planRequest(f, { model: "minimax-h3", video: true, ...opts });
+type Tree = Record<string, Record<string, unknown>>;
 
 describe("videoOverrides", () => {
-  it("writes both pools, turbo, storage and the autoscale switches explicitly", () => {
-    expect(videoOverrides(form())).toEqual({
+  it("writes both pools, turbo and the shared volume's size", () => {
+    expect(videoOverrides(fields())).toEqual({
       pools: {
         fl2va: { enabled: true, replicaCount: 1, sglang: { args: { tpSize: 4, ulyssesDegree: 1 }, gpuCount: 4 } },
         ref2va: { enabled: true, replicaCount: 1, sglang: { args: { tpSize: 4, ulyssesDegree: 1 }, gpuCount: 4 }, turbo: { enabled: true } },
       },
-      scaler: { enabled: false },
-      sloRequirement: { enabled: false },
       sharedStorage: { size: "500Gi" },
-      modelRoute: { enabled: false },
-      sglang: { tolerations: [{ key: "nvidia.com/gpu", operator: "Exists", effect: "NoSchedule" }] },
     });
   });
 
   it("writes each pool's GPU count as tp × ulysses, which the chart checks against the args", () => {
-    const o = videoOverrides(withPool(withPool(form(), "fl2va", { tpSize: "2", ulyssesDegree: "1" }), "ref2va", { tpSize: "2", ulyssesDegree: "4" })) as { pools: Record<string, { sglang: Record<string, unknown> }> };
+    const o = videoOverrides(withPool(withPool(fields(), "fl2va", { tpSize: "2", ulyssesDegree: "1" }), "ref2va", { tpSize: "2", ulyssesDegree: "4" })) as { pools: Record<string, { sglang: Record<string, unknown> }> };
     expect(o.pools.fl2va.sglang.gpuCount).toBe(2);
     expect(o.pools.ref2va.sglang.gpuCount).toBe(8);
-    // Empty boxes are the chart's 4 × 1.
-    expect((videoOverrides(withPool(form(), "fl2va", { tpSize: "", ulyssesDegree: "" })) as { pools: Record<string, { sglang: Record<string, unknown> }> }).pools.fl2va.sglang).toEqual({ gpuCount: 4 });
+    expect((videoOverrides(withPool(fields(), "fl2va", { tpSize: "", ulyssesDegree: "" })) as { pools: Record<string, { sglang: Record<string, unknown> }> }).pools.fl2va.sglang).toEqual({ gpuCount: 4 });
   });
 
   it("writes only enabled: false for a disabled pool, and no turbo without ref2va", () => {
-    const o = videoOverrides(withPool(form(), "ref2va", { enabled: false })) as { pools: Record<string, unknown> };
+    const o = videoOverrides(withPool(fields(), "ref2va", { enabled: false })) as { pools: Record<string, unknown> };
     expect(o.pools.ref2va).toEqual({ enabled: false });
   });
 
-  it("turns the scaler and the SLO requirement on together, and writes nothing per pool", () => {
-    const o = videoOverrides(form({ autoscale: true })) as Record<string, Record<string, unknown>>;
-    expect(o.scaler).toEqual({ enabled: true });
-    expect(o.sloRequirement).toEqual({ enabled: true });
-    // The chart gives each pool its JobSLO defaults (no maximum: not scaled);
-    // the SLO card sets the rest after the deploy.
-    const pools = o.pools as Record<string, Record<string, unknown>>;
-    for (const p of ["fl2va", "ref2va"]) {
-      expect(pools[p].sloRequirement).toBeUndefined();
-      expect(pools[p].scaler).toBeUndefined();
-    }
-  });
-
-  it("sends the database URL, storage class and route only when given", () => {
-    const o = videoOverrides(form({ databaseUrl: " postgresql://u:p@db/x ", storageClass: "cephfs", modelRoute: true })) as Record<string, Record<string, unknown>>;
+  it("sends the database URL and storage class only when given; empty keeps the release's", () => {
+    const o = videoOverrides(fields({ databaseUrl: " postgresql://u:p@db/x ", storageClass: "cephfs" })) as Tree;
     expect(o.database).toEqual({ url: "postgresql://u:p@db/x" });
     expect(o.sharedStorage).toEqual({ storageClass: "cephfs", size: "500Gi" });
-    // An empty route field writes no route: the chart and swissd both take the service ID.
-    expect(o.modelRoute).toEqual({ enabled: true });
-    expect(videoOverrides(form({ modelRoute: true, route: "video" })).modelRoute).toEqual({ enabled: true, nginx: { route: "video" } });
-    // A typed route under a disabled switch publishes nothing.
-    expect(videoOverrides(form({ route: "video" })).modelRoute).toEqual({ enabled: false });
+    const kept = videoOverrides(fields({ storageSize: "" }), { sharedStorage: { storageClass: "cephfs", size: "1Ti" }, database: { url: "x" } }) as Tree;
+    expect(kept.sharedStorage).toBeUndefined();
+    expect(kept.database).toBeUndefined();
   });
 
-  it("puts scheduling on the GPU pods", () => {
-    const o = videoOverrides(form({ tolerations: [], priorityClassName: "inference", schedulerName: "volcano", gpuProducts: ["H100"] }));
-    expect(o.sglang).toEqual({ tolerations: [], priorityClassName: "inference", schedulerName: "volcano", gpuProduct: ["H100"] });
+  it("clears the sglang.* scheduling keys earlier forms wrote, so the top-level ones apply", () => {
+    const layer = { sglang: { priorityClassName: "inference", schedulerName: "volcano", gpuProduct: ["H100"], tolerations: [] } };
+    expect((videoOverrides(fields(), layer) as Tree).sglang).toEqual({ priorityClassName: "", schedulerName: "", gpuProduct: [] });
+    expect(videoOverrides(fields(), {})).not.toHaveProperty("sglang");
   });
 });
 
-describe("clearing on upgrade", () => {
-  const layer = {
-    modelRoute: { enabled: true, nginx: { route: "old-route" } },
-    sharedStorage: { storageClass: "cephfs", size: "1Ti" },
-    sglang: { priorityClassName: "inference", schedulerName: "volcano", gpuProduct: ["H100"] },
-    database: { url: "postgresql://kept" },
-  };
-
-  it("sends an emptied field the release had set as cleared, so the overlay drops it", () => {
-    const f = form({ modelRoute: true, route: "", storageClass: "", storageSize: "", priorityClassName: "", schedulerName: "", gpuProducts: [] });
-    const o = videoOverrides(f, layer) as Record<string, Record<string, unknown>>;
-    expect(o.modelRoute).toEqual({ enabled: true, nginx: { route: "" } });
-    expect(o.sglang).toMatchObject({ priorityClassName: "", schedulerName: "", gpuProduct: [] });
-    // Empty is "keep" for the database URL and the shared volume, never a clear:
-    // an existing PVC's class cannot change, and an empty size is an invalid PVC.
-    expect(o.database).toBeUndefined();
-    expect(o.sharedStorage).toBeUndefined();
-    const req = videoPlanRequest(f, { model: "minimax-h3", formLayer: layer });
-    expect(req.overrides).toMatchObject({ modelRoute: { nginx: { route: "" } }, sglang: { gpuProduct: [] }, database: { url: "postgresql://kept" }, sharedStorage: { storageClass: "cephfs", size: "1Ti" } });
+describe("planRequest for a video variant", () => {
+  it("writes the LLM form's shared keys and the video chart's own, and nothing only an LLM chart takes", () => {
+    const req = request(form({ slo: true, modelRoute: true, route: "video", namespace: "video", priorityClassName: "inference", schedulerName: "volcano", gpuProducts: ["NVIDIA-H800"], localPath: "/m/h3", edits: "a: 1" }));
+    const o = req.overrides as Tree;
+    expect(o.scaler).toEqual({ enabled: true });
+    expect(o.sloRequirement).toEqual({ enabled: true });
+    expect(o.modelRoute).toEqual({ enabled: true, nginx: { route: "video" } });
+    expect(o.priorityClassName).toBe("inference");
+    expect(o.schedulerName).toBe("volcano");
+    // The chart has no top-level tolerations: the GPU pods' are under sglang, the chart's default first.
+    expect(o.sglang).toEqual({ tolerations: [{ key: "nvidia.com/gpu", operator: "Exists", effect: "NoSchedule" }] });
+    expect(o.pools).toBeDefined();
+    for (const k of ["cart", "cache", "replicaCount", "image", "serviceMonitor", "tolerations"]) expect(o).not.toHaveProperty(k);
+    expect(Object.keys(o.modelRoute)).not.toContain("monitor");
+    expect(req).toMatchObject({ model: "minimax-h3", release: "h3", serviceId: "h3", namespace: "video", editsYAML: "a: 1", gpuProducts: ["NVIDIA-H800"], localPath: "/m/h3" });
   });
 
-  it("leaves a field alone when the release never set it, or when the form still has a value", () => {
-    const o = videoOverrides(form({ storageClass: "", priorityClassName: "" }), {}) as Record<string, Record<string, unknown>>;
-    expect(o.sharedStorage).toEqual({ size: "500Gi" });
-    expect(o.sglang).not.toHaveProperty("priorityClassName");
-    expect(o.sglang).not.toHaveProperty("gpuProduct");
+  it("writes the route off with no name, and the SLO switch off as both off", () => {
+    const o = request(form({ slo: false, modelRoute: false, route: "" })).overrides as Tree;
     expect(o.modelRoute).toEqual({ enabled: false });
-    const kept = videoOverrides(form({ modelRoute: true, route: "old-route", storageClass: "cephfs", storageSize: "1Ti", priorityClassName: "inference", schedulerName: "volcano", gpuProducts: ["H100"] }), layer);
-    expect(kept).toMatchObject({ modelRoute: { nginx: { route: "old-route" } }, sharedStorage: { storageClass: "cephfs", size: "1Ti" }, sglang: { priorityClassName: "inference", schedulerName: "volcano", gpuProduct: ["H100"] } });
+    expect(o.scaler).toEqual({ enabled: false });
+    expect(o.sloRequirement).toEqual({ enabled: false });
   });
 
-  it("does not clear anything on a fresh deploy", () => {
-    expect(videoOverrides(form({ storageClass: "", priorityClassName: "" }))).toEqual(videoOverrides(form({ storageClass: "", priorityClassName: "" }), undefined));
-    expect(JSON.stringify(videoOverrides(form()))).not.toContain('""');
-  });
-});
-
-describe("videoPlanRequest", () => {
-  it("carries the identity and lays the form over a release's layer and a preset", () => {
-    const req = videoPlanRequest(form({ namespace: "video", edits: "a: 1" }), {
-      model: "minimax-h3",
-      variant: "h3",
-      preset: { sglang: { nodeSelector: { pool: "gpu" } } },
-      formLayer: { database: { url: "kept" } },
-    });
-    expect(req).toMatchObject({ model: "minimax-h3", variant: "h3", release: "h3", serviceId: "h3", namespace: "video", editsYAML: "a: 1" });
+  it("lays the form over a release's layer and a preset", () => {
+    const req = request(form(), { preset: { sglang: { nodeSelector: { pool: "gpu" } } }, formLayer: { database: { url: "kept" } } });
     expect(req.overrides).toMatchObject({ database: { url: "kept" }, sglang: { nodeSelector: { pool: "gpu" } } });
-    // Nothing of the LLM form.
-    for (const k of ["cart", "cache", "replicaCount", "image", "serviceMonitor"]) expect(req.overrides).not.toHaveProperty(k);
-    expect(req.localPath).toBeUndefined();
   });
 });
 
-describe("videoGpus", () => {
-  it("sums tp × ulysses × replicas over enabled pools", () => {
-    const f = withPool(form(), "fl2va", { replicaCount: "2", tpSize: "2", ulyssesDegree: "2" });
+describe("videoGpus and videoProblem", () => {
+  it("counts the enabled pools at their replicas", () => {
+    const f = withPool(fields(), "fl2va", { replicaCount: "2" });
     expect(videoGpus(f)).toEqual({ perPod: { fl2va: 4, ref2va: 4 }, total: 12 });
     expect(videoGpus(withPool(f, "ref2va", { enabled: false })).total).toBe(8);
   });
-});
 
-describe("videoProblem", () => {
-  it("needs a service ID and a pool", () => {
-    expect(videoProblem(form({ serviceId: "" }))).toEqual({ code: "serviceId" });
-    expect(videoProblem(withPool(withPool(form(), "fl2va", { enabled: false }), "ref2va", { enabled: false }))).toEqual({ code: "noPool" });
-    expect(videoProblem(form())).toBeUndefined();
+  it("needs a pool", () => {
+    expect(videoProblem(withPool(withPool(fields(), "fl2va", { enabled: false }), "ref2va", { enabled: false }))).toEqual({ code: "noPool" });
+    expect(videoProblem(fields())).toBeUndefined();
   });
 });
 
-describe("videoDefaults and videoFormFromPlan", () => {
+describe("videoFields and formFromPlan", () => {
   it("starts from the variant's values over the console's defaults", () => {
-    const f = videoDefaults({ pools: { fl2va: { replicaCount: 3 }, ref2va: { enabled: false } } }, { modelRoute: true });
+    const f = videoFields({ pools: { fl2va: { replicaCount: 3 }, ref2va: { enabled: false } } });
     expect(f.pools.fl2va.replicaCount).toBe("3");
     expect(f.pools.ref2va.enabled).toBe(false);
-    expect(f.modelRoute).toBe(true);
   });
 
-  it("round-trips the form layer, and never reads the database URL back into the form", () => {
-    const f = withPool(form({ autoscale: true, modelRoute: true, route: "video", databaseUrl: "postgresql://secret", storageClass: "cephfs", turbo: false }), "fl2va", { replicaCount: "2" });
-    const plan = { release: { name: "h3", namespace: "video" }, engine: "video", layers: { form: videoOverrides(f) } } as unknown as Plan;
-    const back = videoFormFromPlan(plan);
-    expect(back.databaseUrl).toBe("");
-    expect(back.databaseKept).toBe(true);
-    expect(videoOverrides({ ...back, databaseUrl: "postgresql://secret" })).toEqual(videoOverrides({ ...f, namespace: "video" }));
+  it("round-trips a video release's form layer, and never reads the database URL back", () => {
+    const f = form({ slo: true, modelRoute: true, route: "video", priorityClassName: "inference", video: withPool(fields({ databaseUrl: "postgresql://secret", storageClass: "cephfs", turbo: false }), "fl2va", { replicaCount: "2" }) });
+    const layer = request(f).overrides;
+    const plan = { release: { name: "h3", namespace: "video" }, engine: "video", layers: { form: layer } } as unknown as Plan;
+    const back = formFromPlan(plan);
+    expect(back.video.databaseUrl).toBe("");
+    expect(back.video.databaseKept).toBe(true);
+    expect(back.slo).toBe(true);
+    expect(back.priorityClassName).toBe("inference");
+    expect(request({ ...back, video: { ...back.video, databaseUrl: "postgresql://secret" } }).overrides).toEqual(request({ ...f, namespace: "video" }).overrides);
+  });
+
+  it("reads an earlier form's sglang.* scheduling keys and a route equal to the service ID", () => {
+    const plan = {
+      release: { name: "h3", namespace: "video" },
+      engine: "video",
+      layers: { form: { serviceId: "h3", modelRoute: { enabled: true, nginx: { route: "h3" } }, sglang: { priorityClassName: "p", schedulerName: "s", gpuProduct: ["H100"] } } },
+    } as unknown as Plan;
+    const back = formFromPlan(plan);
+    expect(back).toMatchObject({ priorityClassName: "p", schedulerName: "s", gpuProducts: ["H100"], route: "" });
   });
 });
 

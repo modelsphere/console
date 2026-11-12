@@ -85,6 +85,8 @@ export function whatMoves(current: Plan, proposed: Plan, currentCatalog?: string
 }
 
 export const SECTIONS = ["basic", "resources", "routing", "advanced"] as const;
+// A video variant's: its route takes none of the routing section's tuning.
+export const VIDEO_SECTIONS: Section[] = ["basic", "resources", "advanced"];
 
 // Which deploy form a sheet shows: an upgrade keeps the engine its release was
 // composed with, a deploy takes the picked variant's.

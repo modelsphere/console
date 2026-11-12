@@ -9,8 +9,11 @@ import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, affinityRules, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
 import { overlay, withPreset } from "@swiss/lib/formLayer";
 import { toYaml } from "@swiss/lib/yaml";
+import { isVideo, VIDEO_EMPTY, videoFields, videoOverrides, type VideoFields } from "@swiss/lib/video";
+import { DEFAULTS as VIDEO_DEFAULTS, KEYS as VIDEO_KEYS } from "@swiss/lib/videoChart";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
+import { VideoSettings } from "@swiss/components/VideoSettings";
 import {
   DIRECTIVES,
   DIRECTIVES_BY_KEY,
@@ -104,6 +107,9 @@ export interface Form {
   // with the diff and the apply. The swiss pages leave it off and ask in the
   // apply dialog instead.
   skipSchemaValidation: boolean;
+  // A video variant's own fields. The rest of the form is the LLM form's, and
+  // planRequest writes only the parts of it the video chart takes.
+  video: VideoFields;
 }
 
 export const EMPTY: Form = {
@@ -147,7 +153,14 @@ export const EMPTY: Form = {
   cacheHistoryLimit: "",
   cacheMaxSlots: "",
   skipSchemaValidation: false,
+  video: VIDEO_EMPTY,
 };
+
+// videoForm is a fresh video deploy's form: the LLM form's, with the video
+// fields read from the variant's values and the GPU pods' default tolerations.
+export function videoForm(f: Form, values: Record<string, unknown> | undefined): Form {
+  return { ...f, video: videoFields(values), tolerations: VIDEO_DEFAULTS.tolerations };
+}
 
 // The switches swissd gives a default for, by chart section.
 const DEFAULTED_SWITCHES = { modelRoute: "modelRoute", scaler: "scaler", cart: "cart", slo: "sloRequirement", serviceMonitor: "serviceMonitor", cache: "cache" } as const;
@@ -217,6 +230,7 @@ export function DeploySettings({
   remember,
   onRemember,
   presets,
+  video = false,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -250,6 +264,10 @@ export function DeploySettings({
   onRemember?: (key: string, on: boolean) => void;
   // The site profile's presets, on a deploy.
   presets?: Record<string, Preset>;
+  // A video variant: the video chart's own settings (form.video) are added, and
+  // what only an LLM chart takes -- replicas and scaler bounds, route tuning,
+  // ServiceMonitor, the engine image, the compile cache -- is left out.
+  video?: boolean;
 }) {
   const picked = presets?.[form.preset];
   const set =
@@ -347,6 +365,13 @@ export function DeploySettings({
 
           {inputs && <InputFields inputs={inputs} values={form.inputs} onChange={(v) => onChange({ inputs: v })} remember={remember} onRemember={onRemember} />}
 
+          {video ? (
+            <Row
+              label="Autoscale / SLO"
+              note="a scaler and an SLO requirement for each pool; a pool is not scaled until its SLO has a maximum, set in the SLO card once the release is up"
+              toggle={<Switch checked={form.slo} onChange={toggle("slo")} label="autoscale" />}
+            />
+          ) : (
           <Row
             label="Autoscale"
             note="on by default — an LLMScaler owns the replica count between min and max; empty keeps the chart's bounds"
@@ -385,6 +410,7 @@ export function DeploySettings({
               />
             )}
           </Row>
+          )}
 
           <Row
             label="Namespace"
@@ -423,6 +449,16 @@ export function DeploySettings({
         </CardContent>
       </Card>
 
+      {video && (
+        <VideoSettings
+          value={form.video}
+          onChange={(v) => onChange({ video: v })}
+          lockIdentity={lockIdentity}
+          classInput={!!inputs?.some((r) => r.input.key === VIDEO_KEYS.storageClass)}
+        />
+      )}
+
+      {!video && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Routing options</CardTitle>
@@ -673,6 +709,7 @@ export function DeploySettings({
           </Row>
         </CardContent>
       </Card>
+      )}
 
       {/* Folded away, but every flag is still written into the plan either
           way -- a section nobody opens must not hand the decision back to a
@@ -683,6 +720,7 @@ export function DeploySettings({
           <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
         </summary>
         <div className="divide-y border-t px-4">
+          {!video && (
           <Row
             label="ServiceMonitor"
             note="Prometheus metrics scraped alongside the release"
@@ -694,6 +732,7 @@ export function DeploySettings({
               />
             }
           />
+          )}
 
           {/* Off is the answer almost always: the catalog pins the tag and the
               site rewrites the repository to its mirror, and between them the
@@ -703,7 +742,7 @@ export function DeploySettings({
 
               Off empties the field, so turning it off puts the inherited answer
               back rather than leaving a stale override behind. */}
-          {image && (
+          {image && !video && (
             <Row
               label="Image"
               note="repository:tag — off inherits the catalog's tag and the site's mirror"
@@ -814,7 +853,7 @@ export function DeploySettings({
               placeholder={cluster?.schedulerName ?? "the chart's default"}
             />
           </Row>
-          {cache && (
+          {cache && !video && (
             <Row
               label="Compile cache"
               note="keeps compiled kernels on the node, so a restarted pod skips the 20–40 minute recompile; empty fields keep the site's, else the chart's. Off writes nothing, so a site that turns it on still applies: set cache.enabled: false in the plan editor to force it off"
@@ -1549,6 +1588,17 @@ extraArgs:
   - --tp-size=4`;
 
 const num = (v: string) => (v.trim() === "" ? undefined : Number(v));
+const strings = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
+
+function setPath(tree: Record<string, unknown>, path: string, value: unknown) {
+  const keys = path.split(".");
+  let node = tree;
+  for (const k of keys.slice(0, -1)) {
+    if (!node[k] || typeof node[k] !== "object" || Array.isArray(node[k])) node[k] = {};
+    node = node[k] as Record<string, unknown>;
+  }
+  node[keys[keys.length - 1]] = value;
+}
 
 function extraValue(f: Form, key: string): string {
   return f.nginxExtras.find((r) => r.key === key)?.value.trim() ?? "";
@@ -1833,10 +1883,21 @@ export function planRequest(
     // The release's form layer, on an upgrade: the form's values are put over
     // it, so the request carries the whole layer rebuilt.
     formLayer?: Record<string, unknown>;
+    // A video variant: the form's video fields, and none of what only an LLM
+    // chart takes (replicas, CART, route tuning, monitor, cache, engine image).
+    video?: boolean;
   },
 ): PlanRequest {
-  const overrides: Record<string, unknown> = {};
+  const overrides: Record<string, unknown> = opts.video ? videoOverrides(f.video, opts.formLayer) : {};
   const on = effective(f);
+
+  if (opts.video) {
+    // The one SLO switch is the pools' JobSLOs and their scalers together.
+    overrides.scaler = { enabled: f.slo };
+    overrides.sloRequirement = { enabled: f.slo };
+    const route = f.route.trim();
+    overrides.modelRoute = on.modelRoute && route ? { enabled: true, nginx: { route } } : { enabled: on.modelRoute };
+  } else {
 
   // replicaCount and the scaler bounds are the same decision, so only the one
   // that applies is sent: a fixed count under a live scaler is two answers to
@@ -1916,16 +1977,19 @@ export function planRequest(
     if (num(f.cacheMaxSlots) !== undefined) cache.maxSlotsPerNode = num(f.cacheMaxSlots);
     overrides.cache = cache;
   }
+  }
 
   const tolerations = f.tolerations.flatMap((t) => tolerationValue(t) ?? []);
-  if (tolerations.length || opts.formLayer?.tolerations !== undefined) overrides.tolerations = tolerations;
+  // The video chart's are the GPU pods', and always sent: they replace the chart's own list.
+  if (opts.video) setPath(overrides, VIDEO_KEYS.tolerations, tolerations);
+  else if (tolerations.length || opts.formLayer?.tolerations !== undefined) overrides.tolerations = tolerations;
 
   // Only the repository: the tag and digest are the catalog's, and a form that
   // wrote the whole image section would drop them.
   // The tag lands in the form layer, which merges after the catalog's -- so it
   // wins, and the plan reports it as shadowed rather than the two disagreeing
   // quietly.
-  if (f.image.trim()) overrides.image = splitImage(f.image);
+  if (f.image.trim() && !opts.video) overrides.image = splitImage(f.image);
 
   if (f.priorityClassName.trim()) overrides.priorityClassName = f.priorityClassName.trim();
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
@@ -1989,6 +2053,29 @@ export function formFromPlan(plan: Plan): Form {
     return typeof v === "boolean" ? v : fallback;
   };
   const nv = nginxValuesMap(at("modelRoute.nginx.values"));
+
+  if (isVideo(plan.engine)) {
+    const tolerations = at(VIDEO_KEYS.tolerations);
+    return {
+      ...EMPTY,
+      namespace: plan.release.namespace,
+      serviceId: str("serviceId"),
+      localPath: str("model.localPath"),
+      gpuProducts: gpuProductsOf(o).length ? gpuProductsOf(o) : strings(at("sglang.gpuProduct")),
+      gpuResource: String(((plan.layers?.derived?.model ?? {}) as Record<string, unknown>).gpuResource ?? ""),
+      tolerations: Array.isArray(tolerations) ? tolerationsOf({ tolerations }) : VIDEO_DEFAULTS.tolerations,
+      affinity: affinityRules(o),
+      // Earlier forms wrote the service ID as the route; it reads back as empty.
+      route: str("modelRoute.nginx.route") === str("serviceId") ? "" : str("modelRoute.nginx.route"),
+      modelRoute: bool("modelRoute.enabled"),
+      slo: bool(VIDEO_KEYS.scaler),
+      // Earlier forms wrote these under sglang; the chart reads either.
+      priorityClassName: str("priorityClassName") || str("sglang.priorityClassName"),
+      schedulerName: str("schedulerName") || str("sglang.schedulerName"),
+      video: videoFields(o),
+      edits: editsOf(plan),
+    };
+  }
 
   return {
     ...EMPTY,

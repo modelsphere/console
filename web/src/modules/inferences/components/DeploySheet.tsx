@@ -27,9 +27,8 @@ import {
 import { ArrowRight, FlaskConical, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
-import { applyFlags, editsOf, imageOf, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
-import { isVideo, VIDEO_EMPTY, videoApplyFlags, videoDefaults, videoFormFromPlan, videoPlanRequest, videoProblem, type VideoForm } from "@swiss/lib/video";
-import { presetValues } from "@swiss/lib/formLayer";
+import { applyFlags, imageOf, reseed, siteSwitchDefaults, switchDefaults, videoForm, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
+import { videoProblem } from "@swiss/lib/video";
 import { EMPTY, formFromPlan, planRequest } from "../deployment-settings";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
 import { Provenance } from "@swiss/components/Provenance";
@@ -45,9 +44,8 @@ import { cacheCard } from "@swiss/lib/cache";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
-import { SECTIONS, chartChoice, formKind, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
+import { SECTIONS, VIDEO_SECTIONS, chartChoice, formKind, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
-import { VideoDeployForm, VIDEO_SECTIONS } from "@/modules/inferences/components/VideoDeployForm";
 import type { HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
 import { AdaptivePlanChangedError, composeAdaptivePlan, withAdaptiveConcurrency } from "../adaptive-concurrency";
@@ -126,7 +124,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     enabled: !!modelName && !!catalogName,
   });
   const v = entry.data?.variant;
-  // A video variant (or release) gets a form of its own; nothing of the LLM form applies to its chart.
+  // A video variant (or release) shares the LLM form: it adds the video chart's own fields and drops what only an LLM chart takes.
   const video = formKind(upgrade, current.data?.engine, v?.engine) === "video";
   const sections = video ? VIDEO_SECTIONS : SECTIONS;
   const chartRange = !!v && isChartRange(v.chart.version);
@@ -152,7 +150,12 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const [seedPlan, setSeedPlan] = useState<Plan>();
   if (current.data && !seedPlan) setSeedPlan(current.data);
   const deployModel = upgrade ? "" : target.model;
-  const initial = useMemo<Form>(() => (upgrade ? (seedPlan ? formFromPlan(seedPlan) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }), [upgrade, seedPlan, deployModel]);
+  const variantValues = entry.data?.variant.values;
+  const initial = useMemo<Form>(() => {
+    if (upgrade) return seedPlan ? formFromPlan(seedPlan) : EMPTY;
+    const fresh = { ...EMPTY, serviceId: defaultServiceId(deployModel) };
+    return video ? videoForm(fresh, variantValues) : fresh;
+  }, [upgrade, seedPlan, deployModel, video, variantValues]);
   const initialRecovery = useMemo(() => recoverySettings(
     upgrade && seedPlan ? planValues(seedPlan) : mergeValues(entry.data?.variant.values, profile.data?.profile?.extra),
   ), [upgrade, seedPlan, entry.data?.variant.values, profile.data?.profile?.extra]);
@@ -160,19 +163,6 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const recovery = { ...initialRecovery, ...recoveryPatch };
   const [form, setForm] = useState<Form>(initial);
   const checkedInputs = useDebounced(form.inputs, CHECK_MS);
-  const variantValuesForVideo = entry.data?.variant.values;
-  const videoInitial = useMemo<VideoForm>(
-    () =>
-      upgrade
-        ? seedPlan && isVideo(seedPlan.engine)
-          ? videoFormFromPlan(seedPlan, editsOf(seedPlan))
-          : VIDEO_EMPTY
-        : { ...videoDefaults(variantValuesForVideo, siteSwitchDefaults(profile.data)), serviceId: defaultServiceId(deployModel) },
-    [upgrade, seedPlan, variantValuesForVideo, profile.data, deployModel],
-  );
-  const [vform, setVform] = useState<VideoForm>(videoInitial);
-  useEffect(() => setVform(videoInitial), [videoInitial]);
-  const checkedVideoInputs = useDebounced(vform.inputs, CHECK_MS);
   const [remember, setRemember] = useState<Record<string, boolean>>({});
   const catalogRoute = upgrade && current.data ? initial.route || initial.serviceId || target.release : undefined;
   const routeOptions = useQuery({
@@ -184,7 +174,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   });
   useEffect(() => setForm(initial), [initial]);
   const [seed, setSeed] = useState<SwitchDefaults | null>(null);
-  const dirty = useDirty({ form, vform, version, variant, moveTo, chartVersion, recovery }, { form: seed ? reseed(initial, {}, seed) : initial, vform: videoInitial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
+  const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: seed ? reseed(initial, {}, seed) : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
 
   const [step, setStep] = useState<"form" | "review">("form");
   const [submitted, setSubmitted] = useState(false);
@@ -201,7 +191,6 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // a plan composed from the old switches goes with it.
   const seedReady = !upgrade && !!entry.data && !profile.isPending;
   const siteDefaults = useMemo(() => siteSwitchDefaults(profile.data), [profile.data]);
-  const variantValues = entry.data?.variant.values;
   useEffect(() => {
     if (!seedReady) return;
     const next = switchDefaults(siteDefaults, variantValues);
@@ -215,9 +204,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     }
   }, [seedReady, siteDefaults, variantValues, seed]);
 
-  const typedId = video ? vform.serviceId : form.serviceId;
+  const typedId = form.serviceId;
   const release = upgrade ? target.release : typedId || defaultServiceId(target.model);
-  const namespace = upgrade ? target.namespace : (video ? vform.namespace : form.namespace) || cluster.data?.namespace || "";
+  const namespace = upgrade ? target.namespace : form.namespace || cluster.data?.namespace || "";
   const live = useQuery({ queryKey: ["status", namespace, release], queryFn: () => api.status(namespace, release), enabled: step === "review" && !!release && !!namespace });
 
   // A product the variant does not list is one swissd takes only as forced.
@@ -226,22 +215,15 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const inputs = inputRows(v?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", modelName ?? "", v?.values, upgrade ? current.data?.layers?.form : undefined);
   // A profile swissd did not parse is not written to from here.
   const canRemember = profile.data?.yaml !== undefined && !profile.data.error && !!cluster.data?.allowDeploy;
-  const saves = canRemember ? siteSaves(inputs, video ? vform.inputs : form.inputs, remember) : [];
+  const saves = canRemember ? siteSaves(inputs, form.inputs, remember) : [];
   // What a compose of f sends; the Override YAML editor's preview sends the same.
   const requestFor = (f: Form) => planRequest(
     { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
     upgrade
-      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, formLayer: seedPlan?.layers?.form }
-      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs },
+      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, formLayer: seedPlan?.layers?.form, video }
+      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, video },
     profile.data?.profile,
   );
-  const videoRequest = () =>
-    videoPlanRequest(
-      { ...vform, serviceId: vform.serviceId || (upgrade ? vform.serviceId : defaultServiceId(target.model)) },
-      upgrade
-        ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, inputs: v?.inputs, formLayer: seedPlan?.layers?.form }
-        : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, inputs: v?.inputs, preset: presetValues(profile.data?.profile, vform.preset) },
-    );
   // The chart's values and swissd's layers for this form, without the
   // overrides, which the editor merges itself. Cached per request while the
   // sheet is open, so saving the overrides and editing them again does not
@@ -252,11 +234,13 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     return error;
   };
   const valuesForm = { ...form, edits: "" };
-  const valuesRequest = upgrade && !recorded ? undefined : withAdaptiveConcurrency(withRecovery(requestFor(valuesForm), recovery), valuesForm, routeOptions.data);
+  // A video route has no recovery or adaptive concurrency: its form has no routing section.
+  const valuesRequest = upgrade && !recorded ? undefined : video ? requestFor(valuesForm) : withAdaptiveConcurrency(withRecovery(requestFor(valuesForm), recovery), valuesForm, routeOptions.data);
   const helmValues = useQuery({
     queryKey: ["helmValues", JSON.stringify(valuesRequest ?? null)],
     queryFn: async () => {
       try {
+        if (video) return await deployApi.helmValues(requestFor(valuesForm));
         const request = await composeRecoveryValuesRequest(requestFor(valuesForm), recovery, (next) => composeAdaptivePlan(next, valuesForm, routeOptions.data, deployApi.plan, catalogName), catalogName);
         return await deployApi.helmValues(request);
       } catch (error) {
@@ -277,7 +261,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   };
   const compose = useMutation({
     mutationFn: async () => {
-      if (video) return deployApi.plan(videoRequest());
+      if (video) return deployApi.plan(requestFor(form));
       try {
         const inputError = recoveryInputError(recovery);
         if (inputError) throw new Error(t(`deploy.recovery.errors.${inputError}`));
@@ -298,7 +282,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   });
   // The form is fixed while a plan is on screen, so its flags are the ones
   // the plan was composed beside.
-  const flags = video ? videoApplyFlags(vform) : applyFlags(form);
+  const flags = applyFlags(form);
   const dryRun = useMutation({ mutationFn: (pl: Plan) => deployApi.diff({ planHash: pl.hash, applyFlags: flags }), onSuccess: setDiff });
   const state = pipelineState({ diff, exists: live.data?.exists, applied: !!applied });
   const apply = useMutation({
@@ -331,7 +315,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
       nav.go("basic");
       return;
     }
-    if (video && videoProblem({ ...vform, serviceId: release })) {
+    if (video && videoProblem(form.video)) {
       setExpanded((e) => ({ ...e, resources: true }));
       nav.go("resources");
       return;
@@ -517,28 +501,6 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
           <div className="flex justify-center py-16">
             <Spinner size="lg" />
           </div>
-        ) : step === "form" && video ? (
-          <>
-            <VideoDeployForm
-              form={vform}
-              onChange={(patch) => setVform((f) => ({ ...f, ...patch }))}
-              upgrade={upgrade}
-              submitted={submitted}
-              target={targetFields}
-              cluster={cluster.data}
-              defaultServiceId={upgrade ? undefined : defaultServiceId(target.model)}
-              gpuOptions={productChoices(v?.requires.gpuProduct, pickableProducts(nodes.data?.nodes, v?.requires.vendor, profile.data?.profile?.nodes?.gpus, ""), vform.gpuProducts)}
-              gpuListed={v?.requires.gpuProduct}
-              expanded={expanded}
-              onExpand={(s, o) => setExpanded((e) => ({ ...e, [s]: o }))}
-              idPrefix={ID_PREFIX}
-              inputs={inputs}
-              remember={canRemember ? remember : undefined}
-              onRemember={(key, on) => setRemember((r) => ({ ...r, [key]: on }))}
-              presets={upgrade ? undefined : profile.data?.profile?.presets}
-            />
-            <div style={{ height: nav.tailSpace }} aria-hidden />
-          </>
         ) : step === "form" ? (
           <>
             <DeployForm
@@ -549,7 +511,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               recovery={<RecoveryFields settings={recovery} onChange={(patch) => setRecoveryPatch((previous) => ({ ...previous, ...patch }))} />}
               target={targetFields}
               cluster={cluster.data}
-              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), cache }}
+              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: video ? undefined : imageOf(v, entry.data?.imageRepository), cache: video ? undefined : cache }}
               gpuOptions={productChoices(v?.requires.gpuProduct, pickableProducts(nodes.data?.nodes, v?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource), form.gpuProducts)}
               gpuListed={v?.requires.gpuProduct}
               gpuResources={v?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, v.requires.vendor) : undefined}
@@ -568,6 +530,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               remember={canRemember ? remember : undefined}
               onRemember={(key, on) => setRemember((r) => ({ ...r, [key]: on }))}
               presets={upgrade ? undefined : profile.data?.profile?.presets}
+              video={video}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />
           </>
@@ -597,7 +560,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         {step === "form" ? (
           <>
             <SheetCancelButton />
-            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || (video ? !inputsAnswered(inputs, checkedVideoInputs) : !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity))}>
+            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)}>
               {compose.isPending ? t("deploy.review.composing") : t("deploy.review.compose")}
             </Button>
           </>
