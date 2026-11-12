@@ -303,13 +303,13 @@ function SLOFields({ f, canEdit }: { f: SLOForm; canEdit: boolean }) {
 
       <Row
         label="Bounds"
-        hint="The floor the scaler never goes below and the ceiling it never passes. The floor counts replicas or concurrency; the ceiling is always replicas. An empty ceiling leaves the stored value alone — only Reset clears it."
+        hint="The floor the scaler never goes below and the ceiling it never passes. The floor counts replicas or concurrency; the ceiling counts replicas. A pd release counts engines for both, and the two types have to match. An empty ceiling leaves the stored value alone — only Reset clears it."
       >
         <div className="flex items-center gap-2">
           <Select
             value={form.minType}
             disabled={!editable}
-            options={["replica", "concurrency"]}
+            options={form.minType === "pdengine" ? ["pdengine"] : ["replica", "concurrency"]}
             className="w-32"
             onChange={(minType) => setForm({ ...form, minType })}
           />
@@ -393,7 +393,7 @@ interface Draft {
   otps: MetricRow[];
 }
 
-function draftOf(data: SLOConfig): Draft {
+export function draftOf(data: SLOConfig): Draft {
   // swissd sends both; highPriority is what the SLO server actually stored.
   return {
     highPriority: data.highPriority ?? (data.priority ?? 0) >= 10,
@@ -411,7 +411,7 @@ function rowsOf(section?: SLOSection): MetricRow[] {
   return metrics.map((m) => ({ type: m.type, threshold: String(m.threshold) }));
 }
 
-function editOf(form: Draft) {
+export function editOf(form: Draft) {
   const body: {
     highPriority?: boolean;
     minimumDeployment?: SLOBound;
@@ -423,7 +423,9 @@ function editOf(form: Draft) {
   const min = intOf(form.minValue);
   if (min != null) body.minimumDeployment = { type: form.minType, value: min };
   const max = intOf(form.maxValue);
-  if (max != null) body.maximumDeployment = { type: "replica", value: max };
+  // The ceiling counts replicas, including under a concurrency floor. pd mode
+  // counts engines on both bounds; a replica ceiling there is refused.
+  if (max != null) body.maximumDeployment = { type: form.minType === "pdengine" ? form.minType : "replica", value: max };
   const ttft = metricsOf(form.ttft);
   const otps = metricsOf(form.otps);
   if (ttft) body.ttft = { default: { metrics: ttft } };
