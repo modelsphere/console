@@ -43,7 +43,7 @@ export function VideoSettings({
           </p>
         </CardHeader>
         <CardContent className="divide-y pt-0">
-          {problem && <p className="py-2 text-sm text-destructive">Enable at least one pool.</p>}
+          {problem && <p className="py-2 text-sm text-destructive">{problem.code === "zero" ? "Replicas, TP and Ulysses must each be at least 1." : "Enable at least one pool."}</p>}
           {POOLS.map((p) => {
             const pf = value.pools[p];
             return (

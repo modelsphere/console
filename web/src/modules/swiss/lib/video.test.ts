@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Plan } from "@swiss/lib/api";
+import type { ObjectResult, Plan } from "@swiss/lib/api";
 import { EMPTY, formFromPlan, planRequest, videoForm, type Form } from "@swiss/components/DeploySettings";
-import { isVideoDeployment, VIDEO_EMPTY, videoFields, videoGpus, videoOverrides, videoProblem, type VideoFields } from "./video";
+import { isVideoDeployment, poolScalers, VIDEO_EMPTY, videoFields, videoGpus, videoOverrides, videoProblem, videoSeed, type VideoFields } from "./video";
 
 const fields = (patch: Partial<VideoFields> = {}): VideoFields => ({ ...VIDEO_EMPTY, ...patch });
 const withPool = (f: VideoFields, p: "fl2va" | "ref2va", patch: Partial<VideoFields["pools"]["fl2va"]>): VideoFields => ({
@@ -132,5 +132,91 @@ describe("isVideoDeployment", () => {
     expect(isVideoDeployment({ chart: "sglang-0.8.6" })).toBe(false);
     expect(isVideoDeployment({ chart: "vllm-0.2.0-rc1" })).toBe(false);
     expect(isVideoDeployment({})).toBe(false);
+  });
+});
+
+describe("formFromPlan when the form layer does not name a switch", () => {
+  const plan = (engine: string, layers: Record<string, unknown>) => ({ release: { name: "r", namespace: "ns" }, engine, layers }) as unknown as Plan;
+
+  it("reads an LLM release's switches from the last layer that sets them", () => {
+    const f = formFromPlan(plan("sglang", { defaults: { scaler: { enabled: true }, serviceMonitor: { enabled: true } }, site: { modelRoute: { enabled: true } }, form: { serviceId: "r" } }));
+    expect(f).toMatchObject({ modelRoute: true, scaler: true, serviceMonitor: true });
+    // The form layer, when it names one, is what the operator chose.
+    expect(formFromPlan(plan("sglang", { site: { modelRoute: { enabled: true } }, form: { modelRoute: { enabled: false } } })).modelRoute).toBe(false);
+    // No layer: the fallback as before.
+    expect(formFromPlan(plan("sglang", { form: {} }))).toMatchObject({ modelRoute: false, scaler: false, slo: true, cart: true });
+  });
+
+  it("reads a video release's route and SLO the same way", () => {
+    const f = formFromPlan(plan("video", { defaults: { scaler: { enabled: true } }, site: { modelRoute: { enabled: true } }, form: { serviceId: "r" } }));
+    expect(f).toMatchObject({ modelRoute: true, slo: true });
+    expect(formFromPlan(plan("video", { form: { serviceId: "r" } }))).toMatchObject({ modelRoute: false, slo: false });
+  });
+});
+
+describe("an upgrade's shared volume size", () => {
+  it("stays empty when the release's form layer has none, so the request keeps the volume", () => {
+    const p = { release: { name: "h3", namespace: "v" }, engine: "video", layers: { form: { serviceId: "h3" } } } as unknown as Plan;
+    const f = formFromPlan(p);
+    expect(f.video.storageSize).toBe("");
+    const o = request(f, { formLayer: { serviceId: "h3" } }).overrides as Tree;
+    expect(o.sharedStorage).toBeUndefined();
+    // A fresh deploy still starts from the default.
+    expect(videoFields(undefined).storageSize).toBe("500Gi");
+  });
+});
+
+describe("clearing a custom route on upgrade", () => {
+  const layer = { modelRoute: { enabled: true, nginx: { route: "old-route" } } };
+
+  it("sends an emptied route as empty, for a video and an LLM release", () => {
+    expect((request(form({ modelRoute: true, route: "" }), { formLayer: layer }).overrides as Tree).modelRoute).toEqual({ enabled: true, nginx: { route: "" } });
+    const llm = planRequest({ ...EMPTY, serviceId: "m", modelRoute: true, route: "" }, { model: "m", formLayer: layer }).overrides as Record<string, { nginx?: { route?: string } }>;
+    expect(llm.modelRoute.nginx?.route).toBe("");
+  });
+
+  it("writes no route key when the release never had one", () => {
+    expect((request(form({ modelRoute: true, route: "" }), { formLayer: {} }).overrides as Tree).modelRoute).toEqual({ enabled: true });
+    const llm = planRequest({ ...EMPTY, serviceId: "m", modelRoute: true, route: "" }, { model: "m", formLayer: {} }).overrides as Record<string, { nginx?: Record<string, unknown> }>;
+    expect(llm.modelRoute.nginx).not.toHaveProperty("route");
+  });
+});
+
+describe("videoProblem refuses a zero", () => {
+  it("in an enabled pool's replicas, TP or Ulysses", () => {
+    for (const k of ["replicaCount", "tpSize", "ulyssesDegree"] as const) {
+      expect(videoProblem(withPool(fields(), "fl2va", { [k]: "0" }))).toEqual({ code: "zero" });
+    }
+    // A disabled pool's fields are not sent, so they are not checked.
+    expect(videoProblem(withPool(fields(), "ref2va", { enabled: false, tpSize: "0" }))).toBeUndefined();
+  });
+});
+
+describe("videoSeed", () => {
+  it("seeds a video variant once per values, clears on leaving it, and leaves an LLM deploy alone", () => {
+    let s = videoSeed(null, false, { a: 1 });
+    expect(s.action).toBeUndefined();
+    // The LLM variant's values change (another version): nothing to do, typed values stay.
+    expect(videoSeed(s.key, false, { a: 2 }).action).toBeUndefined();
+    s = videoSeed(s.key, true, { pools: {} });
+    expect(s.action).toBe("seed");
+    expect(videoSeed(s.key, true, { pools: {} }).action).toBeUndefined();
+    expect(videoSeed(s.key, true, { pools: { fl2va: {} } }).action).toBe("seed");
+    expect(videoSeed(s.key, false, undefined).action).toBe("clear");
+  });
+});
+
+describe("poolScalers", () => {
+  const obj = (kind: string, name: string, spec: object) => ({ ref: { kind, name }, live: { spec } }) as unknown as ObjectResult;
+  it("keeps the scalers of the pools whose JobSLO has a maximum", () => {
+    const objects = [
+      obj("JobSLORequirement", "a", { serviceId: "h3-fl2va" }),
+      obj("JobSLORequirement", "b", { serviceId: "h3-ref2va", maximumDeployment: { type: "replica", value: 2 } }),
+      obj("LLMScaler", "h3-fl2va", { customProvider: { serviceId: "h3-fl2va" } }),
+      obj("LLMScaler", "h3-ref2va", { customProvider: { serviceId: "h3-ref2va" } }),
+    ];
+    const { all, scaled } = poolScalers(objects);
+    expect(all.map((o) => o.ref.name)).toEqual(["h3-fl2va", "h3-ref2va"]);
+    expect(scaled.map((o) => o.ref.name)).toEqual(["h3-ref2va"]);
   });
 });

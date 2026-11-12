@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -28,7 +28,7 @@ import { ArrowRight, FlaskConical, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
 import { applyFlags, imageOf, reseed, siteSwitchDefaults, switchDefaults, videoForm, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
-import { videoProblem } from "@swiss/lib/video";
+import { videoProblem, videoSeed } from "@swiss/lib/video";
 import { EMPTY, formFromPlan, planRequest } from "../deployment-settings";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
 import { Provenance } from "@swiss/components/Provenance";
@@ -151,11 +151,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   if (current.data && !seedPlan) setSeedPlan(current.data);
   const deployModel = upgrade ? "" : target.model;
   const variantValues = entry.data?.variant.values;
-  const initial = useMemo<Form>(() => {
-    if (upgrade) return seedPlan ? formFromPlan(seedPlan) : EMPTY;
-    const fresh = { ...EMPTY, serviceId: defaultServiceId(deployModel) };
-    return video ? videoForm(fresh, variantValues) : fresh;
-  }, [upgrade, seedPlan, deployModel, video, variantValues]);
+  const initial = useMemo<Form>(() => (upgrade ? (seedPlan ? formFromPlan(seedPlan) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }), [upgrade, seedPlan, deployModel]);
   const initialRecovery = useMemo(() => recoverySettings(
     upgrade && seedPlan ? planValues(seedPlan) : mergeValues(entry.data?.variant.values, profile.data?.profile?.extra),
   ), [upgrade, seedPlan, entry.data?.variant.values, profile.data?.profile?.extra]);
@@ -174,7 +170,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   });
   useEffect(() => setForm(initial), [initial]);
   const [seed, setSeed] = useState<SwitchDefaults | null>(null);
-  const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: seed ? reseed(initial, {}, seed) : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
+  // A fresh video deploy's untouched form is the video seed, not EMPTY.
+  const baseline = !upgrade && video ? videoForm(initial, variantValues) : initial;
+  const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: seed ? reseed(baseline, {}, seed) : baseline, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
 
   const [step, setStep] = useState<"form" | "review">("form");
   const [submitted, setSubmitted] = useState(false);
@@ -203,6 +201,17 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
       setStep("form");
     }
   }, [seedReady, siteDefaults, variantValues, seed]);
+  // A video variant's own fields start from its values, merged into what is
+  // typed rather than resetting it; leaving a video variant takes them back off,
+  // GPU tolerations included, so an LLM deploy does not inherit them.
+  const seededVideo = useRef<string | null>(null);
+  useEffect(() => {
+    if (!seedReady) return;
+    const { key, action } = videoSeed(seededVideo.current, video, variantValues);
+    seededVideo.current = key;
+    if (action === "seed") setForm((f) => videoForm(f, variantValues));
+    else if (action === "clear") setForm((f) => ({ ...f, video: EMPTY.video, tolerations: EMPTY.tolerations }));
+  }, [seedReady, video, variantValues]);
 
   const typedId = form.serviceId;
   const release = upgrade ? target.release : typedId || defaultServiceId(target.model);
