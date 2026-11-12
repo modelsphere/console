@@ -1589,6 +1589,9 @@ extraArgs:
 
 const num = (v: string) => (v.trim() === "" ? undefined : Number(v));
 const strings = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+const at = (tree: Record<string, unknown> | undefined, path: string): unknown =>
+  path.split(".").reduce<unknown>((acc, k) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[k] : undefined), tree);
 
 function setPath(tree: Record<string, unknown>, path: string, value: unknown) {
   const keys = path.split(".");
@@ -1890,13 +1893,17 @@ export function planRequest(
 ): PlanRequest {
   const overrides: Record<string, unknown> = opts.video ? videoOverrides(f.video, opts.formLayer) : {};
   const on = effective(f);
+  // An upgrade lays the form over the release's form layer, where a key left
+  // out stays: a route emptied here is sent as "", which swissd and the charts
+  // read as unset, so it falls back to the service ID.
+  const hadRoute = !!str(at(opts.formLayer, "modelRoute.nginx.route"));
 
   if (opts.video) {
     // The one SLO switch is the pools' JobSLOs and their scalers together.
     overrides.scaler = { enabled: f.slo };
     overrides.sloRequirement = { enabled: f.slo };
-    const route = f.route.trim();
-    overrides.modelRoute = on.modelRoute && route ? { enabled: true, nginx: { route } } : { enabled: on.modelRoute };
+    const route = on.modelRoute ? f.route.trim() : "";
+    overrides.modelRoute = route || hadRoute ? { enabled: on.modelRoute, nginx: { route } } : { enabled: on.modelRoute };
   } else {
 
   // replicaCount and the scaler bounds are the same decision, so only the one
@@ -1922,6 +1929,7 @@ export function planRequest(
   const modelRoute: Record<string, unknown> = { enabled: on.modelRoute };
   const nginx: Record<string, unknown> = {};
   if (route) nginx.route = route;
+  else if (hadRoute) nginx.route = "";
 
   const nginxValues: Record<string, string> = {
     expose_routed_peer: f.exposeRoutedPeer ? "true" : "false",
@@ -2048,9 +2056,14 @@ export function formFromPlan(plan: Plan): Form {
     const v = at(path);
     return v === undefined || v === null ? "" : String(v);
   };
-  const bool = (path: string, fallback = false) => {
+  // A switch the form layer does not name is shown as the release runs it: the
+  // last layer that sets it, else the fallback. An API or older deploy leaves a
+  // switch to the site or the defaults, and an upgrade that read it as the
+  // fallback would turn it off unasked.
+  const sw = (path: string, fallback = false) => {
     const v = at(path);
-    return typeof v === "boolean" ? v : fallback;
+    if (typeof v === "boolean") return v;
+    return effectiveBool(plan, path) ?? fallback;
   };
   const nv = nginxValuesMap(at("modelRoute.nginx.values"));
 
@@ -2067,12 +2080,12 @@ export function formFromPlan(plan: Plan): Form {
       affinity: affinityRules(o),
       // Earlier forms wrote the service ID as the route; it reads back as empty.
       route: str("modelRoute.nginx.route") === str("serviceId") ? "" : str("modelRoute.nginx.route"),
-      modelRoute: bool("modelRoute.enabled"),
-      slo: bool(VIDEO_KEYS.scaler),
+      modelRoute: sw("modelRoute.enabled"),
+      slo: effectiveBool(plan, VIDEO_KEYS.sloRequirement) ?? effectiveBool(plan, VIDEO_KEYS.scaler) ?? false,
       // Earlier forms wrote these under sglang; the chart reads either.
       priorityClassName: str("priorityClassName") || str("sglang.priorityClassName"),
       schedulerName: str("schedulerName") || str("sglang.schedulerName"),
-      video: videoFields(o),
+      video: videoFields(o, { release: true }),
       edits: editsOf(plan),
     };
   }
@@ -2082,7 +2095,7 @@ export function formFromPlan(plan: Plan): Form {
     namespace: plan.release.namespace,
     serviceId: str("serviceId"),
     localPath: str("model.localPath"),
-    scaler: bool("scaler.enabled"),
+    scaler: sw("scaler.enabled"),
     scalerMin: str("scaler.minReplicas"),
     scalerMax: str("scaler.maxReplicas"),
     // The product sits under the vendor's own label key, so find it by suffix
@@ -2095,10 +2108,10 @@ export function formFromPlan(plan: Plan): Form {
     replicaCount: str("replicaCount"),
     route: str("modelRoute.nginx.route"),
     image: joinImage(str("image.repository"), str("image.tag")),
-    cart: bool("cart.enabled", true),
-    modelRoute: bool("modelRoute.enabled"),
-    slo: bool("sloRequirement.enabled", true),
-    serviceMonitor: bool("serviceMonitor.enabled"),
+    cart: sw("cart.enabled", true),
+    modelRoute: sw("modelRoute.enabled"),
+    slo: sw("sloRequirement.enabled", true),
+    serviceMonitor: sw("serviceMonitor.enabled"),
     priorityClassName: str("priorityClassName"),
     schedulerName: str("schedulerName"),
     exposeRoutedPeer: truthyStr(nv.expose_routed_peer, true),
@@ -2113,7 +2126,7 @@ export function formFromPlan(plan: Plan): Form {
       .map(([key, value]) => ({ key, value: String(value ?? "") })),
     backendMaxConcurrency: backendMaxConcurrencyOf(at("modelRoute.nginx.peers")),
     cartMaxLoad: str("modelRoute.cart.maxLoad"),
-    monitor: bool("modelRoute.monitor.enabled", true),
+    monitor: sw("modelRoute.monitor.enabled", true),
     monitorModel: str("modelRoute.monitor.model"),
     monitorGpuType: str("modelRoute.monitor.gpuType"),
     // What the release ran with, which the site may have decided rather than
@@ -2132,6 +2145,18 @@ export function formFromPlan(plan: Plan): Form {
 // The plan's edit layer as the editor's text.
 export function editsOf(plan: Plan): string {
   return plan.layers?.edit && Object.keys(plan.layers.edit).length > 0 ? toYamlish(plan.layers.edit) : "";
+}
+
+// effectiveBool is the boolean at path in the last plan layer that sets one,
+// form and edit included; undefined when no layer does (the chart's own
+// default is not a layer).
+function effectiveBool(plan: Plan, path: string): boolean | undefined {
+  let on: boolean | undefined;
+  for (const layer of layersOf(plan)) {
+    const v = at(plan.layers[layer] as Record<string, unknown> | undefined, path);
+    if (typeof v === "boolean") on = v;
+  }
+  return on;
 }
 
 function cacheOn(plan: Plan): boolean {
