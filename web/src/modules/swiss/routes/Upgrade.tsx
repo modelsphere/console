@@ -32,6 +32,7 @@ import { movableCatalogs } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
 import { CHECK_MS, inputRows, inputsAnswered, siteSaves } from "@swiss/lib/inputs";
 import { affinityInvalid } from "@swiss/lib/affinity";
+import { presetValues } from "@swiss/lib/formLayer";
 import { SiteSaves, useSiteSaver } from "@swiss/components/SiteSaves";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVersion";
@@ -171,7 +172,9 @@ export function Upgrade() {
           fromRelease: release,
           cacheUnsupported: !!cache.unsupported,
           inputs: entry.data?.variant.inputs,
+          preset: presetValues(profile.data?.profile, ""),
           formLayer: current.data!.layers?.form,
+          values: entry.data?.variant.values ?? current.data!.layers?.catalog,
         }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping

@@ -7,7 +7,7 @@ import { productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/g
 import { CHECK_MS, inputError, inputProblem, rememberable, setInputOverrides, type InputChoice, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, affinityRules, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
-import { overlay, withPreset } from "@swiss/lib/formLayer";
+import { editsWithEnv, envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
 import { toYaml } from "@swiss/lib/yaml";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
@@ -1812,6 +1812,9 @@ export function planRequest(
     // The release's form layer, on an upgrade: the form's values are put over
     // it, so the request carries the whole layer rebuilt.
     formLayer?: Record<string, unknown>;
+    // Lower-layer values (catalog + site extra) so env and pd.<role>.env lists
+    // in the form or edit layer merge by name instead of replacing catalog env.
+    values?: Record<string, unknown>;
   },
 ): PlanRequest {
   const overrides: Record<string, unknown> = {};
@@ -1910,8 +1913,9 @@ export function planRequest(
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
 
   setInputOverrides(overrides, opts.inputs, f.inputs);
-  const layer = withPreset(opts.formLayer ? overlay(opts.formLayer, overrides) : overrides, opts.preset);
+  const layer = withEnv(opts.values, withPreset(opts.formLayer ? overlay(opts.formLayer, overrides) : overrides, opts.preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
+  const edits = editsWithEnv(f.edits, envBase(opts.values, layer));
 
   return {
     catalog: opts.catalog || undefined,
@@ -1919,7 +1923,7 @@ export function planRequest(
     fromRelease: opts.fromRelease,
     chartVersion: opts.chartVersion || undefined,
     version: opts.version || undefined,
-    editsYAML: f.edits.trim() || undefined,
+    editsYAML: edits || undefined,
     gpuProducts: f.gpuProducts.length ? f.gpuProducts : undefined,
     forceGpuProducts: f.gpuProducts.length > 0 && opts.forceGpuProducts ? true : undefined,
     gpuResource: f.gpuResource || undefined,
@@ -2019,7 +2023,7 @@ export function formFromPlan(plan: Plan): Form {
     skipSchemaValidation: false,
     edits:
       plan.layers?.edit && Object.keys(plan.layers.edit).length > 0
-        ? toYamlish(plan.layers.edit)
+        ? toYaml(plan.layers.edit).trimEnd()
         : "",
   };
 }
@@ -2032,40 +2036,4 @@ function cacheOn(plan: Plan): boolean {
     if (typeof v === "boolean") on = v;
   }
   return on;
-}
-
-// The plan editor round-trips through text, so edits carried forward have to be
-// rendered back to YAML. Display-grade is enough: the server re-parses it.
-function toYamlish(tree: Record<string, unknown>): string {
-  return yamlLines(tree, 0).join("\n");
-}
-
-function yamlLines(value: Record<string, unknown>, indent: number): string[] {
-  const pad = " ".repeat(indent);
-  const out: string[] = [];
-  for (const [k, v] of Object.entries(value)) {
-    if (Array.isArray(v)) {
-      out.push(`${pad}${k}:`);
-      for (const item of v) {
-        if (item && typeof item === "object") {
-          const nested = yamlLines(item as Record<string, unknown>, indent + 4);
-          out.push(`${pad}  - ${nested[0].trim()}`, ...nested.slice(1));
-        } else {
-          out.push(`${pad}  - ${scalar(item)}`);
-        }
-      }
-    } else if (v && typeof v === "object") {
-      out.push(`${pad}${k}:`, ...yamlLines(v as Record<string, unknown>, indent + 2));
-    } else {
-      out.push(`${pad}${k}: ${scalar(v)}`);
-    }
-  }
-  return out;
-}
-
-function scalar(v: unknown): string {
-  if (typeof v === "string" && (v === "" || /[:#{}[\],&*?|<>=!%@`"']/.test(v))) {
-    return JSON.stringify(v);
-  }
-  return String(v);
 }

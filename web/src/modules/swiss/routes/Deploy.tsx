@@ -127,6 +127,7 @@ export function Deploy() {
           cacheUnsupported: !!cache.unsupported,
           inputs: model.data?.variant.inputs,
           preset: presetValues(profile.data?.profile, form.preset),
+          values: model.data?.variant.values,
         }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping

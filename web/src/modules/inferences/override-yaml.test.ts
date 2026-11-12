@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { loadedFor } from "./components/OverrideYaml";
 import { computedYaml, keyLines, mergeValues, overrideEdit, overridePaths, parseValues, readYaml, searchKeys } from "./override-yaml";
 
 const defaults = `# Engine replicas.
@@ -127,5 +128,53 @@ describe("mergeValues", () => {
     expect(mergeValues(layers, { image: { pullPolicy: "Always" }, probe: { port: null }, flags: ["--x"] })).toEqual({
       replicaCount: 2, image: { tag: "catalog", pullPolicy: "Always" }, probe: { port: null }, flags: ["--x"],
     });
+  });
+
+  it("loadedFor merges edit.yaml env and pd.<role>.env over swissd's layers by name", () => {
+    const helmValues = {
+      defaults: "env: []\npd:\n  decode:\n    env: []\n",
+      overrides: [
+        "env:",
+        "  - name: CAT_A",
+        '    value: "1"',
+        "  - name: CAT_B",
+        '    value: "2"',
+        "pd:",
+        "  decode:",
+        "    env:",
+        "      - name: DEC_A",
+        "        value: old",
+      ].join("\n"),
+      layers: {},
+    };
+    const editsText = [
+      "env:",
+      "  - name: CAT_B",
+      '    value: "20"',
+      "  - name: EDIT_C",
+      '    value: "3"',
+      "pd:",
+      "  decode:",
+      "    env:",
+      "      - name: DEC_B",
+      "        value: added",
+    ].join("\n");
+    const loaded = loadedFor(helmValues, editsText)!;
+    expect(loaded.edits).toEqual({
+      env: [
+        { name: "CAT_A", value: "1" },
+        { name: "CAT_B", value: "20" },
+        { name: "EDIT_C", value: "3" },
+      ],
+      pd: {
+        decode: {
+          env: [
+            { name: "DEC_A", value: "old" },
+            { name: "DEC_B", value: "added" },
+          ],
+        },
+      },
+    });
+    expect(loaded.base.env).toEqual(loaded.edits.env);
   });
 });

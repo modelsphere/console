@@ -20,6 +20,7 @@ import {
 } from "@modelsphere/ui";
 import { Pencil } from "lucide-react";
 import type { HelmValues } from "@swiss/lib/api";
+import { editsWithEnv, withEnv } from "@swiss/lib/formLayer";
 import { useT } from "@/modules/inferences/i18n";
 import { KeySearch } from "./KeySearch";
 import { YamlTextarea, type YamlTextareaHandle } from "./YamlTextarea";
@@ -82,6 +83,7 @@ export function OverrideYaml({ value, onChange, source }: {
 
 interface Loaded {
   values: HelmValues;
+  layers: Values;
   // The overrides merged in, and swissd's layers with them over.
   edits: Values;
   overrides: string;
@@ -92,12 +94,13 @@ interface Loaded {
 
 // The tabs for these overrides: merged over swissd's layers, as the edit layer
 // is, and those over the chart's values.
-function loadedFor(values: HelmValues, editsText: string): Loaded | undefined {
+export function loadedFor(values: HelmValues, editsText: string): Loaded | undefined {
   try {
-    const edits = parseValues(editsText);
-    const overrides = valuesYaml(mergeValues(parseValues(values.overrides), edits));
+    const layers = parseValues(values.overrides);
+    const edits = withEnv(layers, parseValues(editsText));
+    const overrides = valuesYaml(mergeValues(layers, edits));
     const computed = computedYaml(values.defaults, overrides);
-    return { values, edits, overrides, computed, base: parseValues(computed) };
+    return { values, layers, edits, overrides, computed, base: parseValues(computed) };
   } catch {
     return undefined;
   }
@@ -111,9 +114,9 @@ function OverrideDialog({ value, source, onClose, onSave }: {
 }) {
   const t = useT();
   const o = (k: string, params?: Record<string, string | number>) => t(`deploy.overrides.${k}`, params);
-  const [draft, setDraft] = useState(value);
   // Values read earlier for this form open the tabs straight away.
   const [loaded, setLoaded] = useState(() => (source?.data ? loadedFor(source.data, value) : undefined));
+  const [draft, setDraft] = useState(() => (loaded ? editsWithEnv(value, loaded.layers) : value));
   const [final, setFinal] = useState(() => loaded?.computed ?? "");
   // Values that arrive with the dialog open, as when the form settles onto a
   // request read before, fill the tabs with the overrides as they stand.
@@ -121,6 +124,7 @@ function OverrideDialog({ value, source, onClose, onSave }: {
     if (loaded || !source?.data) return;
     const l = loadedFor(source.data, draft);
     if (!l) return;
+    setDraft(editsWithEnv(draft, l.layers));
     setLoaded(l);
     setFinal(l.computed);
   }, [source?.data]);
@@ -143,9 +147,9 @@ function OverrideDialog({ value, source, onClose, onSave }: {
   const overridesNow = (): string | undefined => {
     const now = readYaml(text).values;
     if (!now) return undefined;
-    if (!onFinal || !loaded) return draft;
+    if (!onFinal || !loaded) return loaded ? editsWithEnv(draft, loaded.layers) : draft;
     const e = overrideEdit(loaded.base, loaded.edits, now);
-    return e.changes ? valuesYaml(e.edits) : draft;
+    return e.changes ? valuesYaml(e.edits) : editsWithEnv(draft, loaded.layers);
   };
   // Rebuilds the merged tabs over these overrides, with the values already read.
   const rebuild = (edits: string) => {
@@ -169,10 +173,10 @@ function OverrideDialog({ value, source, onClose, onSave }: {
   const loadValues = async () => {
     const edits = overridesNow();
     if (edits === undefined || !source) return;
-    setDraft(edits);
     const values = await source.load();
     const l = values && loadedFor(values, edits);
     if (!l) return;
+    setDraft(editsWithEnv(edits, l.layers));
     setLoaded(l);
     setFinal(l.computed);
     setTab("final");
