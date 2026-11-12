@@ -128,6 +128,7 @@ export function Deploy() {
           inputs: model.data?.variant.inputs,
           preset: presetValues(profile.data?.profile, form.preset),
           values: model.data?.variant.values,
+          siteEnv: profile.data?.profile?.extra,
         }),
       ),
     // The previous plan is superseded the moment a recompose starts. Dropping

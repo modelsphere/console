@@ -1812,9 +1812,8 @@ export function planRequest(
     // The release's form layer, on an upgrade: the form's values are put over
     // it, so the request carries the whole layer rebuilt.
     formLayer?: Record<string, unknown>;
-    // Lower-layer values (catalog + site extra) so env and pd.<role>.env lists
-    // in the form or edit layer merge by name instead of replacing catalog env.
     values?: Record<string, unknown>;
+    siteEnv?: Record<string, unknown>;
   },
 ): PlanRequest {
   const overrides: Record<string, unknown> = {};
@@ -1913,9 +1912,11 @@ export function planRequest(
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
 
   setInputOverrides(overrides, opts.inputs, f.inputs);
-  const layer = withEnv(opts.values, withPreset(opts.formLayer ? overlay(opts.formLayer, overrides) : overrides, opts.preset));
+  const siteEnv = envBase(opts.siteEnv);
+  const preset = Object.keys(siteEnv).length ? (opts.preset ? withPreset(opts.preset, siteEnv) : siteEnv) : opts.preset;
+  const layer = withEnv(opts.values, withPreset(opts.formLayer ? overlay(opts.formLayer, overrides) : overrides, preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
-  const edits = editsWithEnv(f.edits, envBase(opts.values, layer));
+  const edits = editsWithEnv(f.edits, envBase(opts.values, siteEnv, layer));
 
   return {
     catalog: opts.catalog || undefined,

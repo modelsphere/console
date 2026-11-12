@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { loadedFor } from "./components/OverrideYaml";
 import { computedYaml, keyLines, mergeValues, overrideEdit, overridePaths, parseValues, readYaml, searchKeys } from "./override-yaml";
 
 const defaults = `# Engine replicas.
@@ -130,24 +129,20 @@ describe("mergeValues", () => {
     });
   });
 
-  it("loadedFor merges edit.yaml env and pd.<role>.env over swissd's layers by name", () => {
-    const helmValues = {
-      defaults: "env: []\npd:\n  decode:\n    env: []\n",
-      overrides: [
-        "env:",
-        "  - name: CAT_A",
-        '    value: "1"',
-        "  - name: CAT_B",
-        '    value: "2"',
-        "pd:",
-        "  decode:",
-        "    env:",
-        "      - name: DEC_A",
-        "        value: old",
-      ].join("\n"),
-      layers: {},
-    };
-    const editsText = [
+  it("merges edit.yaml env and pd.<role>.env over swissd's layers by name", () => {
+    const layers = parseValues([
+      "env:",
+      "  - name: CAT_A",
+      '    value: "1"',
+      "  - name: CAT_B",
+      '    value: "2"',
+      "pd:",
+      "  decode:",
+      "    env:",
+      "      - name: DEC_A",
+      "        value: old",
+    ].join("\n"));
+    const edits = parseValues([
       "env:",
       "  - name: CAT_B",
       '    value: "20"',
@@ -158,9 +153,8 @@ describe("mergeValues", () => {
       "    env:",
       "      - name: DEC_B",
       "        value: added",
-    ].join("\n");
-    const loaded = loadedFor(helmValues, editsText)!;
-    expect(loaded.edits).toEqual({
+    ].join("\n"));
+    expect(mergeValues(layers, edits)).toEqual({
       env: [
         { name: "CAT_A", value: "1" },
         { name: "CAT_B", value: "20" },
@@ -175,6 +169,5 @@ describe("mergeValues", () => {
         },
       },
     });
-    expect(loaded.base.env).toEqual(loaded.edits.env);
   });
 });

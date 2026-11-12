@@ -9,41 +9,21 @@ export const isMap = (v: unknown): v is Tree => !!v && typeof v === "object" && 
 const canon = (v: unknown) =>
   JSON.stringify(v, (_, x: unknown) => (isMap(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
 
-const isEnvPath = (path: string) => path === "env" || /^pd\.[^.]+\.env$/.test(path);
-
-const envName = (v: unknown): string | undefined =>
-  isMap(v) && typeof v.name === "string" && v.name ? v.name : undefined;
-
-function cleanEnvItem(v: unknown): unknown {
-  if (!isMap(v)) return v;
-  const copy = structuredClone(v);
-  if (copy.value === null && "valueFrom" in copy) delete copy.value;
-  return copy;
-}
-
 // mergeEnv merges over onto base by env var name: a matching name replaces the
 // existing entry in place (preserving order, whether value or valueFrom), and a
-// new name appends at the end.
+// new name appends at the end. Note: because entries merge by name, a catalog
+// or site extra env var can be overridden in place by form/edit layers but not
+// deleted from the list.
 export function mergeEnv(base: unknown[], over: unknown[]): unknown[] {
   const out: unknown[] = [];
   const byName = new Map<string, number>();
-  const seen = new Set<string>();
   for (const item of [...base, ...over]) {
-    const entry = cleanEnvItem(item);
-    const name = envName(entry);
-    if (name !== undefined) {
-      const at = byName.get(name);
-      if (at !== undefined) out[at] = entry;
-      else {
-        byName.set(name, out.length);
-        out.push(entry);
-      }
-    } else {
-      const c = canon(entry);
-      if (!seen.has(c)) {
-        seen.add(c);
-        out.push(entry);
-      }
+    const name = isMap(item) && typeof item.name === "string" ? item.name : "";
+    const at = name ? byName.get(name) : undefined;
+    if (at !== undefined) out[at] = item;
+    else {
+      if (name) byName.set(name, out.length);
+      out.push(item);
     }
   }
   return out;
@@ -54,14 +34,14 @@ export function envBase(...trees: (Tree | undefined)[]): Tree {
   for (const t of trees) {
     if (!isMap(t)) continue;
     if (Array.isArray(t.env)) {
-      out.env = Array.isArray(out.env) ? mergeEnv(out.env, t.env) : mergeEnv([], t.env);
+      out.env = mergeEnv(Array.isArray(out.env) ? out.env : [], t.env);
     }
     if (isMap(t.pd)) {
       for (const [role, rv] of Object.entries(t.pd)) {
         if (!isMap(rv) || !Array.isArray(rv.env)) continue;
         const pd = (isMap(out.pd) ? out.pd : (out.pd = {})) as Tree;
         const cur = (isMap(pd[role]) ? pd[role] : (pd[role] = {})) as Tree;
-        cur.env = Array.isArray(cur.env) ? mergeEnv(cur.env, rv.env) : mergeEnv([], rv.env);
+        cur.env = mergeEnv(Array.isArray(cur.env) ? cur.env : [], rv.env);
       }
     }
   }
@@ -93,11 +73,10 @@ export function editsWithEnv(editsYAML: string, base: Tree | undefined): string 
   if (!trimmed) return "";
   try {
     const doc = parseDocument(trimmed, { uniqueKeys: true });
-    if (doc.errors.length || doc.warnings.length || !isYamlMap(doc.contents)) return trimmed;
-    const parsed: unknown = doc.toJS({ maxAliasCount: 100 });
-    if (!isMap(parsed)) return trimmed;
+    if (doc.errors.length || !isYamlMap(doc.contents)) return trimmed;
+    const parsed = doc.toJS() as Tree;
     const merged = withEnv(base, parsed);
-    if (merged === parsed || canon(merged) === canon(parsed)) return trimmed;
+    if (merged === parsed) return trimmed;
     if (Array.isArray(merged.env)) doc.setIn(["env"], doc.createNode(merged.env));
     if (isMap(merged.pd)) {
       for (const [role, rv] of Object.entries(merged.pd)) {
@@ -111,17 +90,14 @@ export function editsWithEnv(editsYAML: string, base: Tree | undefined): string 
 }
 
 export function presetValues(profile: SiteProfile | undefined, name: string): Tree | undefined {
-  const extra = envBase(profile?.extra);
-  const preset = name ? profile?.presets?.[name]?.values : undefined;
-  if (!Object.keys(extra).length) return preset;
-  return preset ? withPreset(structuredClone(preset), extra) : extra;
+  return name ? profile?.presets?.[name]?.values : undefined;
 }
 
 // withPreset puts the form's values over a preset's: maps merge, a list keeps
 // the preset's items and adds the form's it lacks, and a scalar the form sets
 // wins.
 export function withPreset(overrides: Tree, preset: Tree | undefined): Tree {
-  return preset ? merge(structuredClone(preset), overrides, true) : overrides;
+  return preset ? withEnv(preset, merge(structuredClone(preset), overrides, true)) : overrides;
 }
 
 // overlay is a release's form layer with the form's values over it, as an
@@ -131,14 +107,11 @@ export function overlay(layer: Tree, overrides: Tree): Tree {
   return merge(structuredClone(layer), overrides, false);
 }
 
-function merge(base: Tree, over: Tree, union: boolean, path = ""): Tree {
+function merge(base: Tree, over: Tree, union: boolean): Tree {
   for (const [k, v] of Object.entries(over)) {
-    const p = path ? `${path}.${k}` : k;
     const b = base[k];
     if (isMap(b) && isMap(v)) {
-      merge(b, v, union, p);
-    } else if (Array.isArray(b) && Array.isArray(v) && isEnvPath(p)) {
-      base[k] = mergeEnv(b, v);
+      merge(b, v, union);
     } else if (union && Array.isArray(b) && Array.isArray(v)) {
       const seen = new Set(b.map(canon));
       for (const item of v) {

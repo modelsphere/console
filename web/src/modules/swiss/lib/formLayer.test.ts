@@ -171,7 +171,7 @@ describe("env and pd.<role>.env merging", () => {
     ];
     const over = [
       { name: "B", value: "10.0.0.1" },
-      { name: "C", value: null, valueFrom: { fieldRef: { fieldPath: "metadata.name" } } },
+      { name: "C", valueFrom: { fieldRef: { fieldPath: "metadata.name" } } },
     ];
     expect(mergeEnv(base, over)).toEqual([
       { name: "A", value: "1" },
@@ -203,7 +203,7 @@ describe("env and pd.<role>.env merging", () => {
     };
     const req = planRequest(
       { ...EMPTY, preset: "roce" },
-      { model: "m", preset, values: envBase(catalogValues, siteExtra) },
+      { model: "m", preset, values: catalogValues, siteEnv: siteExtra },
     );
     expect(req.overrides!.env).toEqual([
       { name: "NCCL_IB_QPS_PER_CONNECTION", value: "16" },
