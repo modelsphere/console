@@ -8,11 +8,8 @@ The ModelSphere community portal. A full-stack BFF that **owns identity** and
 
 ## Login failures
 
-| Failure | Token endpoint | Login page |
-|---|---|---|
-| Missing or invalid credentials, unknown or inactive user | `401 invalid_grant` | Generic incorrect-credentials message |
-| Kubernetes user lookup or token issuance fails | `500 server_error`; cause in server logs, service-failure audit reason | Service-unavailable guidance; check connectivity/VPN or contact an administrator |
-| Browser cannot reach the endpoint, or receives an unusable response | No session is stored | The same service-unavailable guidance |
+Only `401 invalid_grant` is shown as incorrect credentials; lookup, token issuance, and connectivity failures show service-unavailable guidance.
+Server logs retain the cause; the client receives no internal error details.
 
 ## Why a separate service (not part of swiss)
 
