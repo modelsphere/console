@@ -95,7 +95,7 @@ export function VideoSettings({
                   : "the shared asset volume; must support ReadWriteMany (CephFS, NFS). Empty uses the cluster default"
               }
             >
-              <Input value={value.storageClass} onChange={(e) => set({ storageClass: e.target.value })} disabled={lockIdentity} aria-label="storage class" placeholder={lockIdentity ? "kept" : "cluster default"} />
+              <Input value={value.storageClass} onChange={(e) => set({ storageClass: e.target.value })} disabled={lockIdentity} aria-label="storage class" placeholder={lockIdentity && value.current?.storageClass ? value.current.storageClass : "cluster default"} />
             </Row>
           )}
           <Row
@@ -106,11 +106,11 @@ export function VideoSettings({
                 : "a quota, not a reservation; a CephFS volume grows in place but never shrinks"
             }
           >
-            <Input value={value.storageSize} onChange={(e) => set({ storageSize: e.target.value })} aria-label="storage size" placeholder={lockIdentity ? "kept" : DEFAULTS.storageSize} />
+            <Input value={value.storageSize} onChange={(e) => set({ storageSize: e.target.value })} aria-label="storage size" placeholder={lockIdentity ? `currently ${value.current?.storageSize || DEFAULTS.storageSize}; empty keeps it` : DEFAULTS.storageSize} />
           </Row>
           <Row
             label="Database URL"
-            note={value.databaseKept ? "the release sets one already: empty keeps it" : "empty uses the chart's default, the platform's PostgreSQL"}
+            note={value.databaseKept ? "the release sets one already: empty keeps it" : "empty gives this service a database of its own on the platform's PostgreSQL"}
           >
             <Input
               type="password"
@@ -118,7 +118,7 @@ export function VideoSettings({
               value={value.databaseUrl}
               onChange={(e) => set({ databaseUrl: e.target.value })}
               aria-label="database URL"
-              placeholder={value.databaseKept ? "kept" : "postgresql://user:password@host:5432/minimaxh3"}
+              placeholder={value.databaseKept ? "keeps the current setting" : "postgresql://user:password@host:5432/minimaxh3"}
             />
           </Row>
         </CardContent>

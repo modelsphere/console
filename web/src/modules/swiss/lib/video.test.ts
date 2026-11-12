@@ -113,6 +113,15 @@ describe("videoFields and formFromPlan", () => {
     expect(request({ ...back, video: { ...back.video, databaseUrl: "postgresql://secret" } }).overrides).toEqual(request({ ...f, namespace: "video" }).overrides);
   });
 
+  it("reads what a release's shared volume is now from every layer, for the empty upgrade fields", () => {
+    const plan = { release: { name: "h3", namespace: "video" }, engine: "video", layers: { derived: { sharedStorage: { storageClass: "ceph-filesystem" } }, form: { serviceId: "h3" } } } as unknown as Plan;
+    const back = formFromPlan(plan);
+    expect(back.video.current).toEqual({ storageSize: "500Gi", storageClass: "ceph-filesystem" });
+    expect(back.video.storageSize).toBe("");
+    // Display only: nothing of it is written.
+    expect(JSON.stringify(request(back).overrides)).not.toContain("ceph-filesystem");
+  });
+
   it("reads an earlier form's sglang.* scheduling keys and a route equal to the service ID", () => {
     const plan = {
       release: { name: "h3", namespace: "video" },

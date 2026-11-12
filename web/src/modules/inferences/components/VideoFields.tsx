@@ -21,15 +21,19 @@ export function VideoStorage({ value, onChange, upgrade, classInput }: Props & {
   const f = (k: string) => t(`deploy.video.${k}`);
   const shown = (v: string, fallback: string) => v || fallback;
   const set = (patch: Partial<VideoFields>) => onChange({ ...value, ...patch });
+  // On an upgrade an empty field keeps what the release has: say what that is.
+  const now = value.current;
+  const sizeNow = upgrade ? t("deploy.video.storageSizeCurrent", { size: now?.storageSize || DEFAULTS.storageSize }) : DEFAULTS.storageSize;
+  const classNow = upgrade && now?.storageClass ? now.storageClass : f("storageClassDefault");
   return (
     <>
       {!classInput && (
-        <FloatingField value={shown(value.storageClass, upgrade ? f("databaseKept") : f("storageClassDefault"))} label={f("storageClass")} hint={upgrade ? f("storageClassLocked") : f("storageClassHint")} disabled={upgrade}>
-          <FieldInput value={value.storageClass} onChange={(e) => set({ storageClass: e.target.value })} placeholder={upgrade ? f("databaseKept") : f("storageClassDefault")} disabled={upgrade} />
+        <FloatingField value={shown(value.storageClass, classNow)} label={f("storageClass")} hint={upgrade ? f("storageClassLocked") : f("storageClassHint")} disabled={upgrade}>
+          <FieldInput value={value.storageClass} onChange={(e) => set({ storageClass: e.target.value })} placeholder={classNow} disabled={upgrade} />
         </FloatingField>
       )}
-      <FloatingField value={shown(value.storageSize, upgrade ? f("databaseKept") : DEFAULTS.storageSize)} label={f("storageSize")} hint={upgrade ? f("storageSizeGrowOnly") : f("storageSizeHint")}>
-        <FieldInput value={value.storageSize} onChange={(e) => set({ storageSize: e.target.value })} placeholder={upgrade ? f("databaseKept") : DEFAULTS.storageSize} />
+      <FloatingField value={shown(value.storageSize, sizeNow)} label={f("storageSize")} hint={upgrade ? f("storageSizeGrowOnly") : f("storageSizeHint")}>
+        <FieldInput value={value.storageSize} onChange={(e) => set({ storageSize: e.target.value })} placeholder={sizeNow} />
       </FloatingField>
       <FloatingField value={shown(value.databaseUrl, value.databaseKept ? f("databaseKept") : f("databaseDefault"))} label={f("database")} hint={value.databaseKept ? f("databaseKeptHint") : f("databaseHint")}>
         <FieldInput type="password" autoComplete="off" value={value.databaseUrl} onChange={(e) => set({ databaseUrl: e.target.value })} placeholder={value.databaseKept ? f("databaseKept") : f("databaseDefault")} />
