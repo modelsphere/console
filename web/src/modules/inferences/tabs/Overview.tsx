@@ -18,7 +18,7 @@ import { isUninstalling } from "@swiss/lib/phase";
 import { AccessPoint } from "@swiss/components/Endpoint";
 import { useT } from "@/modules/inferences/i18n";
 import { isVideo } from "@swiss/lib/video";
-import { installSteps, modelLine, releaseState, type Step, type StepState } from "@/modules/inferences/lib";
+import { installSteps, modelLine, releaseState, videoScalerStep, type Step, type StepState } from "@/modules/inferences/lib";
 import { StatusDot } from "@/modules/inferences/components/StatusDot";
 import { InstallMethodLabel } from "@/modules/inferences/components/InstallMethodLabel";
 import { LoadHint } from "@/modules/inferences/components/LoadHint";
@@ -67,6 +67,7 @@ export function Overview({
     pick<LLMScalerSpec, LLMScalerStatus>(objects, "LLMScaler"),
     objectsUnreadable,
     autoscale,
+    isVideo(plan?.engine) ? videoScalerStep(objects) : undefined,
   );
   const updated = p?.updatedAt ?? p?.startedAt;
   const catalog = source && [source.catalogName ?? source.catalog, source.ref].filter(Boolean).join(" @ ");

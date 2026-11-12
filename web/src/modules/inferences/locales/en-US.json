@@ -200,7 +200,8 @@
       "failingMessage": "{reason}: {message}",
       "noDecision": "No decision yet",
       "scaling": "{cur} → {want} replicas",
-      "steady": "{n} replicas, steady"
+      "steady": "{n} replicas, steady",
+      "unmanaged": "not scaled: no pool has a maximum"
     },
     "pdScale": {
       "label": "PD autoscaling",

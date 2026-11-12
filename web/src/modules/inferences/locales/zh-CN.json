@@ -189,7 +189,8 @@
       "failingMessage": "{reason}：{message}",
       "noDecision": "还没有伸缩决策",
       "scaling": "{cur} → {want} 副本",
-      "steady": "{n} 副本，稳定"
+      "steady": "{n} 副本，稳定",
+      "unmanaged": "未设最大副本数，不扩缩"
     },
     "pdScale": {
       "label": "PD 自动伸缩",
