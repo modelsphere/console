@@ -11,7 +11,7 @@ import { ReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { Endpoint } from "@swiss/components/Endpoint";
 import { Provenance } from "@swiss/components/Provenance";
 import { useT } from "@/modules/inferences/i18n";
-import { externalLLMService, modelLine, parseTab, releaseState, sloBlocked, visibleTabs, type Tab } from "@/modules/inferences/lib";
+import { modelLine, parseTab, releaseState, sloBlocked, visibleTabs, type Tab } from "@/modules/inferences/lib";
 import { statusOf } from "@/modules/inferences/components/StatusDot";
 import { DeploySheet } from "@/modules/inferences/components/DeploySheet";
 import { UninstallDialog } from "@/modules/inferences/components/UninstallDialog";
@@ -104,7 +104,7 @@ export function InferenceDetail() {
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
   const removing = isUninstalling(s);
   const blockedWrite = readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
-  const external = externalLLMService(s, plan.data);
+  const external = s.external;
   const untracked = !plan.data && plan.isError;
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;

@@ -737,6 +737,8 @@ export interface ReleaseStatus {
   planStatus?: PlanStatus;
   // Set when swiss manages the release; it never changes after install.
   backend?: ApplyWith;
+  // An LLMService swiss did not write.
+  external?: boolean;
   // An LLMService swiss wrote was edited outside swiss.
   editedInPlace?: boolean;
   // Present on the llmsvc backend. phase is "uninstalling" while the LLMService

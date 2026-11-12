@@ -41,7 +41,6 @@ import { SLODialog } from "@swiss/components/SLOCard";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { METHODS } from "@swiss/components/InstallMethod";
 import { isUninstalling } from "@swiss/lib/phase";
-import { externalLLMService } from "@/modules/inferences/lib";
 import { cn, timeAgo } from "@swiss/lib/utils";
 
 export function DeploymentDetail() {
@@ -85,7 +84,7 @@ export function DeploymentDetail() {
 
   const s = status.data;
   const removing = isUninstalling(s);
-  const external = externalLLMService(s, plan.data);
+  const external = s.external;
   const showSLO = !removing && s.planStatus?.phase === "applied" && sloEnabled(plan.data);
   const openSLO = () => setSloOpen(true);
 

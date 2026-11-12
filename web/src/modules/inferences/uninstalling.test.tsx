@@ -162,7 +162,7 @@ describe("inference detail write actions", () => {
 
 describe("an external LLMService", () => {
   it("disables upgrade and SLO edit on the detail page and leaves uninstall", () => {
-    const html = renderDetail(release({ backend: "llmsvc" }));
+    const html = renderDetail(release({ external: true }));
     for (const label of ["升级", "编辑 SLO"]) {
       const found = button(html, label);
       expect(found?.disabled, label).toBe(true);
