@@ -33,12 +33,12 @@ function page(engine: string, chart: string) {
 }
 
 describe("Deploy page", () => {
-  it("shows the video settings for a video variant, and none of the LLM sections", () => {
+  it("shows the LLM form with the video settings for a video variant, and none of the LLM-only sections", () => {
     const text = page("video", "minimax-h3");
-    for (const want of ["Video deploy settings", "Pools", "FL2VA", "Ref2VA", "Turbo", "Autoscaling", "Storage and database", "8 GPU s in total"]) {
+    for (const want of ["Deploy settings", "Service ID", "Route path", "Model path", "Namespace", "Autoscale / SLO", "Pools", "FL2VA", "Ref2VA", "Turbo", "Storage and database", "8 GPU s in total"]) {
       expect(text).toContain(want);
     }
-    for (const llmOnly of ["Routing options", "CART", "Expose routed peer", "Adaptive concurrency", "TTFT limit", "Compile cache", "Model path"]) {
+    for (const llmOnly of ["Routing options", "CART", "Expose routed peer", "Adaptive concurrency", "TTFT limit", "Compile cache", "ServiceMonitor"]) {
       expect(text).not.toContain(llmOnly);
     }
   });
@@ -46,6 +46,6 @@ describe("Deploy page", () => {
   it("keeps the LLM settings for an LLM variant", () => {
     const text = page("sglang", "sglang");
     for (const want of ["Deploy settings", "Routing options", "CART", "SLO requirement"]) expect(text).toContain(want);
-    expect(text).not.toContain("Video deploy settings");
+    expect(text).not.toContain("Storage and database");
   });
 });

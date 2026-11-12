@@ -1,4 +1,4 @@
-// Every chart value key and default the video deploy form writes or assumes,
+// Every chart value key and default the video part of the deploy form writes or assumes,
 // in one place so they follow the video chart (minimax-h3) when it renames one.
 // Nothing else in the console spells these paths.
 
@@ -26,20 +26,16 @@ export const KEYS = {
   storageClass: "sharedStorage.storageClass",
   storageSize: "sharedStorage.size",
   databaseUrl: "database.url",
-  // One "Autoscale / SLO" switch turns both on or off. The chart then gives each
-  // pool a JobSLORequirement with no maximum, which is not scaled until the SLO
-  // card sets one; the deploy form writes no per-pool SLO keys.
+  // The LLM form's SLO switch writes both, as it does for an LLM. The chart then
+  // gives each pool a JobSLORequirement with no maximum, which is not scaled
+  // until the SLO card sets one; the deploy form writes no per-pool SLO keys.
   scaler: "scaler.enabled",
   sloRequirement: "sloRequirement.enabled",
-  modelRouteEnabled: "modelRoute.enabled",
-  // Written only when typed: the chart and swissd both fall back to serviceId.
-  route: "modelRoute.nginx.route",
-  // Scheduling of the GPU pods, which the chart reads over the top-level keys;
-  // the router and a CPU-only server keep their own.
+  // The GPU pods' tolerations. The chart has no top-level tolerations (the
+  // router runs on any node), so this one key differs from an LLM deploy's;
+  // priorityClassName, schedulerName and affinity are the top-level keys an
+  // LLM deploy writes, which the chart takes for the GPU pods.
   tolerations: "sglang.tolerations",
-  priorityClassName: "sglang.priorityClassName",
-  schedulerName: "sglang.schedulerName",
-  gpuProduct: "sglang.gpuProduct",
 } as const;
 
 export const DEFAULTS = {
