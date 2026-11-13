@@ -3,7 +3,10 @@ package iam
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // ErrAuth is returned for every credential failure, without distinguishing
@@ -45,8 +48,11 @@ func (a *Authenticator) Login(ctx context.Context, username, password string) (*
 		return nil, newAuthFailure("username or password missing")
 	}
 	u, err := a.store.GetUser(ctx, username)
-	if err != nil {
+	if apierrors.IsNotFound(err) {
 		return nil, newAuthFailure("user not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get user: %w", err)
 	}
 	if u.Status.State != "" && u.Status.State != UserActive {
 		return nil, newAuthFailure("user is not active")
