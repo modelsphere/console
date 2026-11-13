@@ -158,10 +158,9 @@ describe("image override", () => {
       />,
     );
 
-  it("keeps Images collapsed until opened, with the engine image still in the form", () => {
+  it("merges Images directly into Resources and scheduling without a standalone collapsible card", () => {
     const html = render({ ...EMPTY, serviceId: "model", images: { image: image.site } });
-    const button = /<button[^>]*aria-expanded="([^"]+)"[^>]*>(?:(?!<\/button>)[\s\S])*镜像[\s\S]*?<\/button>/.exec(html);
-    expect(button?.[1]).toBe("false");
+    expect(html).not.toMatch(/<button[^>]*aria-expanded="[^"]+"[^>]*>(?:(?!<\/button>)[\s\S])*(Images|镜像)[\s\S]*?<\/button>/);
     expect(html).toContain(`value="${image.site}"`);
   });
 

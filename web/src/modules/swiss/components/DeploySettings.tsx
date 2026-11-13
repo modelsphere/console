@@ -856,12 +856,11 @@ export function DeploySettings({
               {!cache.unsupported && form.cache && <CacheFields form={form} onChange={onChange} defaults={cache.defaults} />}
             </Row>
           )}
+          <ImageRows form={form} onChange={onChange} image={image} imageMirror={imageMirror} slots={slots} error={slotsError} />
 
         </div>
 
       </details>
-
-      <ImagesSection form={form} onChange={onChange} image={image} imageMirror={imageMirror} slots={slots} error={slotsError} />
 
       <Card>
         <CardHeader>
@@ -944,9 +943,9 @@ function Row({
 
 const IMAGE_SOURCE_LABELS = { aria: "image source", site: "site mirror", catalog: "catalog original", default: "default", custom: "custom", inherited: "inherited" };
 
-// One row per chart image. Empty keeps the image shown as the placeholder;
+// One row per chart image inside Advanced. Empty keeps the image shown as the placeholder;
 // a typed ref is the form layer. Every slot offers site mirror vs default when mirrored.
-function ImagesSection({
+function ImageRows({
   form,
   onChange,
   image,
@@ -963,39 +962,32 @@ function ImagesSection({
 }) {
   const rows = imageRows(slots, image, form.images);
   return (
-    <details className="group rounded-lg border bg-card">
-      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
-        Images
-        <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
-      </summary>
-      <div className="border-t px-4 py-3">
-        <p className="text-sm text-muted-foreground">
-          Each row is a values path. Empty keeps the image in the placeholder; a value is written on the form layer.
-        </p>
-        {error && <p className="mt-2 text-xs text-warning">{error.message}</p>}
-      </div>
-      <div className="divide-y border-t px-4">
-        {rows.map((slot) => {
-          const value = imageText(form.images[slot.path]);
-          const set = (raw: string) => onChange({ images: imagePatch(form.images, slot.path, slot.kind, raw) });
-          const choices = slotImageChoices(slot, image, imageMirror);
-          return (
-            <Row key={slot.path} label={slot.path}>
-              <div className="w-full min-w-0 space-y-1.5 py-1">
-                <Input
-                  value={value}
-                  onChange={(e) => set(e.target.value)}
-                  placeholder={slot.value || "repository:tag"}
-                  aria-label={slot.path}
-                  className="font-mono text-xs"
-                />
-                {choices.length > 0 && <ImageSource choices={choices} value={value} onPick={set} />}
-              </div>
-            </Row>
-          );
-        })}
-      </div>
-    </details>
+    <>
+      {rows.map((slot, i) => {
+        const value = imageText(form.images[slot.path]);
+        const set = (raw: string) => onChange({ images: imagePatch(form.images, slot.path, slot.kind, raw) });
+        const choices = slotImageChoices(slot, image, imageMirror);
+        return (
+          <Row
+            key={slot.path}
+            label={slot.path}
+            note={i === 0 ? "Each row is a values path. Empty keeps the image in the placeholder; a value is written on the form layer." : undefined}
+          >
+            <div className="w-full min-w-0 space-y-1.5 py-1">
+              <Input
+                value={value}
+                onChange={(e) => set(e.target.value)}
+                placeholder={slot.value || "repository:tag"}
+                aria-label={slot.path}
+                className="font-mono text-xs"
+              />
+              {choices.length > 0 && <ImageSource choices={choices} value={value} onPick={set} />}
+              {i === 0 && error && <p className="text-xs text-warning">{error.message}</p>}
+            </div>
+          </Row>
+        );
+      })}
+    </>
   );
 }
 

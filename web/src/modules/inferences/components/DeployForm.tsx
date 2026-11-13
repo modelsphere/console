@@ -274,8 +274,8 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
   );
 }
 
-// One row per chart image. Empty keeps the image shown as the placeholder;
-// a typed ref is the form layer. Every slot offers site mirror vs default when mirrored.
+// One row per chart image, merged directly into Resources and scheduling.
+// Empty keeps the image shown as the placeholder; a typed ref is the form layer.
 function ImageRows({
   form,
   onChange,
@@ -293,11 +293,13 @@ function ImageRows({
 }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
-  const [open, setOpen] = useState(false);
   const rows = imageRows(slots, image, form.images);
   return (
-    <FormSection title={f("images")} expanded={open} onExpandedChange={setOpen}>
-      <p className="text-xs text-muted-foreground">{f("imagesHint")}</p>
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-1.5 text-sm font-medium">
+        <span>{f("images")}</span>
+        <FieldHint>{f("imagesHint")}</FieldHint>
+      </div>
       {error && <p className="text-xs text-warning">{error.message}</p>}
       {rows.map((slot) => {
         const value = imageText(form.images[slot.path]);
@@ -321,7 +323,7 @@ function ImageRows({
           </FloatingField>
         );
       })}
-    </FormSection>
+    </div>
   );
 }
 
