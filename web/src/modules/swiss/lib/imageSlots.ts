@@ -11,6 +11,13 @@ export interface ImageSlot {
   kind: "map" | "string";
   // repository:tag, or the string, as the chart would render it with no form image edit.
   value: string;
+  // Un-mirrored chart default from values.yaml when different from `value`.
+  defaultValue?: string;
+}
+
+export interface SlotImageChoice {
+  key: "site" | "catalog" | "default";
+  ref: string;
 }
 
 // What a row stores. A map slot is {repository, tag}; a string slot is the string.
@@ -93,8 +100,57 @@ export function discoverImageSlots(values: Tree): ImageSlot[] {
     }
   };
   walk(values, []);
-  // The engine row is the one the mirror choice belongs to; keep it first.
+  // The engine row is the primary image; keep it first.
   return out.sort((a, b) => (a.path === "image" ? -1 : b.path === "image" ? 1 : 0));
+}
+
+// Discovers merged slots and retains each slot's chart values.yaml default
+// when layers already rewrote it (e.g. a site mirror or preset).
+export function helmImageSlots(values: Pick<HelmValues, "defaults" | "overrides">): ImageSlot[] {
+  const defaults = new Map(discoverImageSlots(parseMap(values.defaults)).map((s) => [s.path, s.value]));
+  return discoverImageSlots(mergedHelmValues(values)).map((slot) => {
+    const def = defaults.get(slot.path);
+    return def && def !== slot.value ? { ...slot, defaultValue: def } : slot;
+  });
+}
+
+// Rewrites an image ref to the site's registry mirror keeping the final repo segment
+// and tag/digest, matching Profile.MirrorImage on swissd.
+export function mirrorImage(ref: string, mirror?: string): string {
+  const base = mirror?.trim().replace(/\/+$/, "");
+  if (!base || !ref.trim()) return ref;
+  const split = splitImage(ref);
+  if (!split.repository) return ref;
+  const tail = split.repository.split("/").pop();
+  if (!tail) return ref;
+  return joinImage(`${base}/${tail}`, split.tag ?? "");
+}
+
+// Options (site mirror vs catalog/chart default) for an image slot input.
+// Returns [] without a distinct mirror option so the list never offers duplicates.
+export function slotImageChoices(
+  slot: ImageSlot,
+  engineImage?: { catalog: string; site: string },
+  mirror?: string,
+): SlotImageChoice[] {
+  if (slot.path === "image" && engineImage) {
+    return engineImage.site === engineImage.catalog
+      ? []
+      : [
+          { key: "site", ref: engineImage.site },
+          { key: "catalog", ref: engineImage.catalog },
+        ];
+  }
+  const base = slot.defaultValue || slot.value;
+  if (!base.trim()) return [];
+  const site = mirrorImage(slot.value || base, mirror);
+  // If slot.value was already mirrored, pair it with the un-mirrored chart default.
+  const fallback = site === slot.value ? base : slot.value || base;
+  if (!site || !fallback || site === fallback) return [];
+  return [
+    { key: "site", ref: site },
+    { key: "default", ref: fallback },
+  ];
 }
 
 // The text an image input shows. A half-typed map ref keeps its draft so the

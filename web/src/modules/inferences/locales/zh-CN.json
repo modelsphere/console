@@ -602,6 +602,7 @@
       "imageValue": "镜像（repository:tag）",
       "imageSite": "站点镜像仓库",
       "imageCatalog": "目录原始镜像",
+      "imageDefault": "默认镜像",
       "images": "镜像",
       "imagesHint": "每一行是一个 values 路径。留空则沿用占位里的镜像；填写的值写在 form 层。",
       "imageCustom": "自定义",

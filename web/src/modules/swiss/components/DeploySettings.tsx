@@ -8,7 +8,7 @@ import { CHECK_MS, inputError, inputProblem, rememberable, setInputOverrides, ty
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, affinityRules, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
 import { envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
-import { applyImageEdits, dropClearedImages, imageEditsFromLayer, imagePatch, imageRows, imageText, joinImage, type ImageEdit, type ImageSlot } from "@swiss/lib/imageSlots";
+import { applyImageEdits, dropClearedImages, imageEditsFromLayer, imagePatch, imageRows, imageText, joinImage, slotImageChoices, type ImageEdit, type ImageSlot, type SlotImageChoice } from "@swiss/lib/imageSlots";
 import { toYaml } from "@swiss/lib/yaml";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
@@ -204,6 +204,7 @@ export function DeploySettings({
   localPathPlaceholder,
   inputs,
   image,
+  imageMirror,
   slots,
   slotsError,
   supportedGPUs,
@@ -222,6 +223,8 @@ export function DeploySettings({
   onRemember,
   presets,
   onImagesOpen,
+  imagesRefreshing,
+  onImagesRefresh,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -237,6 +240,8 @@ export function DeploySettings({
   // to. Equal when this site mirrors nothing, which is when there is no rewrite
   // to offer a choice about.
   image?: { catalog: string; site: string };
+  // Site profile's registry.mirror so non-engine image slots also offer mirror vs default.
+  imageMirror?: string;
   // Every image the chart renders, from the compose dry run. Absent until that
   // returns; the engine row still shows from `image`.
   slots?: ImageSlot[];
@@ -259,8 +264,10 @@ export function DeploySettings({
   onRemember?: (key: string, on: boolean) => void;
   // The site profile's presets, on a deploy.
   presets?: Record<string, Preset>;
-  // The Images disclosure. Opening it is what runs slot discovery.
+  // The Images disclosure. Opening it runs initial slot discovery; refresh re-runs it manually.
   onImagesOpen?: (open: boolean) => void;
+  imagesRefreshing?: boolean;
+  onImagesRefresh?: () => void;
 }) {
   const checked = useDebounced(form.inputs, CHECK_MS);
   const picked = presets?.[form.preset];
@@ -861,7 +868,7 @@ export function DeploySettings({
 
       </details>
 
-      <ImagesSection form={form} onChange={onChange} image={image} slots={slots} error={slotsError} onOpen={onImagesOpen} />
+      <ImagesSection form={form} onChange={onChange} image={image} imageMirror={imageMirror} slots={slots} error={slotsError} onOpen={onImagesOpen} refreshing={imagesRefreshing} onRefresh={onImagesRefresh} />
 
       <Card>
         <CardHeader>
@@ -942,24 +949,30 @@ function Row({
   );
 }
 
-const IMAGE_SOURCE_LABELS = { aria: "engine image source", site: "site mirror", catalog: "catalog original", custom: "custom", inherited: "inherited" };
+const IMAGE_SOURCE_LABELS = { aria: "image source", site: "site mirror", catalog: "catalog original", default: "default", custom: "custom", inherited: "inherited" };
 
 // One row per chart image. Empty keeps the image shown as the placeholder;
-// a typed ref is the form layer. The engine row keeps the mirror choice.
+// a typed ref is the form layer. Every slot offers site mirror vs default when mirrored.
 function ImagesSection({
   form,
   onChange,
   image,
+  imageMirror,
   slots,
   error,
   onOpen,
+  refreshing,
+  onRefresh,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
   image?: { catalog: string; site: string };
+  imageMirror?: string;
   slots?: ImageSlot[];
   error?: Error | null;
   onOpen?: (open: boolean) => void;
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }) {
   const rows = imageRows(slots, image, form.images);
   return (
@@ -969,15 +982,30 @@ function ImagesSection({
         <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
       </summary>
       <div className="border-t px-4 py-3">
-        <p className="text-sm text-muted-foreground">
-          Each row is a values path. Empty keeps the image in the placeholder; a value is written on the form layer.
-        </p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm text-muted-foreground">
+            Each row is a values path. Empty keeps the image in the placeholder; a value is written on the form layer.
+          </p>
+          {onRefresh && (
+            <button
+              type="button"
+              aria-label="refresh images"
+              title="Refresh images"
+              disabled={refreshing}
+              onClick={onRefresh}
+              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+            </button>
+          )}
+        </div>
         {error && <p className="mt-2 text-xs text-warning">{error.message}</p>}
       </div>
       <div className="divide-y border-t px-4">
         {rows.map((slot) => {
           const value = imageText(form.images[slot.path]);
           const set = (raw: string) => onChange({ images: imagePatch(form.images, slot.path, slot.kind, raw) });
+          const choices = slotImageChoices(slot, image, imageMirror);
           return (
             <Row key={slot.path} label={slot.path}>
               <div className="w-full min-w-0 space-y-1.5 py-1">
@@ -988,7 +1016,7 @@ function ImagesSection({
                   aria-label={slot.path}
                   className="font-mono text-xs"
                 />
-                {slot.path === "image" && image && <ImageSource image={image} value={value} onPick={set} />}
+                {choices.length > 0 && <ImageSource choices={choices} value={value} onPick={set} />}
               </div>
             </Row>
           );
@@ -999,25 +1027,29 @@ function ImagesSection({
 }
 
 export function ImageSource({
+  choices,
   image,
   value,
   onPick,
   labels = IMAGE_SOURCE_LABELS,
 }: {
-  image: { catalog: string; site: string };
+  choices?: SlotImageChoice[];
+  image?: { catalog: string; site: string };
   value: string;
   onPick: (ref: string) => void;
-  labels?: { aria: string; site: string; catalog: string; custom: string; inherited: string };
+  labels?: { aria: string; site: string; catalog: string; default?: string; custom: string; inherited: string };
 }) {
-  const choices = imageChoices(image);
-  if (!choices.length) return null;
-  const selected = choices.find((c) => c.ref === value.trim())?.ref ?? "";
+  const list: SlotImageChoice[] = choices ?? (image ? imageChoices(image) : []);
+  if (!list.length) return null;
+  const selected = list.find((c) => c.ref === value.trim())?.ref ?? "";
+  const labelOf = (k: SlotImageChoice["key"]) =>
+    k === "site" ? labels.site : k === "catalog" ? labels.catalog : (labels.default ?? labels.catalog);
   return (
     <SourceSelect
       ariaLabel={labels.aria}
       value={selected}
       onChange={onPick}
-      options={choices.map((c) => ({ value: c.ref, label: c.key === "site" ? labels.site : labels.catalog }))}
+      options={list.map((c) => ({ value: c.ref, label: labelOf(c.key) }))}
       emptyLabel={value.trim() ? labels.custom : labels.inherited}
     />
   );

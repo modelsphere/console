@@ -26,11 +26,10 @@ import {
 } from "@modelsphere/ui";
 import { ArrowRight, FlaskConical, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
-import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type HelmValues, type Plan } from "@swiss/lib/api";
+import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
 import { applyFlags, imageOf, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
 import { EMPTY, formFromPlan, planRequest } from "../deployment-settings";
 import { useImageSlots } from "@swiss/lib/useImageSlots";
-import { withImageEdits } from "@swiss/lib/imageSlots";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
 import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
@@ -175,8 +174,6 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const [submitted, setSubmitted] = useState(false);
   const [expanded, setExpanded] = useState(OPEN);
   const [imagesOpen, setImagesOpen] = useState(false);
-  // The form's editor and the footer button each open a dialog, never both at once.
-  const [yamlOpen, setYamlOpen] = useState(false);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [applied, setApplied] = useState<ApplyResult | null>(null);
@@ -222,9 +219,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
       : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, values: v?.values },
     profile.data?.profile,
   );
-  // One dry-run for the open Images section and the Override YAML editor.
-  // Recovery and adaptive concurrency are recomposed the way that editor's
-  // preview always was. Image edits are merged onto the result afterwards.
+  // Slot discovery runs once when Images opens (or chart target changes) and on manual refresh.
+  // Override YAML runs its own standalone dry-run when opened so form edits stay quiet.
   const canDiscover = (!upgrade || !!recorded) && cluster.data?.allowDeploy !== false;
   const compositionError = (error: unknown) => {
     if (error instanceof RecoveryPlanChangedError) return new Error(t("deploy.recovery.errors.changedPlan"));
@@ -234,22 +230,40 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const preview = useImageSlots(
     form,
     (f) => (canDiscover ? withAdaptiveConcurrency(withRecovery(requestFor(f), recovery), f, routeOptions.data) : undefined),
-    (imagesOpen || yamlOpen) && canDiscover,
-    async (f) => {
+    imagesOpen && canDiscover,
+  );
+  const valuesRequest = canDiscover
+    ? withAdaptiveConcurrency(withRecovery(requestFor({ ...form, edits: "" }), recovery), form, routeOptions.data)
+    : undefined;
+  const valuesQuery = useQuery({
+    queryKey: ["helmValues", "dialog", JSON.stringify(valuesRequest ?? null)],
+    queryFn: async () => {
       try {
-        return await composeRecoveryValuesRequest(requestFor(f), recovery, (next) => composeAdaptivePlan(next, f, routeOptions.data, deployApi.plan, catalogName), catalogName);
+        const next = await composeRecoveryValuesRequest(
+          requestFor({ ...form, edits: "" }),
+          recovery,
+          (r) => composeAdaptivePlan(r, form, routeOptions.data, deployApi.plan, catalogName),
+          catalogName,
+        );
+        return await deployApi.helmValues(next);
       } catch (error) {
         throw compositionError(error);
       }
     },
-  );
-  const withImages = (values?: HelmValues) => (values ? withImageEdits(values, form.images) : undefined);
+    enabled: false,
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 0,
+  });
   const valuesSource: HelmValuesSource = {
-    data: withImages(preview.values),
-    // True from the moment a section opens until values arrive, so the editor waits on this query instead of starting another.
-    loading: preview.fetching || (canDiscover && (imagesOpen || yamlOpen) && !preview.values && !preview.queryError),
-    error: preview.queryError,
-    load: async () => withImages(await preview.reload()),
+    data: valuesQuery.data,
+    loading: valuesQuery.isFetching,
+    error: valuesQuery.error instanceof Error ? valuesQuery.error : valuesQuery.error ? new Error(String(valuesQuery.error)) : null,
+    load: async () => {
+      if (!valuesRequest) return undefined;
+      const result = await valuesQuery.refetch();
+      return result.data;
+    },
   };
   const compose = useMutation({
     mutationFn: async () => {
@@ -497,11 +511,12 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               recovery={<RecoveryFields settings={recovery} onChange={(patch) => setRecoveryPatch((previous) => ({ ...previous, ...patch }))} />}
               target={targetFields}
               cluster={cluster.data}
-              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), cache }}
+              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), imageMirror: profile.data?.profile?.registry?.mirror, cache }}
               slots={preview.slots}
               slotsError={preview.queryError}
               onImagesOpen={setImagesOpen}
-              onYamlOpen={setYamlOpen}
+              imagesRefreshing={preview.fetching}
+              onImagesRefresh={() => void preview.reload()}
               gpuOptions={productChoices(v?.requires.gpuProduct, pickableProducts(nodes.data?.nodes, v?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource), form.gpuProducts)}
               gpuListed={v?.requires.gpuProduct}
               gpuResources={v?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, v.requires.vendor) : undefined}
@@ -550,7 +565,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         {step === "form" ? (
           <>
             <SheetCancelButton />
-            <OverrideYamlButton value={form.edits} onChange={(edits) => change({ edits })} source={readOnly ? undefined : valuesSource} disabled={!!readOnly || loading} onOpenChange={setYamlOpen} />
+            <OverrideYamlButton value={form.edits} onChange={(edits) => change({ edits })} source={readOnly ? undefined : valuesSource} disabled={!!readOnly || loading} />
             <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)}>
               {compose.isPending ? t("deploy.review.composing") : t("deploy.review.compose")}
             </Button>

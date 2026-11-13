@@ -170,6 +170,44 @@ describe("image override", () => {
     expect(html).toContain(`placeholder="${image.site}"`);
     expect(html).not.toContain("<select");
     expect(html).not.toContain('role="listbox"');
+    expect(html).not.toMatch(/aria-label="(Refresh|刷新)"/);
+  });
+
+  it("renders a refresh button inside Images when onImagesRefresh is provided", () => {
+    const html = renderToStaticMarkup(
+      <DeployForm
+        form={{ ...EMPTY, serviceId: "model" }} onChange={() => {}} submitted={false} target={null} defaults={{ image }} gpuOptions={[]}
+        expanded={{ basic: false, resources: true, routing: false, advanced: false }}
+        onExpand={() => {}} idPrefix="test-" onImagesRefresh={() => {}}
+      />,
+    );
+    expect(html).toMatch(/aria-label="(Refresh|刷新)"/);
+  });
+
+  it("renders discovered non-engine slots with the same Suggest input shape", () => {
+    const html = renderToStaticMarkup(
+      <DeployForm
+        form={{ ...EMPTY, serviceId: "model" }}
+        onChange={() => {}}
+        submitted={false}
+        target={null}
+        defaults={{ image, imageMirror: "mirror.example.com/lmsysorg" }}
+        gpuOptions={[]}
+        slots={[
+          { path: "image", kind: "map", value: image.site },
+          { path: "hangWatcher.image", kind: "map", value: "ghcr.io/org/hang-watcher:0.1.0" },
+          { path: "sidecar.image", kind: "string", value: "curl:8" },
+        ]}
+        expanded={{ basic: false, resources: true, routing: false, advanced: false }}
+        onExpand={() => {}}
+        idPrefix="test-"
+      />,
+    );
+    expect(html).toContain('aria-label="hangWatcher.image"');
+    expect(html).toContain('placeholder="ghcr.io/org/hang-watcher:0.1.0"');
+    expect(html).toContain('aria-label="sidecar.image"');
+    expect(html).toContain('placeholder="curl:8"');
+    expect(html).not.toContain("<select");
   });
 });
 

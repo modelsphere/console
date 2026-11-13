@@ -496,9 +496,12 @@ export function Upgrade() {
         remember={remember}
         onRemember={siteSaver.onRemember}
         image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
+        imageMirror={profile.data?.profile?.registry?.mirror}
         slots={rollbackTo ? undefined : discovered.slots}
         slotsError={rollbackTo ? undefined : discovered.queryError}
         onImagesOpen={setImagesOpen}
+        imagesRefreshing={rollbackTo ? false : discovered.fetching}
+        onImagesRefresh={rollbackTo ? undefined : () => void discovered.reload()}
         cache={cache}
         lockIdentity
         readOnly={rollbackTo > 0}

@@ -289,9 +289,12 @@ export function Deploy() {
         remember={siteSaver.remember}
         onRemember={siteSaver.onRemember}
         image={imageOf(variant, model.data.imageRepository)}
+        imageMirror={profile.data?.profile?.registry?.mirror}
         slots={discovered.slots}
         slotsError={discovered.queryError}
         onImagesOpen={setImagesOpen}
+        imagesRefreshing={discovered.fetching}
+        onImagesRefresh={() => void discovered.reload()}
         supportedGPUs={variant?.requires.gpuProduct}
         clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
         gpuResources={variant?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, variant.requires.vendor) : undefined}

@@ -6,12 +6,15 @@ import {
   applyImageEdits,
   discoverImageSlots,
   dropClearedImages,
+  helmImageSlots,
   imageEditsFromLayer,
   imagePatch,
   imageRows,
   imageText,
   joinImage,
   mergedHelmValues,
+  mirrorImage,
+  slotImageChoices,
   splitImage,
   withImageEdits,
   type ImageEdit,
@@ -182,5 +185,80 @@ describe("image edits on the form layer", () => {
       dropClearedImages(cleared, images);
       expect(cleared).toEqual({ image: { pullPolicy: "Always" }, note: true });
     }
+  });
+});
+
+describe("mirrorImage and slotImageChoices", () => {
+  it("mirrors every repository shape using the final path element and strips trailing mirror slashes", () => {
+    expect(mirrorImage("ghcr.io/modelsphere/hang-watcher:0.1.27", "mirror.example.com/team/")).toBe(
+      "mirror.example.com/team/hang-watcher:0.1.27",
+    );
+    expect(mirrorImage("quay.io/ascend/vllm-ascend:pinned@sha256:abc", "mirror.example.com/team")).toBe(
+      "mirror.example.com/team/vllm-ascend:pinned@sha256:abc",
+    );
+    expect(mirrorImage("docker.io/curlimages/curl@sha256:abc", "registry.local:5000/mirror")).toBe(
+      "registry.local:5000/mirror/curl@sha256:abc",
+    );
+    expect(mirrorImage("busybox:1.36", "mirror.example.com/team")).toBe("mirror.example.com/team/busybox:1.36");
+    expect(mirrorImage("ghcr.io/org/app:1", "")).toBe("ghcr.io/org/app:1");
+    expect(mirrorImage("", "mirror.example.com/team")).toBe("");
+  });
+
+  it("retains un-mirrored chart defaults on helmImageSlots when layers rewrite them", () => {
+    const slots = helmImageSlots({
+      defaults:
+        "image:\n  repository: docker.io/lmsysorg/sglang\n  tag: v1\nhangWatcher:\n  image:\n    repository: ghcr.io/org/hang-watcher\n    tag: 0.1.0\nsidecar:\n  image: docker.io/curlimages/curl:8\n",
+      overrides:
+        "image:\n  repository: mirror.example.com/team/sglang\nhangWatcher:\n  image:\n    repository: mirror.example.com/team/hang-watcher\n",
+    });
+    expect(slots).toEqual([
+      {
+        path: "image",
+        kind: "map",
+        value: "mirror.example.com/team/sglang:v1",
+        defaultValue: "docker.io/lmsysorg/sglang:v1",
+      },
+      {
+        path: "hangWatcher.image",
+        kind: "map",
+        value: "mirror.example.com/team/hang-watcher:0.1.0",
+        defaultValue: "ghcr.io/org/hang-watcher:0.1.0",
+      },
+      { path: "sidecar.image", kind: "string", value: "docker.io/curlimages/curl:8" },
+    ]);
+  });
+
+  it("gives every slot site mirror and default/catalog choices when a mirror differs", () => {
+    const engine = { catalog: "docker.io/lmsysorg/sglang:v1", site: "mirror.example.com/team/sglang:v1" };
+    expect(slotImageChoices({ path: "image", kind: "map", value: engine.site }, engine, "mirror.example.com/team")).toEqual([
+      { key: "site", ref: "mirror.example.com/team/sglang:v1" },
+      { key: "catalog", ref: "docker.io/lmsysorg/sglang:v1" },
+    ]);
+    expect(slotImageChoices({ path: "hangWatcher.image", kind: "map", value: "ghcr.io/org/hang-watcher:0.1.0" }, engine, "mirror.example.com/team")).toEqual([
+      { key: "site", ref: "mirror.example.com/team/hang-watcher:0.1.0" },
+      { key: "default", ref: "ghcr.io/org/hang-watcher:0.1.0" },
+    ]);
+    expect(slotImageChoices({ path: "sidecar.image", kind: "string", value: "curl:8" }, engine, "mirror.example.com/team")).toEqual([
+      { key: "site", ref: "mirror.example.com/team/curl:8" },
+      { key: "default", ref: "curl:8" },
+    ]);
+    // Already-mirrored layer still pairs site mirror with un-mirrored chart default.
+    expect(
+      slotImageChoices(
+        {
+          path: "hangWatcher.image",
+          kind: "map",
+          value: "mirror.example.com/team/hang-watcher:0.1.0",
+          defaultValue: "ghcr.io/org/hang-watcher:0.1.0",
+        },
+        engine,
+        "mirror.example.com/team",
+      ),
+    ).toEqual([
+      { key: "site", ref: "mirror.example.com/team/hang-watcher:0.1.0" },
+      { key: "default", ref: "ghcr.io/org/hang-watcher:0.1.0" },
+    ]);
+    // Without a mirror, offers no duplicate choices.
+    expect(slotImageChoices({ path: "hangWatcher.image", kind: "map", value: "ghcr.io/org/hang-watcher:0.1.0" }, undefined, "")).toEqual([]);
   });
 });

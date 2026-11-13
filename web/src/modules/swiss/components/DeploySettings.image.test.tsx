@@ -45,5 +45,38 @@ describe("image override", () => {
     expect(html).toContain('placeholder="example.com/hang:1"');
     expect(html).toContain(`placeholder="${image.site}"`);
     expect(html).not.toContain("set by");
+    expect(html).not.toContain('aria-label="refresh images"');
+  });
+
+  it("renders a refresh button in Images when onImagesRefresh is provided", () => {
+    const html = renderToStaticMarkup(
+      <DeploySettings
+        form={{ ...EMPTY, serviceId: "m" }}
+        onChange={() => {}}
+        image={image}
+        onImagesRefresh={() => {}}
+      />,
+    );
+    expect(html).toContain('aria-label="refresh images"');
+  });
+
+  it("offers site mirror and default options on every discovered image slot when imageMirror is set", () => {
+    const html = renderToStaticMarkup(
+      <DeploySettings
+        form={{ ...EMPTY, serviceId: "m", images: { "hangWatcher.image": { repository: "ghcr.io/modelsphere/hang", tag: "1" } } }}
+        onChange={() => {}}
+        image={image}
+        imageMirror="ghcr.io/modelsphere"
+        slots={[
+          { path: "image", kind: "map", value: image.site },
+          { path: "hangWatcher.image", kind: "map", value: "example.com/hang:1" },
+          { path: "sidecar.image", kind: "string", value: "curl:8" },
+        ]}
+      />,
+    );
+    expect(html).toContain('<option value="ghcr.io/modelsphere/hang:1" selected="">site mirror</option>');
+    expect(html).toContain('<option value="example.com/hang:1">default</option>');
+    expect(html).toContain('<option value="ghcr.io/modelsphere/curl:8">site mirror</option>');
+    expect(html).toContain('<option value="curl:8">default</option>');
   });
 });
