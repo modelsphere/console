@@ -19,8 +19,6 @@ import {
   FormSection,
   Input,
   Switch,
-  ToggleGroup,
-  ToggleGroupItem,
   cn,
 } from "@modelsphere/ui";
 import { Plus, RefreshCw, X } from "lucide-react";
@@ -31,7 +29,8 @@ import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/
 import { unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { CHECK_MS, inputError, rememberable, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
-import { effective, imageChoices, tolerationExtras, type Form, type Toleration } from "@swiss/components/DeploySettings";
+import { effective, tolerationExtras, type Form, type Toleration } from "@swiss/components/DeploySettings";
+import { imagePatch, imageRows, imageText, slotImageChoices, type ImageSlot } from "@swiss/lib/imageSlots";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
 import { useT } from "@/modules/inferences/i18n";
@@ -48,7 +47,7 @@ export interface DeployFormProps {
   submitted: boolean;
   target: ReactNode;
   cluster?: ClusterInfo;
-  defaults: { serviceId?: string; localPath?: string; localPathTemplate?: string; image?: { catalog: string; site: string }; cache?: CacheCard };
+  defaults: { serviceId?: string; localPath?: string; localPathTemplate?: string; image?: { catalog: string; site: string }; imageMirror?: string; cache?: CacheCard };
   gpuOptions: string[];
   // The variant's own products, verified with it; any other option is unverified.
   gpuListed?: string[];
@@ -64,6 +63,14 @@ export interface DeployFormProps {
   catalogRoute?: string;
   // The chart's values and swissd's layers for the Override YAML editor.
   helmValues?: HelmValuesSource;
+  // Every image the chart renders, from the compose dry run. Absent until that
+  // returns; the engine row still shows from defaults.image.
+  slots?: ImageSlot[];
+  slotsError?: Error | null;
+  // Opening Images runs the initial slot-discovery compose dry-run; refresh re-runs it manually.
+  onImagesOpen?: (open: boolean) => void;
+  imagesRefreshing?: boolean;
+  onImagesRefresh?: () => void;
   recovery?: ReactNode;
   // The variant's inputs, each with the answer that applies when its field is left empty.
   inputs?: InputRow[];
@@ -76,13 +83,12 @@ export interface DeployFormProps {
   taints?: ClusterTaint[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, onImagesOpen, imagesRefreshing, onImagesRefresh, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
   const f = (k: string) => t(`deploy.fields.${k}`);
   const forced = unlistedProducts(gpuListed, form.gpuProducts);
-  const images = defaults.image ? imageChoices(defaults.image) : [];
   const byKey = new Map(routeDirectives(routeOptions).map((d) => [d.key, d]));
   const showRuntime = !!upgrade && routeOptions?.route === (catalogRoute ?? (form.route || form.serviceId));
   const label = (key: string, fallback: string) => directiveText(t, byKey.get(key), "label") || f(fallback);
@@ -195,39 +201,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
               </div>
             );
           })}
-          {defaults.image && (
-            <FloatingField
-              layout="inline"
-              label={f("image")}
-              hint={f("imageHint")}
-              expanded={!!form.image.trim()}
-              expandedContent={
-                <div className="space-y-2 pb-3">
-                  <Input value={form.image} onChange={(e) => onChange({ image: e.target.value })} placeholder={defaults.image.site} className="font-mono text-xs" aria-label={f("imageValue")} />
-                  {images.length > 0 && (
-                    <ToggleGroup
-                      size="sm"
-                      variant="outline"
-                      spacing={0}
-                      value={images.filter((c) => c.ref === form.image.trim()).map((c) => c.key)}
-                      onValueChange={(v) => {
-                        const ref = images.find((c) => c.key === v[0])?.ref;
-                        if (ref) onChange({ image: ref });
-                      }}
-                    >
-                      {images.map((c) => (
-                        <ToggleGroupItem key={c.key} value={c.key} title={c.ref}>
-                          {f(c.key === "site" ? "imageSite" : "imageCatalog")}
-                        </ToggleGroupItem>
-                      ))}
-                    </ToggleGroup>
-                  )}
-                </div>
-              }
-            >
-              <Switch aria-label={f("image")} checked={!!form.image.trim()} onCheckedChange={(v) => onChange({ image: v ? defaults.image!.site : "" })} />
-            </FloatingField>
-          )}
+          <ImageRows form={form} onChange={onChange} image={defaults.image} mirror={defaults.imageMirror} slots={slots} error={slotsError} onOpen={onImagesOpen} refreshing={imagesRefreshing} onRefresh={onImagesRefresh} />
         </>,
       )}
 
@@ -301,6 +275,77 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
         </>,
       )}
     </div>
+  );
+}
+
+// One row per chart image. Empty keeps the image shown as the placeholder;
+// a typed ref is the form layer. Every slot offers site mirror vs default when mirrored.
+function ImageRows({
+  form,
+  onChange,
+  image,
+  mirror,
+  slots,
+  error,
+  onOpen,
+  refreshing,
+  onRefresh,
+}: {
+  form: Form;
+  onChange: (patch: Partial<Form>) => void;
+  image?: { catalog: string; site: string };
+  mirror?: string;
+  slots?: ImageSlot[];
+  error?: Error | null;
+  onOpen?: (open: boolean) => void;
+  refreshing?: boolean;
+  onRefresh?: () => void;
+}) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+  const [open, setOpen] = useState(false);
+  const rows = imageRows(slots, image, form.images);
+  return (
+    <FormSection
+      title={f("images")}
+      expanded={open}
+      onExpandedChange={(next) => {
+        setOpen(next);
+        onOpen?.(next);
+      }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs text-muted-foreground">{f("imagesHint")}</p>
+        {onRefresh && (
+          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0" aria-label={t("common:actions.refresh")} title={t("common:actions.refresh")} disabled={refreshing} onClick={onRefresh}>
+            <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+          </Button>
+        )}
+      </div>
+      {error && <p className="text-xs text-warning">{error.message}</p>}
+      {rows.map((slot) => {
+        const value = imageText(form.images[slot.path]);
+        const set = (raw: string) => onChange({ images: imagePatch(form.images, slot.path, slot.kind, raw) });
+        const fallback = slot.value || "repository:tag";
+        const choices = slotImageChoices(slot, image, mirror).map((c) => ({
+          value: c.ref,
+          label: f(c.key === "site" ? "imageSite" : c.key === "catalog" ? "imageCatalog" : "imageDefault"),
+        }));
+        return (
+          <FloatingField key={slot.path} value={value || fallback} label={slot.path}>
+            <Suggest
+              value={value}
+              onChange={set}
+              suggestion={slot.value || undefined}
+              placeholder={fallback}
+              choices={choices.length ? choices : undefined}
+              aria-label={slot.path}
+              className="font-mono text-xs"
+            />
+          </FloatingField>
+        );
+      })}
+    </FormSection>
   );
 }
 

@@ -29,6 +29,7 @@ import { useModulePath } from "@/shell";
 import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
 import { applyFlags, imageOf, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
 import { EMPTY, formFromPlan, planRequest } from "../deployment-settings";
+import { useImageSlots } from "@swiss/lib/useImageSlots";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
 import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
@@ -172,6 +173,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const [step, setStep] = useState<"form" | "review">("form");
   const [submitted, setSubmitted] = useState(false);
   const [expanded, setExpanded] = useState(OPEN);
+  const [imagesOpen, setImagesOpen] = useState(false);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [applied, setApplied] = useState<ApplyResult | null>(null);
@@ -217,38 +219,52 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
       : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, values: v?.values },
     profile.data?.profile,
   );
-  // The chart's values and swissd's layers for this form, without the
-  // overrides, which the editor merges itself. Cached per request while the
-  // sheet is open, so saving the overrides and editing them again does not
-  // read the chart again.
+  // Slot discovery runs once when Images opens (or chart target changes) and on manual refresh.
+  // Override YAML runs its own standalone dry-run when opened so form edits stay quiet.
+  const canDiscover = (!upgrade || !!recorded) && cluster.data?.allowDeploy !== false;
   const compositionError = (error: unknown) => {
     if (error instanceof RecoveryPlanChangedError) return new Error(t("deploy.recovery.errors.changedPlan"));
     if (error instanceof AdaptivePlanChangedError) return new Error(t("deploy.fields.adaptiveChanged"));
     return error;
   };
-  const valuesForm = { ...form, edits: "" };
-  const valuesRequest = upgrade && !recorded ? undefined : withAdaptiveConcurrency(withRecovery(requestFor(valuesForm), recovery), valuesForm, routeOptions.data);
-  const helmValues = useQuery({
-    queryKey: ["helmValues", JSON.stringify(valuesRequest ?? null)],
-    queryFn: async () => {
+  const preview = useImageSlots(
+    form,
+    (f) => (canDiscover ? withAdaptiveConcurrency(withRecovery(requestFor(f), recovery), f, routeOptions.data) : undefined),
+    imagesOpen && canDiscover,
+  );
+  const valuesKey = JSON.stringify(
+    canDiscover
+      ? withAdaptiveConcurrency(withRecovery(requestFor({ ...form, edits: "" }), recovery), form, routeOptions.data)
+      : null,
+  );
+  const valuesM = useMutation({
+    mutationFn: async (_key: string) => {
       try {
-        const request = await composeRecoveryValuesRequest(requestFor(valuesForm), recovery, (next) => composeAdaptivePlan(next, valuesForm, routeOptions.data, deployApi.plan, catalogName), catalogName);
-        return await deployApi.helmValues(request);
+        const next = await composeRecoveryValuesRequest(
+          requestFor({ ...form, edits: "" }),
+          recovery,
+          (r) => composeAdaptivePlan(r, form, routeOptions.data, deployApi.plan, catalogName),
+          catalogName,
+        );
+        return await deployApi.helmValues(next);
       } catch (error) {
         throw compositionError(error);
       }
     },
-    enabled: false,
-    staleTime: Infinity,
-    // Dropped when the sheet closes: they last one install or upgrade.
-    gcTime: 0,
-    retry: false,
   });
+  const valuesFresh = valuesM.variables === valuesKey;
   const valuesSource: HelmValuesSource = {
-    data: helmValues.data,
-    loading: helmValues.isFetching,
-    error: helmValues.error,
-    load: async () => (valuesRequest ? (await helmValues.refetch()).data : undefined),
+    data: valuesFresh && !valuesM.isError ? valuesM.data : undefined,
+    loading: valuesM.isPending,
+    error: valuesFresh && valuesM.error ? (valuesM.error instanceof Error ? valuesM.error : new Error(String(valuesM.error))) : null,
+    load: async () => {
+      if (!canDiscover) return undefined;
+      try {
+        return await valuesM.mutateAsync(valuesKey);
+      } catch {
+        return undefined;
+      }
+    },
   };
   const compose = useMutation({
     mutationFn: async () => {
@@ -496,7 +512,12 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               recovery={<RecoveryFields settings={recovery} onChange={(patch) => setRecoveryPatch((previous) => ({ ...previous, ...patch }))} />}
               target={targetFields}
               cluster={cluster.data}
-              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), cache }}
+              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), imageMirror: profile.data?.profile?.registry?.mirror, cache }}
+              slots={preview.slots}
+              slotsError={preview.queryError}
+              onImagesOpen={setImagesOpen}
+              imagesRefreshing={preview.fetching}
+              onImagesRefresh={() => void preview.reload()}
               gpuOptions={productChoices(v?.requires.gpuProduct, pickableProducts(nodes.data?.nodes, v?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource), form.gpuProducts)}
               gpuListed={v?.requires.gpuProduct}
               gpuResources={v?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, v.requires.vendor) : undefined}

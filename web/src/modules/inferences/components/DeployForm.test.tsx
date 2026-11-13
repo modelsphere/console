@@ -157,21 +157,57 @@ describe("image override", () => {
         onExpand={() => {}} idPrefix="test-"
       />,
     );
-  const pressed = (html: string, label: string) => new RegExp(`<button[^>]*aria-pressed="true"[^>]*>${label}<`).test(html);
 
-  it("offers both the site's mirror and the catalog's own image, marking the one in the field", () => {
-    const mirrored = render({ ...EMPTY, serviceId: "model", image: image.site });
-    expect(mirrored).toContain("站点镜像仓库");
-    expect(mirrored).toContain("目录原始镜像");
-    expect(pressed(mirrored, "站点镜像仓库")).toBe(true);
-    expect(pressed(render({ ...EMPTY, serviceId: "model", image: image.catalog }), "目录原始镜像")).toBe(true);
-    const typed = render({ ...EMPTY, serviceId: "model", image: "ghcr.io/me/sglang:rc1" });
-    expect(pressed(typed, "站点镜像仓库") || pressed(typed, "目录原始镜像")).toBe(false);
+  it("keeps Images collapsed until opened, with the engine image still in the form", () => {
+    const html = render({ ...EMPTY, serviceId: "model", images: { image: image.site } });
+    const button = /<button[^>]*aria-expanded="([^"]+)"[^>]*>(?:(?!<\/button>)[\s\S])*镜像[\s\S]*?<\/button>/.exec(html);
+    expect(button?.[1]).toBe("false");
+    expect(html).toContain(`value="${image.site}"`);
   });
 
-  it("offers nothing to pick between without a mirror", () => {
-    const html = render({ ...EMPTY, serviceId: "model", image: image.catalog }, { catalog: image.catalog, site: image.catalog });
-    expect(html).not.toContain("目录原始镜像");
+  it("renders a single Suggest input with the effective image as placeholder and no separate select", () => {
+    const html = render({ ...EMPTY, serviceId: "model" });
+    expect(html).toContain(`placeholder="${image.site}"`);
+    expect(html).not.toContain("<select");
+    expect(html).not.toContain('role="listbox"');
+    expect(html).not.toMatch(/aria-label="(Refresh|刷新)"/);
+  });
+
+  it("renders a refresh button inside Images when onImagesRefresh is provided", () => {
+    const html = renderToStaticMarkup(
+      <DeployForm
+        form={{ ...EMPTY, serviceId: "model" }} onChange={() => {}} submitted={false} target={null} defaults={{ image }} gpuOptions={[]}
+        expanded={{ basic: false, resources: true, routing: false, advanced: false }}
+        onExpand={() => {}} idPrefix="test-" onImagesRefresh={() => {}}
+      />,
+    );
+    expect(html).toMatch(/aria-label="(Refresh|刷新)"/);
+  });
+
+  it("renders discovered non-engine slots with the same Suggest input shape", () => {
+    const html = renderToStaticMarkup(
+      <DeployForm
+        form={{ ...EMPTY, serviceId: "model" }}
+        onChange={() => {}}
+        submitted={false}
+        target={null}
+        defaults={{ image, imageMirror: "mirror.example.com/lmsysorg" }}
+        gpuOptions={[]}
+        slots={[
+          { path: "image", kind: "map", value: image.site },
+          { path: "hangWatcher.image", kind: "map", value: "ghcr.io/org/hang-watcher:0.1.0" },
+          { path: "sidecar.image", kind: "string", value: "curl:8" },
+        ]}
+        expanded={{ basic: false, resources: true, routing: false, advanced: false }}
+        onExpand={() => {}}
+        idPrefix="test-"
+      />,
+    );
+    expect(html).toContain('aria-label="hangWatcher.image"');
+    expect(html).toContain('placeholder="ghcr.io/org/hang-watcher:0.1.0"');
+    expect(html).toContain('aria-label="sidecar.image"');
+    expect(html).toContain('placeholder="curl:8"');
+    expect(html).not.toContain("<select");
   });
 });
 

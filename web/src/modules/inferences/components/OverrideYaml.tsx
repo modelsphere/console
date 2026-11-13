@@ -48,6 +48,7 @@ export function OverrideYaml({ value, onChange, source }: {
   const f = (k: string) => t(`deploy.fields.${k}`);
   const [open, setOpen] = useState(false);
   const paths = overridePaths(value);
+  const close = () => setOpen(false);
   const edit = () => setOpen(true);
   return (
     <>
@@ -76,7 +77,7 @@ export function OverrideYaml({ value, onChange, source }: {
           className="cursor-pointer font-mono text-xs"
         />
       </FloatingField>
-      {open && <OverrideDialog value={value} source={source} onClose={() => setOpen(false)} onSave={(edits) => (onChange(edits), setOpen(false))} />}
+      {open && <OverrideDialog value={value} source={source} onClose={close} onSave={(edits) => (onChange(edits), close())} />}
     </>
   );
 }
@@ -90,6 +91,7 @@ export function OverrideYamlButton({ value, onChange, source, disabled }: {
   const t = useT();
   const [open, setOpen] = useState(false);
   const paths = overridePaths(value);
+  const close = () => setOpen(false);
   return (
     <>
       <Button variant="outline" disabled={disabled} onClick={() => setOpen(true)}>
@@ -97,7 +99,7 @@ export function OverrideYamlButton({ value, onChange, source, disabled }: {
         {t("deploy.fields.edits")}
         {!!paths?.length && <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{paths.length}</Badge>}
       </Button>
-      {open && <OverrideDialog value={value} source={source} onClose={() => setOpen(false)} onSave={(edits) => (onChange(edits), setOpen(false))} />}
+      {open && <OverrideDialog value={value} source={source} onClose={close} onSave={(edits) => (onChange(edits), close())} />}
     </>
   );
 }
