@@ -1,14 +1,40 @@
 import { useState } from "react";
-import { ChevronDown, Plus, RefreshCw, TriangleAlert, X } from "lucide-react";
-import type { ApplyFlags, ClusterInfo, Input as CatalogInput, Plan, PlanRequest, Preset, ProfileResponse, Variant } from "@swiss/lib/api";
+import { ChevronDown, Plus, RefreshCw, RotateCcw, TriangleAlert, X } from "lucide-react";
+import type { ApplyFlags, ClusterInfo, GPUSpec, Input as CatalogInput, Node, Plan, PlanRequest, Preset, ProfileResponse, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
-import { productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
+import { pickableProducts, productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { CHECK_MS, inputError, inputProblem, rememberable, setInputOverrides, type InputChoice, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
-import { PRODUCT_KEY, affinityRules, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
+import { PRODUCT_KEY, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
 import { envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
 import { applyImageEdits, dropClearedImages, imageEditsFromLayer, imagePatch, imageRows, imageText, joinImage, slotImageChoices, type ImageEdit, type ImageSlot, type SlotImageChoice } from "@swiss/lib/imageSlots";
+import {
+  affinityRulesForForm,
+  applyPdOverrides,
+  canonicalizeProducts,
+  emptyPdOverrides,
+  gpuSpecForRole,
+  pdFromLayer,
+  pdRoleCapacity,
+  PD_ROLES,
+  type PdInfo,
+  type PdOverrides,
+  type PdRole,
+  type PdRoleInfo,
+} from "@swiss/lib/pdRoles";
+import {
+  applyResourceEdits,
+  deriveResourceEdits,
+  dropClearedResources,
+  emptyResourceEdits,
+  gpuRequestSummary,
+  seedFormResources,
+  useResourceRows,
+  type CustomResourceRow,
+  type HelmResources,
+  type ResourceEdits,
+} from "@swiss/lib/resources";
 import { toYaml } from "@swiss/lib/yaml";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
@@ -46,6 +72,13 @@ export interface Form {
   gpuProducts: string[];
   // The resource picked among the vendor's; empty lets swissd pick.
   gpuResource: string;
+  // Request/limit overrides for chart and site resource rows. Empty keeps the default.
+  resources: ResourceEdits;
+  // Operator-added resource rows, in the order they were added. A blank row
+  // stays here until removed; plan time folds non-empty ones into resources.
+  customResources: CustomResourceRow[];
+  // Per-role PD scheduling overrides (prefill / decode) when pd.enabled && !pd.colocate.
+  pd: PdOverrides;
   tolerations: Toleration[];
   // A site profile preset, by name, merged into a deploy's form values. An
   // upgrade has none: the release's form layer already carries its values.
@@ -112,6 +145,9 @@ export const EMPTY: Form = {
   edits: "",
   gpuProducts: [],
   gpuResource: "",
+  resources: emptyResourceEdits(),
+  customResources: [],
+  pd: emptyPdOverrides(),
   tolerations: [],
   preset: "",
   affinity: [],
@@ -207,6 +243,11 @@ export function DeploySettings({
   imageMirror,
   slots,
   slotsError,
+  resources,
+  pd,
+  nodes,
+  gpuSpecs,
+  gpuVendor,
   supportedGPUs,
   clusterGPUs,
   gpuResources,
@@ -222,9 +263,6 @@ export function DeploySettings({
   remember,
   onRemember,
   presets,
-  onImagesOpen,
-  imagesRefreshing,
-  onImagesRefresh,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -246,6 +284,13 @@ export function DeploySettings({
   // returns; the engine row still shows from `image`.
   slots?: ImageSlot[];
   slotsError?: Error | null;
+  // Effective top-level resources and model GPU request from the compose dry run.
+  resources?: HelmResources;
+  // Effective PD role configuration from dry-run helmValues (or deployed plan).
+  pd?: PdInfo;
+  nodes?: Node[];
+  gpuSpecs?: GPUSpec[];
+  gpuVendor?: string;
   lockIdentity?: boolean;
   readOnly?: boolean;
   // Products the chosen variant declares, and those this cluster reports on
@@ -264,10 +309,6 @@ export function DeploySettings({
   onRemember?: (key: string, on: boolean) => void;
   // The site profile's presets, on a deploy.
   presets?: Record<string, Preset>;
-  // The Images disclosure. Opening it runs initial slot discovery; refresh re-runs it manually.
-  onImagesOpen?: (open: boolean) => void;
-  imagesRefreshing?: boolean;
-  onImagesRefresh?: () => void;
 }) {
   const checked = useDebounced(form.inputs, CHECK_MS);
   const picked = presets?.[form.preset];
@@ -784,19 +825,58 @@ export function DeploySettings({
               )}
             </Row>
           )}
-          <Row label="GPU product" note="restricts scheduling to these products; any one will do">
-            <Products
-              selected={form.gpuProducts}
-              onChange={(v) => onChange({ gpuProducts: v })}
-              options={productChoices(supportedGPUs, clusterGPUs, form.gpuProducts)}
-              listed={supportedGPUs}
-            />
-          </Row>
-          {capacity && (
+          {(!pd?.enabled || pd.colocate || form.gpuProducts.length > 0) && (
+            <Row
+              label="GPU product"
+              note={
+                pd?.enabled && !pd.colocate
+                  ? "legacy top-level pin — clear to use Prefill / Decode GPU affinity below"
+                  : "restricts scheduling to these products; any one will do"
+              }
+            >
+              <Products
+                selected={form.gpuProducts}
+                onChange={(v) => onChange({ gpuProducts: v })}
+                options={productChoices(supportedGPUs, clusterGPUs, form.gpuProducts)}
+                listed={supportedGPUs}
+              />
+            </Row>
+          )}
+          {capacity && (!pd?.enabled || pd.colocate) && (
             <Row label="On this cluster" note="nodes with this resource and product, and what is free on them">
               <CapacityLine {...capacity} />
             </Row>
           )}
+          {pd?.enabled && (
+            <PdRolesRows
+              pd={pd}
+              value={form.pd}
+              onChange={(next) => onChange({ pd: next })}
+              topGpuProducts={form.gpuProducts}
+              gpuResource={form.gpuResource}
+              gpuVendor={gpuVendor}
+              gpuSpecs={gpuSpecs}
+              nodes={nodes}
+              supportedGPUs={supportedGPUs}
+              clusterGPUs={clusterGPUs}
+              refreshing={!!capacity?.refreshing}
+              onRefresh={capacity?.onRefresh}
+            />
+          )}
+          <Row label="Resources" note="requested and limit resources from chart or site defaults (including hugepages); empty keeps default">
+            <ResourceList
+              base={resources}
+              resources={form.resources}
+              custom={form.customResources}
+              gpu={gpuRequestSummary({
+                base: resources,
+                formGpuResource: form.gpuResource,
+                gpuResources,
+                perPodGpus: capacity?.perPod,
+              })}
+              onChange={onChange}
+            />
+          </Row>
           {presets && Object.keys(presets).length > 0 && (
             <Row label="Preset" note="site profile values merged into this deploy's: a list keeps both sides' items, a value set here wins">
               <div className="w-full min-w-0 space-y-1.5 py-1">
@@ -863,12 +943,11 @@ export function DeploySettings({
               {!cache.unsupported && form.cache && <CacheFields form={form} onChange={onChange} defaults={cache.defaults} />}
             </Row>
           )}
+          <ImageRows form={form} onChange={onChange} image={image} imageMirror={imageMirror} slots={slots} error={slotsError} />
 
         </div>
 
       </details>
-
-      <ImagesSection form={form} onChange={onChange} image={image} imageMirror={imageMirror} slots={slots} error={slotsError} onOpen={onImagesOpen} refreshing={imagesRefreshing} onRefresh={onImagesRefresh} />
 
       <Card>
         <CardHeader>
@@ -951,18 +1030,15 @@ function Row({
 
 const IMAGE_SOURCE_LABELS = { aria: "image source", site: "site mirror", catalog: "catalog original", default: "default", custom: "custom", inherited: "inherited" };
 
-// One row per chart image. Empty keeps the image shown as the placeholder;
+// One row per chart image inside Advanced. Empty keeps the image shown as the placeholder;
 // a typed ref is the form layer. Every slot offers site mirror vs default when mirrored.
-function ImagesSection({
+function ImageRows({
   form,
   onChange,
   image,
   imageMirror,
   slots,
   error,
-  onOpen,
-  refreshing,
-  onRefresh,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -970,59 +1046,35 @@ function ImagesSection({
   imageMirror?: string;
   slots?: ImageSlot[];
   error?: Error | null;
-  onOpen?: (open: boolean) => void;
-  refreshing?: boolean;
-  onRefresh?: () => void;
 }) {
   const rows = imageRows(slots, image, form.images);
   return (
-    <details className="group rounded-lg border bg-card" onToggle={(e) => onOpen?.(e.currentTarget.open)}>
-      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
-        Images
-        <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
-      </summary>
-      <div className="border-t px-4 py-3">
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-sm text-muted-foreground">
-            Each row is a values path. Empty keeps the image in the placeholder; a value is written on the form layer.
-          </p>
-          {onRefresh && (
-            <button
-              type="button"
-              aria-label="refresh images"
-              title="Refresh images"
-              disabled={refreshing}
-              onClick={onRefresh}
-              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-            >
-              <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
-            </button>
-          )}
-        </div>
-        {error && <p className="mt-2 text-xs text-warning">{error.message}</p>}
-      </div>
-      <div className="divide-y border-t px-4">
-        {rows.map((slot) => {
-          const value = imageText(form.images[slot.path]);
-          const set = (raw: string) => onChange({ images: imagePatch(form.images, slot.path, slot.kind, raw) });
-          const choices = slotImageChoices(slot, image, imageMirror);
-          return (
-            <Row key={slot.path} label={slot.path}>
-              <div className="w-full min-w-0 space-y-1.5 py-1">
-                <Input
-                  value={value}
-                  onChange={(e) => set(e.target.value)}
-                  placeholder={slot.value || "repository:tag"}
-                  aria-label={slot.path}
-                  className="font-mono text-xs"
-                />
-                {choices.length > 0 && <ImageSource choices={choices} value={value} onPick={set} />}
-              </div>
-            </Row>
-          );
-        })}
-      </div>
-    </details>
+    <>
+      {rows.map((slot, i) => {
+        const value = imageText(form.images[slot.path]);
+        const set = (raw: string) => onChange({ images: imagePatch(form.images, slot.path, slot.kind, raw) });
+        const choices = slotImageChoices(slot, image, imageMirror);
+        return (
+          <Row
+            key={slot.path}
+            label={slot.path}
+            note={i === 0 ? "Each row is a values path. Empty keeps the image in the placeholder; a value is written on the form layer." : undefined}
+          >
+            <div className="w-full min-w-0 space-y-1.5 py-1">
+              <Input
+                value={value}
+                onChange={(e) => set(e.target.value)}
+                placeholder={slot.value || "repository:tag"}
+                aria-label={slot.path}
+                className="font-mono text-xs"
+              />
+              {choices.length > 0 && <ImageSource choices={choices} value={value} onPick={set} />}
+              {i === 0 && error && <p className="text-xs text-warning">{error.message}</p>}
+            </div>
+          </Row>
+        );
+      })}
+    </>
   );
 }
 
@@ -1201,6 +1253,8 @@ function Suggest({
   disabled,
   invalid,
   choices,
+  className,
+  "aria-label": ariaLabel,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -1209,6 +1263,8 @@ function Suggest({
   disabled?: boolean;
   invalid?: boolean;
   choices?: { value: string; label: string }[];
+  className?: string;
+  "aria-label"?: string;
 }) {
   const s = useSuggestion(value, suggestion, disabled);
   const [listed, setListed] = useState(false);
@@ -1224,8 +1280,9 @@ function Suggest({
         }}
         disabled={disabled}
         placeholder={placeholder}
+        aria-label={ariaLabel}
         aria-invalid={invalid || undefined}
-        className={cn(s.hint && "pr-11", invalid && "border-destructive")}
+        className={cn(s.hint && "pr-11", invalid && "border-destructive", className)}
         onFocus={s.focus.onFocus}
         onBlur={() => {
           s.focus.onBlur();
@@ -1394,6 +1451,156 @@ function Tolerations({
   );
 }
 
+function swissResourceProblem(problem: "gpuReserved" | "exists" | "duplicate"): string {
+  switch (problem) {
+    case "gpuReserved":
+      return "GPU resource count is controlled by the model and GPU resource selector above; remove it here";
+    case "exists":
+      return "already listed above";
+    case "duplicate":
+      return "duplicate resource key";
+  }
+}
+
+function ResourceList({
+  base,
+  resources,
+  custom,
+  gpu,
+  onChange,
+}: {
+  base?: HelmResources;
+  resources: ResourceEdits;
+  custom: CustomResourceRow[];
+  gpu?: ReturnType<typeof gpuRequestSummary>;
+  onChange: (patch: Partial<Pick<Form, "resources" | "customResources">>) => void;
+}) {
+  const {
+    defaultRows,
+    customRows,
+    setDefaultValue,
+    resetDefaultKey,
+    addCustomRow,
+    updateCustomRow,
+    removeCustomRow,
+  } = useResourceRows({
+    base,
+    resources,
+    custom,
+    gpuResource: gpu?.resource,
+    onResources: (next) => onChange({ resources: next }),
+    onCustom: (next) => onChange({ customResources: next }),
+  });
+
+  const hasRows = !!gpu || defaultRows.length > 0 || customRows.length > 0;
+  return (
+    <div className="w-full min-w-0 space-y-2 py-1">
+      {hasRows ? (
+        <div className="grid grid-cols-[minmax(8rem,1.2fr)_1fr_1fr_auto] items-center gap-x-2 gap-y-1.5 text-xs">
+          <span className="text-muted-foreground">Resource</span>
+          <span className="text-muted-foreground">Request</span>
+          <span className="text-muted-foreground">Limit</span>
+          <span />
+          {gpu && (
+            <>
+              <span className="truncate font-mono" title={gpu.resource}>{gpu.resource}</span>
+              <span className="truncate font-mono text-muted-foreground">{gpu.gpus || "—"}</span>
+              <span className="truncate font-mono">
+                {gpu.gpus || "—"}
+                {gpu.pdRoles?.length ? ` (${gpu.pdRoles.map((p) => `${p.role} ${p.gpus}`).join(", ")})` : ""}
+              </span>
+              <span className="text-[11px] text-muted-foreground">GPU</span>
+            </>
+          )}
+          {defaultRows.map((r) => (
+            <div key={`default:${r.key}`} className="contents">
+              <span className="truncate font-mono" title={r.key}>{r.key}</span>
+              <Suggest
+                value={r.request}
+                onChange={(v) => setDefaultValue(r.key, "requests", v)}
+                suggestion={r.defaultRequest || undefined}
+                placeholder={r.defaultRequest || "—"}
+                aria-label={`${r.key} request`}
+                className="font-mono text-xs"
+              />
+              <Suggest
+                value={r.limit}
+                onChange={(v) => setDefaultValue(r.key, "limits", v)}
+                suggestion={r.defaultLimit || undefined}
+                placeholder={r.defaultLimit || "—"}
+                aria-label={`${r.key} limit`}
+                className="font-mono text-xs"
+              />
+              {r.dirty ? (
+                <button
+                  type="button"
+                  onClick={() => resetDefaultKey(r.key)}
+                  aria-label={`reset ${r.key}`}
+                  title="Reset to default"
+                  className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                >
+                  <RotateCcw className="size-3.5" />
+                </button>
+              ) : (
+                <span className="size-8" />
+              )}
+              {r.keyProblem && (
+                <p className="col-span-4 text-xs text-warning">{swissResourceProblem(r.keyProblem)}</p>
+              )}
+            </div>
+          ))}
+          {customRows.map((r, i) => (
+            <div key={i} className="contents">
+              <Input
+                value={r.key}
+                onChange={(e) => updateCustomRow(i, { key: e.target.value })}
+                placeholder="cpu, memory, hugepages-2Mi..."
+                aria-invalid={r.error ? true : undefined}
+                aria-label="resource key"
+                className={cn("font-mono text-xs", r.error && "border-destructive")}
+              />
+              <Input
+                value={r.request}
+                onChange={(e) => updateCustomRow(i, { request: e.target.value })}
+                placeholder="Request"
+                aria-label={`${r.key.trim() || "resource"} request`}
+                className="font-mono text-xs"
+              />
+              <Input
+                value={r.limit}
+                onChange={(e) => updateCustomRow(i, { limit: e.target.value })}
+                placeholder="Limit"
+                aria-label={`${r.key.trim() || "resource"} limit`}
+                className="font-mono text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => removeCustomRow(i)}
+                aria-label={`remove ${r.key.trim() || "resource"}`}
+                className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"
+              >
+                <X className="size-3.5" />
+              </button>
+              {r.error && (
+                <p className="col-span-4 text-xs text-destructive">{swissResourceProblem(r.error)}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">No container resource requests or limits defined in chart or site defaults.</p>
+      )}
+      <button
+        type="button"
+        onClick={addCustomRow}
+        className="text-sm text-muted-foreground underline hover:text-foreground"
+      >
+        Add resource
+      </button>
+    </div>
+  );
+}
+
 function AffinityRules({ rules, onChange }: { rules: AffinityRule[]; onChange: (v: AffinityRule[]) => void }) {
   const patch = (i: number, r: AffinityRule) => onChange(rules.map((x, j) => (i === j ? r : x)));
   return (
@@ -1462,7 +1669,7 @@ export interface CapacityProps {
   perPod: number;
   needNodes: number;
   refreshing: boolean;
-  onRefresh: () => void;
+  onRefresh?: () => void;
 }
 
 // Nodes and GPUs the picked resource and products can land on, total and free.
@@ -1495,15 +1702,17 @@ function CapacityLine({ value, perPod, needNodes, refreshing, onRefresh }: Capac
           </>
         )}
       </span>
-      <button
-        type="button"
-        aria-label="refresh nodes"
-        disabled={refreshing}
-        onClick={onRefresh}
-        className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-      >
-        <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
-      </button>
+      {onRefresh && (
+        <button
+          type="button"
+          aria-label="refresh nodes"
+          disabled={refreshing}
+          onClick={onRefresh}
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+        >
+          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+        </button>
+      )}
     </div>
   );
 }
@@ -1575,6 +1784,178 @@ function Products({
         selected.length === 0 && <p className="text-xs text-muted-foreground">none selected: any supported product</p>
       )}
     </div>
+  );
+}
+
+const PD_ROLE_LABELS: Record<PdRole, string> = {
+  prefill: "Prefill",
+  decode: "Decode",
+};
+
+function pdRoleCaption(info?: PdRoleInfo): string | undefined {
+  if (!info) return undefined;
+  const parts: string[] = [];
+  if (info.gpus > 0) parts.push(`${info.gpus} GPU${info.gpus === 1 ? "" : "s"}/pod`);
+  parts.push(`${info.replicas} replica${info.replicas === 1 ? "" : "s"}`);
+  if (info.size > 1) parts.push(`${info.size} nodes/replica`);
+  return parts.join(" · ");
+}
+
+function PdRolesRows({
+  pd,
+  value,
+  onChange,
+  topGpuProducts,
+  gpuResource,
+  gpuVendor,
+  gpuSpecs,
+  nodes,
+  supportedGPUs,
+  clusterGPUs,
+  refreshing,
+  onRefresh,
+}: {
+  pd: PdInfo;
+  value: PdOverrides;
+  onChange: (next: PdOverrides) => void;
+  topGpuProducts: string[];
+  gpuResource: string;
+  gpuVendor?: string;
+  gpuSpecs?: GPUSpec[];
+  nodes?: Node[];
+  supportedGPUs?: string[];
+  clusterGPUs?: string[];
+  refreshing: boolean;
+  onRefresh?: () => void;
+}) {
+  if (pd.colocate) {
+    const badges = PD_ROLES.map((role) => {
+      const info = pd[role];
+      return info ? `${PD_ROLE_LABELS[role]}: ${info.gpus} GPU${info.gpus === 1 ? "" : "s"}` : null;
+    }).filter(Boolean);
+    return (
+      <Row
+        label="Prefill & Decode"
+        caption="colocated in one shared Pod"
+        hint="In colocate mode prefill and decode share one Pod, so node affinity and scheduler come from the top-level settings below."
+      >
+        <div className="w-full space-y-1 text-xs text-muted-foreground">
+          {badges.length > 0 && <p className="font-mono text-foreground">{badges.join(" · ")}</p>}
+          <p>Shared Pod mode: scheduling uses the top-level GPU affinity and scheduler below.</p>
+        </div>
+      </Row>
+    );
+  }
+
+  const labelSpec = gpuSpecForRole(gpuSpecs, gpuResource, gpuVendor);
+  const missingLabelKey = gpuSpecs !== undefined && !labelSpec?.labelKey;
+  const clusterPool = nodes ? pickableProducts(nodes, gpuVendor, gpuSpecs, gpuResource) : clusterGPUs;
+
+  const patchRole = (role: PdRole, patch: Partial<PdOverrides[PdRole]>) =>
+    onChange({ ...value, [role]: { ...value[role], ...patch } });
+
+  return (
+    <>
+      {PD_ROLES.map((role) => {
+        const info = pd[role];
+        const edit = value[role];
+        const selected = canonicalizeProducts(edit.gpuProducts, gpuSpecs);
+        const options = productChoices(supportedGPUs, clusterPool, selected);
+        const unverified = (o: string) => unlistedProducts(supportedGPUs, [o]).length > 0;
+        const supported = options.filter((o) => !unverified(o));
+        const others = options.filter(unverified);
+        const forced = unlistedProducts(supportedGPUs, selected);
+        const roleCap = pdRoleCapacity(info, edit, {
+          nodes,
+          gpuSpecs,
+          gpuVendor,
+          gpuResource,
+          topGpuProducts,
+          supportedGpus: supportedGPUs,
+        });
+
+        const chip = (o: string) => {
+          const active = selected.includes(o);
+          const off = unverified(o);
+          const lockedOut = missingLabelKey && !active;
+          return (
+            <button
+              key={o}
+              type="button"
+              disabled={lockedOut}
+              aria-pressed={active}
+              title={off ? "unverified with this variant" : undefined}
+              onClick={() => patchRole(role, { gpuProducts: active ? selected.filter((p) => p !== o) : [...selected, o] })}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                !active && "bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+                active && !off && "border-success/40 bg-success/15 font-medium text-success",
+                active && off && "border-warning/50 bg-warning/15 font-medium text-warning",
+              )}
+            >
+              {active && off && <TriangleAlert className="size-3" />}
+              {o}
+            </button>
+          );
+        };
+
+        return (
+          <Row
+            key={role}
+            label={`${PD_ROLE_LABELS[role]} GPU product`}
+            caption={`pd.${role}.affinityReplace${pdRoleCaption(info) ? ` · ${pdRoleCaption(info)}` : ""}`}
+            hint={`Pins ${role} pods to specific GPU products via pd.${role}.affinityReplace. Leave empty to use the variant or top-level default. GPU resource, Resources, Tolerations, Priority class and Scheduler stay shared below.`}
+          >
+            <div className="w-full min-w-0 space-y-2 py-0.5">
+              {missingLabelKey && (
+                <p className="flex items-center gap-1.5 text-xs text-warning">
+                  <TriangleAlert className="size-3.5 shrink-0" />
+                  no labelKey in site GPU profile for this resource — configure in Plan editor
+                </p>
+              )}
+              {options.length === 0 ? (
+                <p className="text-xs text-muted-foreground">no GPU product reported by this cluster</p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  {supported.length > 0 && (
+                    <span className="inline-flex flex-wrap items-center gap-1.5">{supported.map(chip)}</span>
+                  )}
+                  {others.length > 0 && (
+                    <span className="inline-flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] text-muted-foreground">unverified</span>
+                      {others.map(chip)}
+                    </span>
+                  )}
+                </div>
+              )}
+              {forced.length > 0 ? (
+                <p className="flex items-center gap-1.5 text-xs text-warning">
+                  <TriangleAlert className="size-3.5 shrink-0" />
+                  {forced.join(", ")} unverified with this variant
+                </p>
+              ) : selected.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {info?.hasAffinityReplace
+                    ? info.gpuProducts.length > 0
+                      ? `chart/site default: ${info.gpuProducts.join(", ")}`
+                      : "chart/site defines affinityReplace"
+                    : "none selected: any supported product"}
+                </p>
+              )}
+              {roleCap && (
+                <CapacityLine
+                  value={roleCap.value}
+                  perPod={roleCap.perPod}
+                  needNodes={roleCap.needNodes}
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                />
+              )}
+            </div>
+          </Row>
+        );
+      })}
+    </>
   );
 }
 
@@ -1857,6 +2238,8 @@ export function planRequest(
     formLayer?: Record<string, unknown>;
     values?: Record<string, unknown>;
     siteEnv?: Record<string, unknown>;
+    gpuSpecs?: GPUSpec[];
+    gpuVendor?: string;
   },
 ): PlanRequest {
   const overrides: Record<string, unknown> = {};
@@ -1948,6 +2331,8 @@ export function planRequest(
   // on an upgrade it is a clear, so the release's copy of that path is dropped
   // before the overlay, the same way an emptied toleration list replaces the old one.
   applyImageEdits(overrides, f.images);
+  const resourceEdits = deriveResourceEdits(f.resources, f.customResources);
+  applyResourceEdits(overrides, resourceEdits);
   if (f.priorityClassName.trim()) overrides.priorityClassName = f.priorityClassName.trim();
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
 
@@ -1955,9 +2340,18 @@ export function planRequest(
   const siteEnv = envBase(opts.siteEnv);
   const preset = Object.keys(siteEnv).length ? (opts.preset ? withPreset(opts.preset, siteEnv) : siteEnv) : opts.preset;
   const base = opts.formLayer ? structuredClone(opts.formLayer) : undefined;
-  if (base) dropClearedImages(base, f.images);
+  if (base) {
+    dropClearedImages(base, f.images);
+    dropClearedResources(base, resourceEdits);
+  }
   const layer = withEnv(opts.values, withPreset(base ? overlay(base, overrides) : overrides, preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
+  applyPdOverrides(layer, f.pd, {
+    gpuSpecs: opts.gpuSpecs,
+    gpuResource: f.gpuResource,
+    gpuVendor: opts.gpuVendor,
+    formLayer: opts.formLayer,
+  });
 
   return {
     catalog: opts.catalog || undefined,
@@ -1993,7 +2387,7 @@ export function applyFlags(f: Form): ApplyFlags | undefined {
 // The plan stores the composed overrides tree, not the form fields, so this is
 // the inverse of planRequest -- and the pair is why an upgrade can show the
 // settings rather than only promise it carried them forward.
-export function formFromPlan(plan: Plan): Form {
+export function formFromPlan(plan: Plan, gpuSpecs?: GPUSpec[]): Form {
   // The form's own document, not the composed result: an upgrade seeds from
   // what the operator set, so recomposing against a newer catalog keeps it.
   const o = (plan.layers?.form ?? {}) as Record<string, unknown>;
@@ -2029,8 +2423,10 @@ export function formFromPlan(plan: Plan): Form {
     gpuProducts: gpuProductsOf(o),
     // The resource the release runs on, so an upgrade stays on it.
     gpuResource: String(((plan.layers?.derived?.model ?? {}) as Record<string, unknown>).gpuResource ?? ""),
+    ...seedFormResources(plan.layers),
+    pd: pdFromLayer(o, gpuSpecs),
     tolerations: tolerationsOf(o),
-    affinity: affinityRules(o),
+    affinity: affinityRulesForForm(o, gpuSpecs),
     replicaCount: str("replicaCount"),
     route: str("modelRoute.nginx.route"),
     images: imageEditsFromLayer(o),

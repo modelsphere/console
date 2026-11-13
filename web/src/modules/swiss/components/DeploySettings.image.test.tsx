@@ -8,14 +8,15 @@ const render = (img: string, pair = image) =>
 const selected = (html: string, label: string) => new RegExp(`<option[^>]*selected[^>]*>${label}</option>`).test(html);
 
 describe("image override", () => {
-  it("keeps Images collapsed until opened, with the engine image still in the form", () => {
+  it("renders image overrides inside Advanced without a standalone Images disclosure card", () => {
     const html = render(image.site);
-    const at = html.indexOf("Images");
+    expect(html).not.toMatch(/<summary[^>]*>\s*Images\b/);
+    const at = html.indexOf("Advanced");
     const start = html.lastIndexOf("<details", at);
-    const tag = html.slice(start, html.indexOf(">", start));
-    expect(tag.startsWith("<details")).toBe(true);
-    expect(tag).not.toMatch(/\sopen[\s>=]/);
-    expect(selected(html, "site mirror")).toBe(true);
+    const end = html.indexOf("</details>", at);
+    const section = html.slice(start, end);
+    expect(section).toContain('aria-label="image"');
+    expect(selected(section, "site mirror")).toBe(true);
   });
 
   it("offers the site's mirror and the catalog's own image, marking the one in the field", () => {
@@ -48,16 +49,16 @@ describe("image override", () => {
     expect(html).not.toContain('aria-label="refresh images"');
   });
 
-  it("renders a refresh button in Images when onImagesRefresh is provided", () => {
+  it("does not render a refresh button inside Images", () => {
     const html = renderToStaticMarkup(
       <DeploySettings
         form={{ ...EMPTY, serviceId: "m" }}
         onChange={() => {}}
         image={image}
-        onImagesRefresh={() => {}}
+        slots={[{ path: "image", kind: "map", value: image.site }]}
       />,
     );
-    expect(html).toContain('aria-label="refresh images"');
+    expect(html).not.toContain('aria-label="refresh images"');
   });
 
   it("offers site mirror and default options on every discovered image slot when imageMirror is set", () => {

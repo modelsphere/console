@@ -263,4 +263,40 @@ describe("env and pd.<role>.env merging", () => {
     expect(f.edits).toContain('value: "8"');
     expect(f.edits).toContain('value: "false"');
   });
+
+  it("preserves pd.<role>.schedulerName and splits standalone role GPU term cleanly without breaking custom affinity rules", () => {
+    const layer = {
+      pd: {
+        prefill: {
+          schedulerName: "volcano",
+          affinityReplace: {
+            nodeAffinity: {
+              requiredDuringSchedulingIgnoredDuringExecution: {
+                nodeSelectorTerms: [{ matchExpressions: [storageNet] }, gpuTerm],
+              },
+            },
+          },
+        },
+      },
+    };
+    const f = formFromPlan(plan(layer));
+    expect(f.pd.prefill).toEqual({ gpuProducts: ["B300"] });
+    expect(f.affinity).toHaveLength(1);
+    const cleared = upgrade(layer, (x) => ({
+      ...x,
+      pd: { ...x.pd, prefill: { gpuProducts: [] } },
+    }));
+    expect(cleared.pd).toEqual({
+      prefill: {
+        schedulerName: "volcano",
+        affinityReplace: {
+          nodeAffinity: {
+            requiredDuringSchedulingIgnoredDuringExecution: {
+              nodeSelectorTerms: [{ matchExpressions: [storageNet] }],
+            },
+          },
+        },
+      },
+    });
+  });
 });

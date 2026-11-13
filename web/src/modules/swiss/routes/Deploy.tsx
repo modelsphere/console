@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { ChevronLeft, TriangleAlert } from "lucide-react";
+import { ChevronLeft, RefreshCw, TriangleAlert } from "lucide-react";
 import { api, deployApi, type ApplyResult, type ApplyWith, type DiffResult, type Plan, type PlanRequest } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
+import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
+import { cn } from "@swiss/lib/utils";
 import { applyFlags, DeploySettings, EMPTY, imageOf, planRequest, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
 import { useImageSlots } from "@swiss/lib/useImageSlots";
 import { Pipeline } from "@swiss/components/Pipeline";
@@ -90,19 +92,18 @@ export function Deploy() {
   const loaded = !!model.data && !profile.isPending;
   const siteDefaults = useMemo(() => siteSwitchDefaults(profile.data), [profile.data]);
   const variantValues = model.data?.variant.values;
-  const seeded = useRef<SwitchDefaults | null>(null);
+  const expectedSeed = useMemo(() => (loaded ? switchDefaults(siteDefaults, variantValues) : null), [loaded, siteDefaults, variantValues]);
+  const [seeded, setSeeded] = useState<SwitchDefaults | null>(null);
   useEffect(() => {
-    if (!loaded) return;
-    const next = switchDefaults(siteDefaults, variantValues);
-    const prev = seeded.current;
-    seeded.current = next;
-    if (prev && JSON.stringify(prev) === JSON.stringify(next)) return;
-    setForm((f) => reseed(f, prev ?? {}, next));
-    if (prev) {
+    if (!expectedSeed) return;
+    if (seeded && JSON.stringify(seeded) === JSON.stringify(expectedSeed)) return;
+    setForm((f) => reseed(f, seeded ?? {}, expectedSeed));
+    setSeeded(expectedSeed);
+    if (seeded) {
       setPlan(null);
       setDiff(null);
     }
-  }, [loaded, siteDefaults, variantValues]);
+  }, [expectedSeed, seeded]);
 
   // A diff is bound to the plan it was computed from, so touching the form
   // invalidates both, and the pipeline walks back to Plan rather than leaving a
@@ -145,11 +146,14 @@ export function Deploy() {
           preset: presetValues(profile.data?.profile, f.preset),
           values: model.data.variant.values,
           siteEnv: profile.data?.profile?.extra,
+          gpuSpecs: profile.data?.profile?.nodes?.gpus,
+          gpuVendor: model.data.variant.requires.vendor,
         })
       : undefined;
-  // Discovery runs only while Images is open. The engine image is already on the form, so a closed section still submits it.
-  const [imagesOpen, setImagesOpen] = useState(false);
-  const discovered = useImageSlots(form, requestOf, imagesOpen && !!model.data && !!catalog && cluster.data?.allowDeploy !== false);
+  // Chart discovery runs once on open after the form is seeded, on target changes, and on manual refresh.
+  const formSeeded = !!seeded && !!expectedSeed && JSON.stringify(seeded) === JSON.stringify(expectedSeed);
+  const canDiscover = !model.isPending && !model.isPlaceholderData && !!model.data && !cluster.isPending && !profile.isPending && !!catalog && cluster.data?.allowDeploy !== false && formSeeded;
+  const discovered = useImageSlots(form, requestOf, canDiscover, profile.data?.profile?.nodes?.gpus);
 
   const planM = useMutation({
     mutationFn: () => deployApi.plan(requestOf(form)!),
@@ -193,22 +197,36 @@ export function Deploy() {
     <div className="space-y-5">
       <Back name={name} catalog={catalog} />
 
-      <div>
-        <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
-          Deploy {m.displayName ?? m.name}
-          <CatalogBadge name={catalog} show={choice.several} />
-          <SchemaBadge schema={schema} />
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          <Badge variant="outline">{variant.id}</Badge>{" "}
-          <Badge variant="muted">v{variant.version}</Badge>{" "}
-          {variant.engine} · {variant.requires.gpus} GPU
-          {variant.requires.nodes && variant.requires.nodes > 1
-            ? ` × ${variant.requires.nodes} nodes`
-            : ""}{" "}
-          · chart {variant.chart.name}
-          {chartRange ? ` ${variant.chart.version}` : `-${variant.chart.version}`}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
+            Deploy {m.displayName ?? m.name}
+            <CatalogBadge name={catalog} show={choice.several} />
+            <SchemaBadge schema={schema} />
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            <Badge variant="outline">{variant.id}</Badge>{" "}
+            <Badge variant="muted">v{variant.version}</Badge>{" "}
+            {variant.engine} · {variant.requires.gpus} GPU
+            {variant.requires.nodes && variant.requires.nodes > 1
+              ? ` × ${variant.requires.nodes} nodes`
+              : ""}{" "}
+            · chart {variant.chart.name}
+            {chartRange ? ` ${variant.chart.version}` : `-${variant.chart.version}`}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          disabled={!canDiscover || discovered.fetching}
+          onClick={() => void discovered.reload()}
+          title="Re-run dry-run compose with the current settings to refresh chart defaults"
+        >
+          <RefreshCw className={cn("size-3.5", discovered.fetching && "animate-spin")} />
+          Refresh
+        </Button>
       </div>
 
       {planM.error && <ErrorState what="the request" error={planM.error} />}
@@ -292,9 +310,11 @@ export function Deploy() {
         imageMirror={profile.data?.profile?.registry?.mirror}
         slots={discovered.slots}
         slotsError={discovered.queryError}
-        onImagesOpen={setImagesOpen}
-        imagesRefreshing={discovered.fetching}
-        onImagesRefresh={() => void discovered.reload()}
+        resources={discovered.resources}
+        pd={discovered.pd}
+        nodes={nodes.data?.nodes}
+        gpuSpecs={profile.data?.profile?.nodes?.gpus}
+        gpuVendor={variant?.requires.vendor}
         supportedGPUs={variant?.requires.gpuProduct}
         clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
         gpuResources={variant?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, variant.requires.vendor) : undefined}

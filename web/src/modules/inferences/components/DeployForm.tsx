@@ -21,16 +21,27 @@ import {
   Switch,
   cn,
 } from "@modelsphere/ui";
-import { Plus, RefreshCw, X } from "lucide-react";
-import type { ClusterInfo, Preset } from "@swiss/lib/api";
+import { Plus, RefreshCw, RotateCcw, TriangleAlert, X } from "lucide-react";
+import type { ClusterInfo, GPUSpec, Node, Preset } from "@swiss/lib/api";
 import { editRule, listLabel, type AffinityRule } from "@swiss/lib/affinity";
 import { toYaml } from "@swiss/lib/yaml";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
-import { unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
+import { pickableProducts, productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { CHECK_MS, inputError, rememberable, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { effective, tolerationExtras, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { imagePatch, imageRows, imageText, slotImageChoices, type ImageSlot } from "@swiss/lib/imageSlots";
+import {
+  canonicalizeProducts,
+  gpuSpecForRole,
+  pdRoleCapacity,
+  PD_ROLES,
+  type PdInfo,
+  type PdOverrides,
+  type PdRole,
+  type PdRoleInfo,
+} from "@swiss/lib/pdRoles";
+import { gpuRequestSummary, useResourceRows, type CustomResourceRow, type HelmResources, type ResourceEdits } from "@swiss/lib/resources";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
 import { useT } from "@/modules/inferences/i18n";
@@ -67,10 +78,13 @@ export interface DeployFormProps {
   // returns; the engine row still shows from defaults.image.
   slots?: ImageSlot[];
   slotsError?: Error | null;
-  // Opening Images runs the initial slot-discovery compose dry-run; refresh re-runs it manually.
-  onImagesOpen?: (open: boolean) => void;
-  imagesRefreshing?: boolean;
-  onImagesRefresh?: () => void;
+  // Effective top-level resources and model GPU request from the compose dry run.
+  resources?: HelmResources;
+  // Effective PD role info from dry-run helmValues, plus cluster nodes/GPU specs for per-role affinity & capacity.
+  pd?: PdInfo;
+  nodes?: Node[];
+  gpuSpecs?: GPUSpec[];
+  gpuVendor?: string;
   recovery?: ReactNode;
   // The variant's inputs, each with the answer that applies when its field is left empty.
   inputs?: InputRow[];
@@ -83,7 +97,7 @@ export interface DeployFormProps {
   taints?: ClusterTaint[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, onImagesOpen, imagesRefreshing, onImagesRefresh, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, resources, pd, nodes, gpuSpecs, gpuVendor, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -154,10 +168,40 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
         "resources",
         <>
           {gpuResources && <GpuResource resources={gpuResources} value={form.gpuResource} onChange={(gpuResource) => onChange({ gpuResource })} />}
-          <FloatingField label={f("gpuProducts")} hint={f("gpuProductsHint")} notice={forced.length > 0 ? t("deploy.fields.gpuForced", { products: forced.join(", ") }) : undefined}>
-            <FieldSelect multiple values={form.gpuProducts} onValuesChange={(v) => onChange({ gpuProducts: v })} options={gpuOptions.map((o) => ({ value: o, label: o, badge: unlistedProducts(gpuListed, [o]).length ? <Badge variant="warning">{f("gpuUnverified")}</Badge> : <Badge variant="success">{f("gpuVerified")}</Badge> }))} placeholder={gpuOptions.length ? undefined : f("gpuProductsEmpty")} disabled={!gpuOptions.length} />
-          </FloatingField>
-          {capacity && <CapacityHint {...capacity} />}
+          {(!pd?.enabled || pd.colocate || form.gpuProducts.length > 0) && (
+            <FloatingField label={f("gpuProducts")} hint={f("gpuProductsHint")} notice={forced.length > 0 ? t("deploy.fields.gpuForced", { products: forced.join(", ") }) : undefined}>
+              <FieldSelect multiple values={form.gpuProducts} onValuesChange={(v) => onChange({ gpuProducts: v })} options={gpuOptions.map((o) => ({ value: o, label: o, badge: unlistedProducts(gpuListed, [o]).length ? <Badge variant="warning">{f("gpuUnverified")}</Badge> : <Badge variant="success">{f("gpuVerified")}</Badge> }))} placeholder={gpuOptions.length ? undefined : f("gpuProductsEmpty")} disabled={!gpuOptions.length} />
+            </FloatingField>
+          )}
+          {capacity && (!pd?.enabled || pd.colocate) && <CapacityHint {...capacity} />}
+          {pd?.enabled && (
+            <PdRolesFields
+              pd={pd}
+              value={form.pd}
+              onChange={(next) => onChange({ pd: next })}
+              topGpuProducts={form.gpuProducts}
+              gpuResource={form.gpuResource}
+              gpuVendor={gpuVendor}
+              gpuSpecs={gpuSpecs}
+              nodes={nodes}
+              gpuOptions={gpuOptions}
+              gpuListed={gpuListed}
+              refreshing={!!capacity?.refreshing}
+              onRefresh={capacity?.onRefresh}
+            />
+          )}
+          <ResourceRows
+            base={resources}
+            resources={form.resources}
+            custom={form.customResources}
+            gpu={gpuRequestSummary({
+              base: resources,
+              formGpuResource: form.gpuResource,
+              gpuResources,
+              perPodGpus: capacity?.perPod,
+            })}
+            onChange={onChange}
+          />
           {presets && Object.keys(presets).length > 0 && <PresetField presets={presets} value={form.preset} onChange={(preset) => onChange({ preset })} />}
           <Tolerations rows={form.tolerations} taints={taints ?? []} onChange={(v) => onChange({ tolerations: v })} />
           {form.affinity.length > 0 && <AffinityRules rules={form.affinity} onChange={(affinity) => onChange({ affinity })} />}
@@ -201,7 +245,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
               </div>
             );
           })}
-          <ImageRows form={form} onChange={onChange} image={defaults.image} mirror={defaults.imageMirror} slots={slots} error={slotsError} onOpen={onImagesOpen} refreshing={imagesRefreshing} onRefresh={onImagesRefresh} />
+          <ImageRows form={form} onChange={onChange} image={defaults.image} mirror={defaults.imageMirror} slots={slots} error={slotsError} />
         </>,
       )}
 
@@ -278,8 +322,293 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
   );
 }
 
-// One row per chart image. Empty keeps the image shown as the placeholder;
-// a typed ref is the form layer. Every slot offers site mirror vs default when mirrored.
+function ResourceRows({
+  base,
+  resources,
+  custom,
+  gpu,
+  onChange,
+}: {
+  base?: HelmResources;
+  resources: ResourceEdits;
+  custom: CustomResourceRow[];
+  gpu?: ReturnType<typeof gpuRequestSummary>;
+  onChange: (patch: Partial<Pick<Form, "resources" | "customResources">>) => void;
+}) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+  const {
+    defaultRows,
+    customRows,
+    setDefaultValue,
+    resetDefaultKey,
+    addCustomRow,
+    updateCustomRow,
+    removeCustomRow,
+  } = useResourceRows({
+    base,
+    resources,
+    custom,
+    gpuResource: gpu?.resource,
+    onResources: (next) => onChange({ resources: next }),
+    onCustom: (next) => onChange({ customResources: next }),
+  });
+
+  const problemText = (problem: "gpuReserved" | "exists" | "duplicate") =>
+    problem === "gpuReserved" ? f("resourceGpuReserved") : problem === "exists" ? f("resourceExists") : f("resourceDuplicate");
+
+  const hasRows = !!gpu || defaultRows.length > 0 || customRows.length > 0;
+  return (
+    <Group label={f("containerResources")} hint={f("containerResourcesHint")}>
+      {hasRows ? (
+        <div className="grid grid-cols-[minmax(8rem,1.2fr)_1fr_1fr_auto] items-center gap-x-2 gap-y-2 text-xs">
+          <span className="text-muted-foreground">{f("resourceColName")}</span>
+          <span className="text-muted-foreground">{f("resourceColRequest")}</span>
+          <span className="text-muted-foreground">{f("resourceColLimit")}</span>
+          <span />
+          {gpu && (
+            <>
+              <span className="truncate font-mono" title={gpu.resource}>{gpu.resource}</span>
+              <span className="truncate font-mono text-muted-foreground">{gpu.gpus || "—"}</span>
+              <span className="truncate font-mono">
+                {gpu.gpus || "—"}
+                {gpu.pdRoles?.length ? ` (${gpu.pdRoles.map((p) => `${p.role} ${p.gpus}`).join(", ")})` : ""}
+              </span>
+              <span className="text-[11px] text-muted-foreground">{f("resourceGpuAuto")}</span>
+            </>
+          )}
+          {defaultRows.map((r) => (
+            <div key={`default:${r.key}`} className="contents">
+              <span className="truncate font-mono" title={r.key}>{r.key}</span>
+              <Suggest
+                bare
+                value={r.request}
+                onChange={(v) => setDefaultValue(r.key, "requests", v)}
+                suggestion={r.defaultRequest || undefined}
+                placeholder={r.defaultRequest || "—"}
+                aria-label={`${r.key} ${f("resourceColRequest")}`}
+                className="font-mono text-xs"
+              />
+              <Suggest
+                bare
+                value={r.limit}
+                onChange={(v) => setDefaultValue(r.key, "limits", v)}
+                suggestion={r.defaultLimit || undefined}
+                placeholder={r.defaultLimit || "—"}
+                aria-label={`${r.key} ${f("resourceColLimit")}`}
+                className="font-mono text-xs"
+              />
+              {r.dirty ? (
+                <Button variant="ghost" size="icon" className="size-8" aria-label={`${f("resourceReset")} ${r.key}`} title={f("resourceReset")} onClick={() => resetDefaultKey(r.key)}>
+                  <RotateCcw className="size-3.5" />
+                </Button>
+              ) : (
+                <span className="size-8" />
+              )}
+              {r.keyProblem && <p className="col-span-4 text-xs text-warning">{problemText(r.keyProblem)}</p>}
+            </div>
+          ))}
+          {customRows.map((r, i) => (
+            <div key={i} className="contents">
+              <Input
+                value={r.key}
+                onChange={(e) => updateCustomRow(i, { key: e.target.value })}
+                placeholder={f("resourceKeyPlaceholder")}
+                aria-invalid={r.error ? true : undefined}
+                aria-label={f("resourceColName")}
+                className="font-mono text-xs"
+              />
+              <Input
+                value={r.request}
+                onChange={(e) => updateCustomRow(i, { request: e.target.value })}
+                placeholder={f("resourceColRequest")}
+                aria-label={`${r.key.trim() || f("resourceColName")} ${f("resourceColRequest")}`}
+                className="font-mono text-xs"
+              />
+              <Input
+                value={r.limit}
+                onChange={(e) => updateCustomRow(i, { limit: e.target.value })}
+                placeholder={f("resourceColLimit")}
+                aria-label={`${r.key.trim() || f("resourceColName")} ${f("resourceColLimit")}`}
+                className="font-mono text-xs"
+              />
+              <Button variant="ghost" size="icon" className="size-8" aria-label={t("common:actions.delete")} onClick={() => removeCustomRow(i)}>
+                <X className="size-4" />
+              </Button>
+              {r.error && <p className="col-span-4 text-xs text-destructive">{problemText(r.error)}</p>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">{f("resourceEmpty")}</p>
+      )}
+      <Button variant="ghost" size="sm" className="w-fit" onClick={addCustomRow}>
+        <Plus className="size-3.5" /> {f("resourceAdd")}
+      </Button>
+    </Group>
+  );
+}
+
+// One row per chart image, merged directly into Resources and scheduling.
+// Empty keeps the image shown as the placeholder; a typed ref is the form layer.
+function PdRolesFields({
+  pd,
+  value,
+  onChange,
+  topGpuProducts,
+  gpuResource,
+  gpuVendor,
+  gpuSpecs,
+  nodes,
+  gpuOptions,
+  gpuListed,
+  refreshing,
+  onRefresh,
+}: {
+  pd: PdInfo;
+  value: PdOverrides;
+  onChange: (next: PdOverrides) => void;
+  topGpuProducts: string[];
+  gpuResource: string;
+  gpuVendor?: string;
+  gpuSpecs?: GPUSpec[];
+  nodes?: Node[];
+  gpuOptions: string[];
+  gpuListed?: string[];
+  refreshing: boolean;
+  onRefresh?: () => void;
+}) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+
+  if (pd.colocate) {
+    const badges = PD_ROLES.map((role) => {
+      const info = pd[role];
+      return info
+        ? t("deploy.fields.pdColocateRoleGpus", {
+            role: f(role === "prefill" ? "pdRolePrefill" : "pdRoleDecode"),
+            gpus: info.gpus,
+          })
+        : null;
+    }).filter(Boolean);
+    return (
+      <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs font-medium">{f("pdColocateTitle")}</span>
+          {badges.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {badges.map((b) => (
+                <Badge key={b} variant="secondary" className="font-mono text-[11px]">
+                  {b}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">{f("pdColocateNote")}</p>
+      </div>
+    );
+  }
+
+  const labelSpec = gpuSpecForRole(gpuSpecs, gpuResource, gpuVendor);
+  const missingLabelKey = gpuSpecs !== undefined && !labelSpec?.labelKey;
+  const clusterPool = nodes ? pickableProducts(nodes, gpuVendor, gpuSpecs, gpuResource) : undefined;
+  const patchRole = (role: PdRole, patch: Partial<PdOverrides[PdRole]>) =>
+    onChange({ ...value, [role]: { ...value[role], ...patch } });
+
+  const roleMeta = (info?: PdRoleInfo) => {
+    if (!info) return undefined;
+    return info.size > 1
+      ? t("deploy.fields.pdRoleMetaMultiNode", { gpus: info.gpus, replicas: info.replicas, size: info.size })
+      : t("deploy.fields.pdRoleMeta", { gpus: info.gpus, replicas: info.replicas });
+  };
+
+  return (
+    <Group label={f("pdSectionTitle")} hint={f("pdSectionHint")}>
+      <div className="grid gap-3 md:grid-cols-2">
+        {PD_ROLES.map((role) => {
+          const info = pd[role];
+          const edit = value[role];
+          const roleLabel = f(role === "prefill" ? "pdRolePrefill" : "pdRoleDecode");
+          const selected = canonicalizeProducts(edit.gpuProducts, gpuSpecs);
+          const options = clusterPool ? productChoices(gpuListed, clusterPool, selected) : [...new Set([...gpuOptions, ...selected])];
+          const forced = unlistedProducts(gpuListed, selected);
+          const roleCap = pdRoleCapacity(info, edit, {
+            nodes,
+            gpuSpecs,
+            gpuVendor,
+            gpuResource,
+            topGpuProducts,
+            supportedGpus: gpuListed,
+          });
+          const gpuPlaceholder = missingLabelKey
+            ? t("deploy.fields.pdGpuMissingLabelKey", { role })
+            : !options.length
+              ? f("gpuProductsEmpty")
+              : info?.hasAffinityReplace
+                ? info.gpuProducts.length > 0
+                  ? t("deploy.fields.pdGpuFromChart", { products: info.gpuProducts.join(", ") })
+                  : f("pdGpuCustomReplace")
+                : f("pdGpuInherit");
+
+          return (
+            <div key={role} className="space-y-2.5 rounded-lg border bg-background/70 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold">{roleLabel}</span>
+                  <span className="font-mono text-[11px] text-muted-foreground">pd.{role}</span>
+                </div>
+                {roleMeta(info) && (
+                  <Badge variant="outline" className="font-mono text-[11px]">
+                    {roleMeta(info)}
+                  </Badge>
+                )}
+              </div>
+              {missingLabelKey && (
+                <p className="flex items-start gap-1.5 text-xs text-warning">
+                  <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+                  <span>{t("deploy.fields.pdGpuMissingLabelKey", { role })}</span>
+                </p>
+              )}
+              <FloatingField
+                label={f("pdGpuProducts")}
+                hint={t("deploy.fields.pdGpuProductsHint", { role })}
+                notice={forced.length > 0 ? t("deploy.fields.gpuForced", { products: forced.join(", ") }) : undefined}
+              >
+                <FieldSelect
+                  multiple
+                  values={selected}
+                  onValuesChange={(next) => patchRole(role, { gpuProducts: next })}
+                  options={options.map((o) => ({
+                    value: o,
+                    label: o,
+                    badge: unlistedProducts(gpuListed, [o]).length ? (
+                      <Badge variant="warning">{f("gpuUnverified")}</Badge>
+                    ) : (
+                      <Badge variant="success">{f("gpuVerified")}</Badge>
+                    ),
+                  }))}
+                  placeholder={gpuPlaceholder}
+                  disabled={(!options.length || missingLabelKey) && !selected.length}
+                />
+              </FloatingField>
+              {roleCap && (
+                <CapacityHint
+                  value={roleCap.value}
+                  perPod={roleCap.perPod}
+                  needNodes={roleCap.needNodes}
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Group>
+  );
+}
+
 function ImageRows({
   form,
   onChange,
@@ -287,9 +616,6 @@ function ImageRows({
   mirror,
   slots,
   error,
-  onOpen,
-  refreshing,
-  onRefresh,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -297,30 +623,15 @@ function ImageRows({
   mirror?: string;
   slots?: ImageSlot[];
   error?: Error | null;
-  onOpen?: (open: boolean) => void;
-  refreshing?: boolean;
-  onRefresh?: () => void;
 }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
-  const [open, setOpen] = useState(false);
   const rows = imageRows(slots, image, form.images);
   return (
-    <FormSection
-      title={f("images")}
-      expanded={open}
-      onExpandedChange={(next) => {
-        setOpen(next);
-        onOpen?.(next);
-      }}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs text-muted-foreground">{f("imagesHint")}</p>
-        {onRefresh && (
-          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0" aria-label={t("common:actions.refresh")} title={t("common:actions.refresh")} disabled={refreshing} onClick={onRefresh}>
-            <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
-          </Button>
-        )}
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-1.5 text-sm font-medium">
+        <span>{f("images")}</span>
+        <FieldHint>{f("imagesHint")}</FieldHint>
       </div>
       {error && <p className="text-xs text-warning">{error.message}</p>}
       {rows.map((slot) => {
@@ -345,7 +656,7 @@ function ImageRows({
           </FloatingField>
         );
       })}
-    </FormSection>
+    </div>
   );
 }
 
@@ -379,7 +690,7 @@ export interface CapacityProps {
   perPod: number;
   needNodes: number;
   refreshing: boolean;
-  onRefresh: () => void;
+  onRefresh?: () => void;
 }
 
 // Nodes and GPUs the picked resource and products can land on, total and free.
@@ -410,9 +721,11 @@ function CapacityHint({ value, perPod, needNodes, refreshing, onRefresh }: Capac
           </>
         )}
       </span>
-      <Button variant="ghost" size="icon" className="size-6" aria-label={t("common:actions.refresh")} disabled={refreshing} onClick={onRefresh}>
-        <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
-      </Button>
+      {onRefresh && (
+        <Button variant="ghost" size="icon" className="size-6" aria-label={t("common:actions.refresh")} disabled={refreshing} onClick={onRefresh}>
+          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+        </Button>
+      )}
     </div>
   );
 }

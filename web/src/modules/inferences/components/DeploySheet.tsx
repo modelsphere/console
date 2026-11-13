@@ -24,7 +24,7 @@ import {
   useAnchorNav,
   useDirty,
 } from "@modelsphere/ui";
-import { ArrowRight, FlaskConical, TriangleAlert } from "lucide-react";
+import { ArrowRight, FlaskConical, RefreshCw, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
 import { applyFlags, imageOf, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
@@ -149,7 +149,11 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const [seedPlan, setSeedPlan] = useState<Plan>();
   if (current.data && !seedPlan) setSeedPlan(current.data);
   const deployModel = upgrade ? "" : target.model;
-  const initial = useMemo<Form>(() => (upgrade ? (seedPlan ? formFromPlan(seedPlan) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }), [upgrade, seedPlan, deployModel]);
+  const gpuSpecs = profile.data?.profile?.nodes?.gpus;
+  const initial = useMemo<Form>(
+    () => (upgrade ? (seedPlan ? formFromPlan(seedPlan, gpuSpecs) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }),
+    [upgrade, seedPlan, deployModel, gpuSpecs],
+  );
   const initialRecovery = useMemo(() => recoverySettings(
     upgrade && seedPlan ? planValues(seedPlan) : mergeValues(entry.data?.variant.values, profile.data?.profile?.extra),
   ), [upgrade, seedPlan, entry.data?.variant.values, profile.data?.profile?.extra]);
@@ -166,14 +170,17 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     staleTime: 30_000,
     retry: false,
   });
-  useEffect(() => setForm(initial), [initial]);
+  const [upgradeSeeded, setUpgradeSeeded] = useState(false);
+  useEffect(() => {
+    setForm(initial);
+    if (upgrade && seedPlan) setUpgradeSeeded(true);
+  }, [initial, upgrade, seedPlan]);
   const [seed, setSeed] = useState<SwitchDefaults | null>(null);
   const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: seed ? reseed(initial, {}, seed) : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
 
   const [step, setStep] = useState<"form" | "review">("form");
   const [submitted, setSubmitted] = useState(false);
   const [expanded, setExpanded] = useState(OPEN);
-  const [imagesOpen, setImagesOpen] = useState(false);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [applied, setApplied] = useState<ApplyResult | null>(null);
@@ -215,13 +222,19 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const requestFor = (f: Form) => planRequest(
     { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
     upgrade
-      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, formLayer: seedPlan?.layers?.form, values: v?.values ?? seedPlan?.layers?.catalog }
-      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, values: v?.values },
+      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: v?.inputs, formLayer: seedPlan?.layers?.form, values: v?.values ?? seedPlan?.layers?.catalog }
+      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: v?.inputs, values: v?.values },
     profile.data?.profile,
   );
-  // Slot discovery runs once when Images opens (or chart target changes) and on manual refresh.
+  // An upgrade waits for the profile too: it decides Monitor (planRequest).
+  const loading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
+  const error = cluster.error ?? current.error ?? entry.error;
+  const nextSeed = useMemo(() => (seedReady ? switchDefaults(siteDefaults, variantValues) : null), [seedReady, siteDefaults, variantValues]);
+  const formSeeded = upgrade ? upgradeSeeded : !!seed && !!nextSeed && JSON.stringify(seed) === JSON.stringify(nextSeed);
+  // Chart discovery (images and per-role chart defaults) runs once on open after
+  // the form is seeded, on target changes, and on manual refresh.
   // Override YAML runs its own standalone dry-run when opened so form edits stay quiet.
-  const canDiscover = (!upgrade || !!recorded) && cluster.data?.allowDeploy !== false;
+  const canDiscover = !loading && !error && formSeeded && (!upgrade || !!recorded) && cluster.data?.allowDeploy !== false;
   const compositionError = (error: unknown) => {
     if (error instanceof RecoveryPlanChangedError) return new Error(t("deploy.recovery.errors.changedPlan"));
     if (error instanceof AdaptivePlanChangedError) return new Error(t("deploy.fields.adaptiveChanged"));
@@ -230,7 +243,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const preview = useImageSlots(
     form,
     (f) => (canDiscover ? withAdaptiveConcurrency(withRecovery(requestFor(f), recovery), f, routeOptions.data) : undefined),
-    imagesOpen && canDiscover,
+    canDiscover,
+    gpuSpecs,
   );
   const valuesKey = JSON.stringify(
     canDiscover
@@ -325,9 +339,6 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   };
 
   const readOnly = cluster.data && !cluster.data.allowDeploy;
-  // An upgrade waits for the profile too: it decides Monitor (planRequest).
-  const loading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
-  const error = cluster.error ?? current.error ?? entry.error;
   const keepOption = (label: string) => ({ value: KEEP, label });
 
   const targetFields = (
@@ -467,9 +478,27 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()} dirty={dirty && step === "form"} onDiscard={onClose}>
     <SheetContent size="2xl" className="gap-0">
-      <SheetHeader className="border-b px-5 py-3.5">
-        <SheetTitle>{upgrade ? t("deploy.titleUpgrade", { release: target.release }) : t("deploy.title")}</SheetTitle>
-        <SheetDescription>{upgrade ? t("deploy.descriptionUpgrade") : t("deploy.description")}</SheetDescription>
+      <SheetHeader className="border-b py-3.5 pl-5 pr-12">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 space-y-0.5">
+            <SheetTitle>{upgrade ? t("deploy.titleUpgrade", { release: target.release }) : t("deploy.title")}</SheetTitle>
+            <SheetDescription>{upgrade ? t("deploy.descriptionUpgrade") : t("deploy.description")}</SheetDescription>
+          </div>
+          {step === "form" && canDiscover && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={preview.fetching}
+              onClick={() => void preview.reload()}
+              title={t("deploy.refreshPreviewHint")}
+            >
+              <RefreshCw className={cn("size-3.5", preview.fetching && "animate-spin")} />
+              {t("common:actions.refresh")}
+            </Button>
+          )}
+        </div>
       </SheetHeader>
 
       {step === "form" && !loading && !error && (
@@ -515,9 +544,11 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), imageMirror: profile.data?.profile?.registry?.mirror, cache }}
               slots={preview.slots}
               slotsError={preview.queryError}
-              onImagesOpen={setImagesOpen}
-              imagesRefreshing={preview.fetching}
-              onImagesRefresh={() => void preview.reload()}
+              resources={preview.resources}
+              pd={preview.pd}
+              nodes={nodes.data?.nodes}
+              gpuSpecs={gpuSpecs}
+              gpuVendor={v?.requires.vendor}
               gpuOptions={productChoices(v?.requires.gpuProduct, pickableProducts(nodes.data?.nodes, v?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource), form.gpuProducts)}
               gpuListed={v?.requires.gpuProduct}
               gpuResources={v?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, v.requires.vendor) : undefined}

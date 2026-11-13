@@ -158,10 +158,9 @@ describe("image override", () => {
       />,
     );
 
-  it("keeps Images collapsed until opened, with the engine image still in the form", () => {
+  it("merges Images directly into Resources and scheduling without a standalone collapsible card", () => {
     const html = render({ ...EMPTY, serviceId: "model", images: { image: image.site } });
-    const button = /<button[^>]*aria-expanded="([^"]+)"[^>]*>(?:(?!<\/button>)[\s\S])*镜像[\s\S]*?<\/button>/.exec(html);
-    expect(button?.[1]).toBe("false");
+    expect(html).not.toMatch(/<button[^>]*aria-expanded="[^"]+"[^>]*>(?:(?!<\/button>)[\s\S])*(Images|镜像)[\s\S]*?<\/button>/);
     expect(html).toContain(`value="${image.site}"`);
   });
 
@@ -173,15 +172,16 @@ describe("image override", () => {
     expect(html).not.toMatch(/aria-label="(Refresh|刷新)"/);
   });
 
-  it("renders a refresh button inside Images when onImagesRefresh is provided", () => {
+  it("does not render a refresh button inside Images", () => {
     const html = renderToStaticMarkup(
       <DeployForm
         form={{ ...EMPTY, serviceId: "model" }} onChange={() => {}} submitted={false} target={null} defaults={{ image }} gpuOptions={[]}
         expanded={{ basic: false, resources: true, routing: false, advanced: false }}
-        onExpand={() => {}} idPrefix="test-" onImagesRefresh={() => {}}
+        onExpand={() => {}} idPrefix="test-"
+        slots={[{ path: "image", kind: "map", value: image.site }]}
       />,
     );
-    expect(html).toMatch(/aria-label="(Refresh|刷新)"/);
+    expect(html).not.toMatch(/aria-label="(Refresh|刷新)"/);
   });
 
   it("renders discovered non-engine slots with the same Suggest input shape", () => {
@@ -317,5 +317,171 @@ describe("variant inputs", () => {
   it("sends a typed answer at the input's key", () => {
     const form = { ...EMPTY, serviceId: "model", inputs: { [master.key]: "mine.svc:50051" } };
     expect(planRequest(form, { model: "model", inputs: [master] }).overrides).toMatchObject({ storageKVOffload: { mooncake: { master: "mine.svc:50051" } } });
+  });
+});
+
+describe("top-level resources list", () => {
+  it("shows dry-run requested and limit resources (including hugepages) alongside the requested GPU resource without native select", () => {
+    const html = renderToStaticMarkup(
+      <DeployForm
+        form={{
+          ...EMPTY,
+          serviceId: "model",
+          resources: { requests: { cpu: "8" }, limits: {} },
+          customResources: [{ key: "hugepages-2Mi", request: "", limit: "1Gi" }],
+        }}
+        onChange={() => {}}
+        submitted={false}
+        target={null}
+        defaults={{}}
+        gpuOptions={[]}
+        gpuResources={["nvidia.com/gpu"]}
+        resources={{
+          requests: { cpu: "4", memory: "16Gi" },
+          limits: { memory: "32Gi" },
+          gpu: { resource: "nvidia.com/gpu", gpus: "2" },
+        }}
+        expanded={{ basic: false, resources: true, routing: false, advanced: false }}
+        onExpand={() => {}}
+        idPrefix="test-"
+      />,
+    );
+    expect(html).toContain("nvidia.com/gpu");
+    expect(html).toContain(">2<");
+    expect(html).toContain("cpu");
+    expect(html).toContain('placeholder="4"');
+    expect(html).toContain('value="8"');
+    expect(html).toContain("memory");
+    expect(html).toContain('placeholder="16Gi"');
+    expect(html).toContain('placeholder="32Gi"');
+    expect(html).toContain('value="hugepages-2Mi"');
+    expect(html).toContain('value="1Gi"');
+    expect(html).not.toContain("<select");
+  });
+});
+
+describe("PD role scheduling", () => {
+  const baseProps = {
+    form: EMPTY,
+    onChange: () => {},
+    submitted: false,
+    target: null,
+    defaults: {},
+    gpuOptions: ["NVIDIA-H100-80GB-HBM3", "NVIDIA-H20"],
+    gpuListed: ["NVIDIA-H100-80GB-HBM3"],
+    expanded: { basic: false, resources: true, routing: false, advanced: false },
+    onExpand: () => {},
+    idPrefix: "test-",
+  };
+
+  it("stays hidden when pd is disabled or absent", () => {
+    const html = renderToStaticMarkup(<DeployForm {...baseProps} />);
+    expect([en, zh].some((l) => html.includes(l.deploy.fields.pdSectionTitle))).toBe(false);
+    expect([en, zh].some((l) => html.includes(l.deploy.fields.pdColocateTitle))).toBe(false);
+  });
+
+  it("shows colocated role GPU summary and keeps top-level GPU products when pd.colocate is true", () => {
+    const html = renderToStaticMarkup(
+      <DeployForm
+        {...baseProps}
+        capacity={{ value: { nodes: 99, gpus: 792 }, perPod: 8, needNodes: 1, refreshing: false, onRefresh: () => {} }}
+        pd={{
+          enabled: true,
+          colocate: true,
+          prefill: { role: "prefill", gpus: 4, replicas: 1, size: 1, hasAffinityReplace: false, gpuProducts: [] },
+          decode: { role: "decode", gpus: 2, replicas: 1, size: 1, hasAffinityReplace: false, gpuProducts: [] },
+        }}
+      />,
+    );
+    expect([en, zh].some((l) => html.includes(l.deploy.fields.pdColocateTitle))).toBe(true);
+    expect(html).toContain("4");
+    expect(html).toContain("2");
+    expect([en, zh].some((l) => html.includes(l.deploy.fields.gpuProducts))).toBe(true);
+    expect(html).toContain("792");
+  });
+
+  it("replaces top-level gpuProducts & capacity with prefill/decode GPU affinity while keeping scheduler shared", () => {
+    const nodes = [
+      { Name: "n1", GPUs: 8, gpusFree: 8, Schedulable: true, Ready: true, GPUProduct: "NVIDIA-H100-80GB-HBM3", GPUResource: "nvidia.com/gpu" },
+      { Name: "n2", GPUs: 8, gpusFree: 4, Schedulable: true, Ready: true, GPUProduct: "NVIDIA-H20", GPUResource: "nvidia.com/gpu" },
+    ] as never;
+    const gpuSpecs = [
+      { vendor: "nvidia", resource: "nvidia.com/gpu", labelKey: "nvidia.com/gpu.product" },
+    ];
+    const html = renderToStaticMarkup(
+      <DeployForm
+        {...baseProps}
+        form={{
+          ...EMPTY,
+          pd: {
+            prefill: { gpuProducts: ["NVIDIA-H100-80GB-HBM3"] },
+            decode: { gpuProducts: ["NVIDIA-H20"] },
+          },
+        }}
+        cluster={{ name: "c", schedulerName: "volcano" } as never}
+        capacity={{ value: { nodes: 99, gpus: 792 }, perPod: 8, needNodes: 1, refreshing: false, onRefresh: () => {} }}
+        nodes={nodes}
+        gpuSpecs={gpuSpecs}
+        gpuVendor="nvidia"
+        pd={{
+          enabled: true,
+          colocate: false,
+          prefill: { role: "prefill", gpus: 8, replicas: 1, size: 1, hasAffinityReplace: false, gpuProducts: [] },
+          decode: { role: "decode", gpus: 4, replicas: 2, size: 1, hasAffinityReplace: false, gpuProducts: [] },
+        }}
+      />,
+    );
+    expect(html).toContain("pd.prefill");
+    expect(html).toContain("pd.decode");
+    const loc = html.includes(en.deploy.fields.pdSectionTitle) ? en : zh;
+    // Only prefill + decode GPU affinity fields render; top-level gpuProducts is hidden.
+    expect(html.split(loc.deploy.fields.gpuProducts).length - 1).toBe(2);
+    expect(html).not.toContain("792");
+    expect(html).toContain(loc.deploy.fields.scheduler);
+
+    const legacyHtml = renderToStaticMarkup(
+      <DeployForm
+        {...baseProps}
+        form={{ ...EMPTY, gpuProducts: ["NVIDIA-H100-80GB-HBM3"] }}
+        nodes={nodes}
+        gpuSpecs={gpuSpecs}
+        gpuVendor="nvidia"
+        pd={{
+          enabled: true,
+          colocate: false,
+          prefill: { role: "prefill", gpus: 8, replicas: 1, size: 1, hasAffinityReplace: false, gpuProducts: [] },
+          decode: { role: "decode", gpus: 4, replicas: 1, size: 1, hasAffinityReplace: false, gpuProducts: [] },
+        }}
+      />,
+    );
+    expect(legacyHtml.split(loc.deploy.fields.gpuProducts).length - 1).toBe(3);
+    expect(
+      [en, zh].some((l) =>
+        html.includes(l.deploy.fields.pdRoleMeta.replace("{gpus}", "8").replace("{replicas}", "1")),
+      ),
+    ).toBe(true);
+    expect(
+      [en, zh].some((l) =>
+        html.includes(l.deploy.fields.pdRoleMeta.replace("{gpus}", "4").replace("{replicas}", "2")),
+      ),
+    ).toBe(true);
+    expect([en, zh].some((l) => html.includes(l.deploy.fields.gpuForced.replace("{products}", "NVIDIA-H20")))).toBe(true);
+    expect(html).not.toContain("<select");
+
+    const noKeyHtml = renderToStaticMarkup(
+      <DeployForm
+        {...baseProps}
+        nodes={nodes}
+        gpuSpecs={[{ vendor: "nvidia", resource: "nvidia.com/gpu", labelKey: "" }]}
+        gpuVendor="nvidia"
+        pd={{
+          enabled: true,
+          colocate: false,
+          prefill: { role: "prefill", gpus: 8, replicas: 1, size: 1, hasAffinityReplace: false, gpuProducts: [] },
+          decode: { role: "decode", gpus: 4, replicas: 1, size: 1, hasAffinityReplace: false, gpuProducts: [] },
+        }}
+      />,
+    );
+    expect([en, zh].some((l) => noKeyHtml.includes(l.deploy.fields.pdGpuMissingLabelKey.replace("{role}", "prefill")))).toBe(true);
   });
 });

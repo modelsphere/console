@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
-import { ArrowRight, Check, ChevronLeft, ChevronsUpDown, TriangleAlert, Undo2 } from "lucide-react";
+import { ArrowRight, Check, ChevronLeft, ChevronsUpDown, RefreshCw, TriangleAlert, Undo2 } from "lucide-react";
 import {
   api,
   deployApi,
@@ -27,6 +27,7 @@ import {
   type Form,
 } from "@swiss/components/DeploySettings";
 import { useImageSlots } from "@swiss/lib/useImageSlots";
+import { planPdInfo } from "@swiss/lib/pdRoles";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, SchemaBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
@@ -42,6 +43,7 @@ import { VariantCard } from "@swiss/components/VariantCard";
 import { Dialog } from "@swiss/components/ui/dialog";
 import { deployCapacity, gpuCount, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { Button } from "@swiss/components/ui/button";
+import { cn } from "@swiss/lib/utils";
 import { comparison, formatUplift, reportLink, sharedVersion, variantKind, workloadSummary } from "@swiss/lib/catalog";
 import { isUninstalling } from "@swiss/lib/phase";
 
@@ -141,9 +143,13 @@ export function Upgrade() {
   // rollback, from the revision being restored, which is what would come back.
   // An upgrade whose form starts empty would silently propose dropping every
   // setting.
+  const [seededFromPlan, setSeededFromPlan] = useState(false);
   useEffect(() => {
     const from = rollbackTo ? archived.data : current.data;
-    if (from) setForm(formFromPlan(from));
+    if (from) {
+      setForm(formFromPlan(from, profile.data?.profile?.nodes?.gpus));
+      setSeededFromPlan(true);
+    }
   }, [current.data, archived.data, rollbackTo]);
 
   const reset = () => {
@@ -193,11 +199,22 @@ export function Upgrade() {
           formLayer: current.data.layers?.form,
           values: entry.data?.variant.values ?? current.data.layers?.catalog,
           siteEnv: profile.data?.profile?.extra,
+          gpuSpecs: profile.data?.profile?.nodes?.gpus,
+          gpuVendor: keptPin?.requires.vendor ?? pin?.requires.vendor,
         })
       : undefined;
-  // Discovery runs only while Images is open. A rollback reapplies an archived plan and does not ask the chart.
-  const [imagesOpen, setImagesOpen] = useState(false);
-  const discovered = useImageSlots(form, (f) => (rollbackTo ? undefined : requestOf(f)), imagesOpen && !rollbackTo && !!current.data && cluster.data?.allowDeploy !== false);
+  // Chart discovery runs once on open after the form is seeded, on target changes, and on manual refresh.
+  // A rollback reapplies an archived plan and does not ask the chart.
+  const canDiscover =
+    !rollbackTo &&
+    seededFromPlan &&
+    !current.isPending &&
+    !!current.data &&
+    !cluster.isPending &&
+    !profile.isPending &&
+    (!catalogName || variantMissing || !entry.isPending) &&
+    cluster.data?.allowDeploy !== false;
+  const discovered = useImageSlots(form, (f) => (rollbackTo ? undefined : requestOf(f)), canDiscover, profile.data?.profile?.nodes?.gpus);
 
   const planM = useMutation({
     mutationFn: () => deployApi.plan(requestOf(form)!),
@@ -278,22 +295,38 @@ export function Upgrade() {
     <div className="space-y-5">
       <Back namespace={namespace} />
 
-      <div>
-        <h1 className="text-xl font-semibold">
-          {rollbackTo ? `Roll back ${release} to revision ${rollbackTo}` : `Upgrade ${release}`}
-        </h1>
-        <p className="mt-1 flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
-          <Badge variant="outline">{namespace}</Badge>
-          <CatalogBadge name={releaseCatalog ?? ""} show={catalogs.length > 1} />
-          <SchemaBadge schema={catalogs.find((c) => c.name === releaseCatalog)?.schema} /> {cur.source.model}
-          {cur.source.version && ` v${cur.source.version}`} · {cur.source.variant} · chart{" "}
-          {cur.chart.name}-{cur.chart.version}
-        </p>
-        {rollbackTo > 0 && (
-          <p className="mt-1 text-sm text-muted-foreground">
-            That is what is deployed now. Everything below is revision {rollbackTo}, as it ran
-            — a rollback re-applies it forward as a new revision.
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">
+            {rollbackTo ? `Roll back ${release} to revision ${rollbackTo}` : `Upgrade ${release}`}
+          </h1>
+          <p className="mt-1 flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
+            <Badge variant="outline">{namespace}</Badge>
+            <CatalogBadge name={releaseCatalog ?? ""} show={catalogs.length > 1} />
+            <SchemaBadge schema={catalogs.find((c) => c.name === releaseCatalog)?.schema} /> {cur.source.model}
+            {cur.source.version && ` v${cur.source.version}`} · {cur.source.variant} · chart{" "}
+            {cur.chart.name}-{cur.chart.version}
           </p>
+          {rollbackTo > 0 && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              That is what is deployed now. Everything below is revision {rollbackTo}, as it ran
+              — a rollback re-applies it forward as a new revision.
+            </p>
+          )}
+        </div>
+        {!rollbackTo && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            disabled={!canDiscover || discovered.fetching}
+            onClick={() => void discovered.reload()}
+            title="Re-run dry-run compose with the current settings to refresh chart defaults"
+          >
+            <RefreshCw className={cn("size-3.5", discovered.fetching && "animate-spin")} />
+            Refresh
+          </Button>
         )}
       </div>
 
@@ -499,9 +532,11 @@ export function Upgrade() {
         imageMirror={profile.data?.profile?.registry?.mirror}
         slots={rollbackTo ? undefined : discovered.slots}
         slotsError={rollbackTo ? undefined : discovered.queryError}
-        onImagesOpen={setImagesOpen}
-        imagesRefreshing={rollbackTo ? false : discovered.fetching}
-        onImagesRefresh={rollbackTo ? undefined : () => void discovered.reload()}
+        resources={rollbackTo ? undefined : discovered.resources}
+        pd={rollbackTo ? planPdInfo(archived.data?.layers, profile.data?.profile?.nodes?.gpus) : discovered.pd}
+        nodes={nodes.data?.nodes}
+        gpuSpecs={profile.data?.profile?.nodes?.gpus}
+        gpuVendor={keptPin?.requires.vendor ?? pin?.requires.vendor}
         cache={cache}
         lockIdentity
         readOnly={rollbackTo > 0}
