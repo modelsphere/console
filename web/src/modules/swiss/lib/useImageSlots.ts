@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { deployApi, type HelmValues, type PlanRequest } from "@swiss/lib/api";
+import { deployApi, type GPUSpec, type HelmValues, type PlanRequest } from "@swiss/lib/api";
 import type { Form } from "@swiss/components/DeploySettings";
 import { helmImageSlots, type ImageSlot } from "@swiss/lib/imageSlots";
+import { emptyPdOverrides, helmPdInfo, type PdInfo } from "@swiss/lib/pdRoles";
 import { emptyResourceEdits, helmResources, type HelmResources } from "@swiss/lib/resources";
 
 // Keyed only by chart target (model/catalog/release/version/variant/chartVersion),
@@ -26,7 +27,7 @@ export function helmValuesTargetKey(request: PlanRequest | undefined) {
 }
 
 export function previewForm(form: Form): Form {
-  return { ...form, images: {}, resources: emptyResourceEdits(), edits: "" };
+  return { ...form, images: {}, resources: emptyResourceEdits(), pd: emptyPdOverrides(), edits: "" };
 }
 
 export function imageSlotsQueryOptions(
@@ -51,9 +52,11 @@ export function useImageSlots(
   form: Form,
   requestFor: (form: Form) => PlanRequest | undefined,
   enabled: boolean,
+  gpuSpecs?: GPUSpec[],
 ): {
   slots: ImageSlot[];
   resources?: HelmResources;
+  pd?: PdInfo;
   fetching: boolean;
   queryError: Error | null;
   reload: () => Promise<HelmValues | undefined>;
@@ -62,10 +65,12 @@ export function useImageSlots(
   const query = useQuery(imageSlotsQueryOptions(form, requestFor, enabled));
   const slots = query.data ? helmImageSlots(query.data) : [];
   const resources = query.data ? helmResources(query.data) : undefined;
+  const pd = query.data ? helmPdInfo(query.data, gpuSpecs) : undefined;
   const queryError = query.error instanceof Error ? query.error : query.error ? new Error(String(query.error)) : null;
   return {
     slots,
     resources,
+    pd,
     fetching: query.isFetching,
     queryError,
     reload: async () => {

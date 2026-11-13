@@ -149,7 +149,11 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const [seedPlan, setSeedPlan] = useState<Plan>();
   if (current.data && !seedPlan) setSeedPlan(current.data);
   const deployModel = upgrade ? "" : target.model;
-  const initial = useMemo<Form>(() => (upgrade ? (seedPlan ? formFromPlan(seedPlan) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }), [upgrade, seedPlan, deployModel]);
+  const gpuSpecs = profile.data?.profile?.nodes?.gpus;
+  const initial = useMemo<Form>(
+    () => (upgrade ? (seedPlan ? formFromPlan(seedPlan, gpuSpecs) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }),
+    [upgrade, seedPlan, deployModel, gpuSpecs],
+  );
   const initialRecovery = useMemo(() => recoverySettings(
     upgrade && seedPlan ? planValues(seedPlan) : mergeValues(entry.data?.variant.values, profile.data?.profile?.extra),
   ), [upgrade, seedPlan, entry.data?.variant.values, profile.data?.profile?.extra]);
@@ -218,8 +222,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const requestFor = (f: Form) => planRequest(
     { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
     upgrade
-      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, formLayer: seedPlan?.layers?.form, values: v?.values ?? seedPlan?.layers?.catalog }
-      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, values: v?.values },
+      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: v?.inputs, formLayer: seedPlan?.layers?.form, values: v?.values ?? seedPlan?.layers?.catalog }
+      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: v?.inputs, values: v?.values },
     profile.data?.profile,
   );
   // An upgrade waits for the profile too: it decides Monitor (planRequest).
@@ -240,6 +244,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     form,
     (f) => (canDiscover ? withAdaptiveConcurrency(withRecovery(requestFor(f), recovery), f, routeOptions.data) : undefined),
     canDiscover,
+    gpuSpecs,
   );
   const valuesKey = JSON.stringify(
     canDiscover
@@ -540,6 +545,10 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               slots={preview.slots}
               slotsError={preview.queryError}
               resources={preview.resources}
+              pd={preview.pd}
+              nodes={nodes.data?.nodes}
+              gpuSpecs={gpuSpecs}
+              gpuVendor={v?.requires.vendor}
               gpuOptions={productChoices(v?.requires.gpuProduct, pickableProducts(nodes.data?.nodes, v?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource), form.gpuProducts)}
               gpuListed={v?.requires.gpuProduct}
               gpuResources={v?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, v.requires.vendor) : undefined}

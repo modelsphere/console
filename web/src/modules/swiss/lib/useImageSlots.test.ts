@@ -50,6 +50,10 @@ describe("image slot discovery query", () => {
       preset: "fast",
       images: { image: "mirror/x:1" },
       resources: { requests: { cpu: "8" }, limits: { "hugepages-2Mi": "1Gi" } },
+      pd: {
+        prefill: { gpuProducts: ["NVIDIA-H100"] },
+        decode: { gpuProducts: [] },
+      },
       edits: "replicaCount: 9\n",
     };
     expect(helmValuesTargetKey(requestFor(previewForm(edited)))).toEqual(helmValuesTargetKey(requestFor(previewForm(form))));
@@ -87,6 +91,10 @@ describe("image slot discovery query", () => {
       namespace: "ns2",
       images: { image: "mirror/x:1" },
       resources: { requests: { cpu: "8" }, limits: { memory: "32Gi" } },
+      pd: {
+        prefill: { gpuProducts: [] },
+        decode: { gpuProducts: [] },
+      },
       edits: "note: typed\n",
     };
     update(updated, true);
@@ -100,6 +108,7 @@ describe("image slot discovery query", () => {
     expect(posted.editsYAML).toBeUndefined();
     expect(posted.overrides?.image).toBeUndefined();
     expect(posted.overrides?.resources).toBeUndefined();
+    expect(posted.overrides?.pd).toBeUndefined();
     unsubscribe();
   });
 });

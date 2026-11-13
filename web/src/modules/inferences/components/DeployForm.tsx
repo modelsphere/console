@@ -21,16 +21,26 @@ import {
   Switch,
   cn,
 } from "@modelsphere/ui";
-import { Plus, RefreshCw, RotateCcw, X } from "lucide-react";
-import type { ClusterInfo, Preset } from "@swiss/lib/api";
+import { Plus, RefreshCw, RotateCcw, TriangleAlert, X } from "lucide-react";
+import type { ClusterInfo, GPUSpec, Node, Preset } from "@swiss/lib/api";
 import { editRule, listLabel, type AffinityRule } from "@swiss/lib/affinity";
 import { toYaml } from "@swiss/lib/yaml";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
-import { unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
+import { pickableProducts, productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { CHECK_MS, inputError, rememberable, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { effective, tolerationExtras, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { imagePatch, imageRows, imageText, slotImageChoices, type ImageSlot } from "@swiss/lib/imageSlots";
+import {
+  canonicalizeProducts,
+  gpuSpecForRole,
+  pdRoleCapacity,
+  PD_ROLES,
+  type PdInfo,
+  type PdOverrides,
+  type PdRole,
+  type PdRoleInfo,
+} from "@swiss/lib/pdRoles";
 import { gpuRequestSummary, useResourceRows, type HelmResources, type ResourceEdits } from "@swiss/lib/resources";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
@@ -70,6 +80,11 @@ export interface DeployFormProps {
   slotsError?: Error | null;
   // Effective top-level resources and model GPU request from the compose dry run.
   resources?: HelmResources;
+  // Effective PD role info from dry-run helmValues, plus cluster nodes/GPU specs for per-role affinity & capacity.
+  pd?: PdInfo;
+  nodes?: Node[];
+  gpuSpecs?: GPUSpec[];
+  gpuVendor?: string;
   recovery?: ReactNode;
   // The variant's inputs, each with the answer that applies when its field is left empty.
   inputs?: InputRow[];
@@ -82,7 +97,7 @@ export interface DeployFormProps {
   taints?: ClusterTaint[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, resources, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, resources, pd, nodes, gpuSpecs, gpuVendor, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -153,10 +168,28 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
         "resources",
         <>
           {gpuResources && <GpuResource resources={gpuResources} value={form.gpuResource} onChange={(gpuResource) => onChange({ gpuResource })} />}
-          <FloatingField label={f("gpuProducts")} hint={f("gpuProductsHint")} notice={forced.length > 0 ? t("deploy.fields.gpuForced", { products: forced.join(", ") }) : undefined}>
-            <FieldSelect multiple values={form.gpuProducts} onValuesChange={(v) => onChange({ gpuProducts: v })} options={gpuOptions.map((o) => ({ value: o, label: o, badge: unlistedProducts(gpuListed, [o]).length ? <Badge variant="warning">{f("gpuUnverified")}</Badge> : <Badge variant="success">{f("gpuVerified")}</Badge> }))} placeholder={gpuOptions.length ? undefined : f("gpuProductsEmpty")} disabled={!gpuOptions.length} />
-          </FloatingField>
-          {capacity && <CapacityHint {...capacity} />}
+          {(!pd?.enabled || pd.colocate || form.gpuProducts.length > 0) && (
+            <FloatingField label={f("gpuProducts")} hint={f("gpuProductsHint")} notice={forced.length > 0 ? t("deploy.fields.gpuForced", { products: forced.join(", ") }) : undefined}>
+              <FieldSelect multiple values={form.gpuProducts} onValuesChange={(v) => onChange({ gpuProducts: v })} options={gpuOptions.map((o) => ({ value: o, label: o, badge: unlistedProducts(gpuListed, [o]).length ? <Badge variant="warning">{f("gpuUnverified")}</Badge> : <Badge variant="success">{f("gpuVerified")}</Badge> }))} placeholder={gpuOptions.length ? undefined : f("gpuProductsEmpty")} disabled={!gpuOptions.length} />
+            </FloatingField>
+          )}
+          {capacity && (!pd?.enabled || pd.colocate) && <CapacityHint {...capacity} />}
+          {pd?.enabled && (
+            <PdRolesFields
+              pd={pd}
+              value={form.pd}
+              onChange={(next) => onChange({ pd: next })}
+              topGpuProducts={form.gpuProducts}
+              gpuResource={form.gpuResource}
+              gpuVendor={gpuVendor}
+              gpuSpecs={gpuSpecs}
+              nodes={nodes}
+              gpuOptions={gpuOptions}
+              gpuListed={gpuListed}
+              refreshing={!!capacity?.refreshing}
+              onRefresh={capacity?.onRefresh}
+            />
+          )}
           <ResourceRows
             base={resources}
             value={form.resources}
@@ -424,6 +457,164 @@ function ResourceRows({
 
 // One row per chart image, merged directly into Resources and scheduling.
 // Empty keeps the image shown as the placeholder; a typed ref is the form layer.
+function PdRolesFields({
+  pd,
+  value,
+  onChange,
+  topGpuProducts,
+  gpuResource,
+  gpuVendor,
+  gpuSpecs,
+  nodes,
+  gpuOptions,
+  gpuListed,
+  refreshing,
+  onRefresh,
+}: {
+  pd: PdInfo;
+  value: PdOverrides;
+  onChange: (next: PdOverrides) => void;
+  topGpuProducts: string[];
+  gpuResource: string;
+  gpuVendor?: string;
+  gpuSpecs?: GPUSpec[];
+  nodes?: Node[];
+  gpuOptions: string[];
+  gpuListed?: string[];
+  refreshing: boolean;
+  onRefresh?: () => void;
+}) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+
+  if (pd.colocate) {
+    const badges = PD_ROLES.map((role) => {
+      const info = pd[role];
+      return info
+        ? t("deploy.fields.pdColocateRoleGpus", {
+            role: f(role === "prefill" ? "pdRolePrefill" : "pdRoleDecode"),
+            gpus: info.gpus,
+          })
+        : null;
+    }).filter(Boolean);
+    return (
+      <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs font-medium">{f("pdColocateTitle")}</span>
+          {badges.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {badges.map((b) => (
+                <Badge key={b} variant="secondary" className="font-mono text-[11px]">
+                  {b}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">{f("pdColocateNote")}</p>
+      </div>
+    );
+  }
+
+  const labelSpec = gpuSpecForRole(gpuSpecs, gpuResource, gpuVendor);
+  const missingLabelKey = gpuSpecs !== undefined && !labelSpec?.labelKey;
+  const clusterPool = nodes ? pickableProducts(nodes, gpuVendor, gpuSpecs, gpuResource) : undefined;
+  const patchRole = (role: PdRole, patch: Partial<PdOverrides[PdRole]>) =>
+    onChange({ ...value, [role]: { ...value[role], ...patch } });
+
+  const roleMeta = (info?: PdRoleInfo) => {
+    if (!info) return undefined;
+    return info.size > 1
+      ? t("deploy.fields.pdRoleMetaMultiNode", { gpus: info.gpus, replicas: info.replicas, size: info.size })
+      : t("deploy.fields.pdRoleMeta", { gpus: info.gpus, replicas: info.replicas });
+  };
+
+  return (
+    <Group label={f("pdSectionTitle")} hint={f("pdSectionHint")}>
+      <div className="grid gap-3 md:grid-cols-2">
+        {PD_ROLES.map((role) => {
+          const info = pd[role];
+          const edit = value[role];
+          const roleLabel = f(role === "prefill" ? "pdRolePrefill" : "pdRoleDecode");
+          const selected = canonicalizeProducts(edit.gpuProducts, gpuSpecs);
+          const options = clusterPool ? productChoices(gpuListed, clusterPool, selected) : [...new Set([...gpuOptions, ...selected])];
+          const forced = unlistedProducts(gpuListed, selected);
+          const roleCap = pdRoleCapacity(info, edit, {
+            nodes,
+            gpuSpecs,
+            gpuVendor,
+            gpuResource,
+            topGpuProducts,
+            supportedGpus: gpuListed,
+          });
+          const gpuPlaceholder = missingLabelKey
+            ? t("deploy.fields.pdGpuMissingLabelKey", { role })
+            : !options.length
+              ? f("gpuProductsEmpty")
+              : info?.hasAffinityReplace
+                ? info.gpuProducts.length > 0
+                  ? t("deploy.fields.pdGpuFromChart", { products: info.gpuProducts.join(", ") })
+                  : f("pdGpuCustomReplace")
+                : f("pdGpuInherit");
+
+          return (
+            <div key={role} className="space-y-2.5 rounded-lg border bg-background/70 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold">{roleLabel}</span>
+                  <span className="font-mono text-[11px] text-muted-foreground">pd.{role}</span>
+                </div>
+                {roleMeta(info) && (
+                  <Badge variant="outline" className="font-mono text-[11px]">
+                    {roleMeta(info)}
+                  </Badge>
+                )}
+              </div>
+              {missingLabelKey && (
+                <p className="flex items-start gap-1.5 text-xs text-warning">
+                  <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+                  <span>{t("deploy.fields.pdGpuMissingLabelKey", { role })}</span>
+                </p>
+              )}
+              <FloatingField
+                label={f("pdGpuProducts")}
+                hint={t("deploy.fields.pdGpuProductsHint", { role })}
+                notice={forced.length > 0 ? t("deploy.fields.gpuForced", { products: forced.join(", ") }) : undefined}
+              >
+                <FieldSelect
+                  multiple
+                  values={selected}
+                  onValuesChange={(next) => patchRole(role, { gpuProducts: next })}
+                  options={options.map((o) => ({
+                    value: o,
+                    label: o,
+                    badge: unlistedProducts(gpuListed, [o]).length ? (
+                      <Badge variant="warning">{f("gpuUnverified")}</Badge>
+                    ) : (
+                      <Badge variant="success">{f("gpuVerified")}</Badge>
+                    ),
+                  }))}
+                  placeholder={gpuPlaceholder}
+                  disabled={(!options.length || missingLabelKey) && !selected.length}
+                />
+              </FloatingField>
+              {roleCap && (
+                <CapacityHint
+                  value={roleCap.value}
+                  perPod={roleCap.perPod}
+                  needNodes={roleCap.needNodes}
+                  refreshing={refreshing}
+                  onRefresh={onRefresh ?? (() => {})}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Group>
+  );
+}
+
 function ImageRows({
   form,
   onChange,

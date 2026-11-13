@@ -146,12 +146,14 @@ export function Deploy() {
           preset: presetValues(profile.data?.profile, f.preset),
           values: model.data.variant.values,
           siteEnv: profile.data?.profile?.extra,
+          gpuSpecs: profile.data?.profile?.nodes?.gpus,
+          gpuVendor: model.data.variant.requires.vendor,
         })
       : undefined;
   // Chart discovery runs once on open after the form is seeded, on target changes, and on manual refresh.
   const formSeeded = !!seeded && !!expectedSeed && JSON.stringify(seeded) === JSON.stringify(expectedSeed);
   const canDiscover = !model.isPending && !model.isPlaceholderData && !!model.data && !cluster.isPending && !profile.isPending && !!catalog && cluster.data?.allowDeploy !== false && formSeeded;
-  const discovered = useImageSlots(form, requestOf, canDiscover);
+  const discovered = useImageSlots(form, requestOf, canDiscover, profile.data?.profile?.nodes?.gpus);
 
   const planM = useMutation({
     mutationFn: () => deployApi.plan(requestOf(form)!),
@@ -309,6 +311,10 @@ export function Deploy() {
         slots={discovered.slots}
         slotsError={discovered.queryError}
         resources={discovered.resources}
+        pd={discovered.pd}
+        nodes={nodes.data?.nodes}
+        gpuSpecs={profile.data?.profile?.nodes?.gpus}
+        gpuVendor={variant?.requires.vendor}
         supportedGPUs={variant?.requires.gpuProduct}
         clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
         gpuResources={variant?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, variant.requires.vendor) : undefined}

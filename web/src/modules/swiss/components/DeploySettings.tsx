@@ -1,14 +1,28 @@
 import { useState } from "react";
 import { ChevronDown, Plus, RefreshCw, RotateCcw, TriangleAlert, X } from "lucide-react";
-import type { ApplyFlags, ClusterInfo, Input as CatalogInput, Plan, PlanRequest, Preset, ProfileResponse, Variant } from "@swiss/lib/api";
+import type { ApplyFlags, ClusterInfo, GPUSpec, Input as CatalogInput, Node, Plan, PlanRequest, Preset, ProfileResponse, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
-import { productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
+import { pickableProducts, productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { CHECK_MS, inputError, inputProblem, rememberable, setInputOverrides, type InputChoice, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
-import { PRODUCT_KEY, affinityRules, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
+import { PRODUCT_KEY, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
 import { envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
 import { applyImageEdits, dropClearedImages, imageEditsFromLayer, imagePatch, imageRows, imageText, joinImage, slotImageChoices, type ImageEdit, type ImageSlot, type SlotImageChoice } from "@swiss/lib/imageSlots";
+import {
+  affinityRulesForForm,
+  applyPdOverrides,
+  canonicalizeProducts,
+  emptyPdOverrides,
+  gpuSpecForRole,
+  pdFromLayer,
+  pdRoleCapacity,
+  PD_ROLES,
+  type PdInfo,
+  type PdOverrides,
+  type PdRole,
+  type PdRoleInfo,
+} from "@swiss/lib/pdRoles";
 import {
   applyResourceEdits,
   dropClearedResources,
@@ -58,6 +72,8 @@ export interface Form {
   gpuResource: string;
   // Container resource overrides (requests / limits). Empty values keep chart/site defaults.
   resources: ResourceEdits;
+  // Per-role PD scheduling overrides (prefill / decode) when pd.enabled && !pd.colocate.
+  pd: PdOverrides;
   tolerations: Toleration[];
   // A site profile preset, by name, merged into a deploy's form values. An
   // upgrade has none: the release's form layer already carries its values.
@@ -125,6 +141,7 @@ export const EMPTY: Form = {
   gpuProducts: [],
   gpuResource: "",
   resources: emptyResourceEdits(),
+  pd: emptyPdOverrides(),
   tolerations: [],
   preset: "",
   affinity: [],
@@ -221,6 +238,10 @@ export function DeploySettings({
   slots,
   slotsError,
   resources,
+  pd,
+  nodes,
+  gpuSpecs,
+  gpuVendor,
   supportedGPUs,
   clusterGPUs,
   gpuResources,
@@ -259,6 +280,11 @@ export function DeploySettings({
   slotsError?: Error | null;
   // Effective top-level resources and model GPU request from the compose dry run.
   resources?: HelmResources;
+  // Effective PD role configuration from dry-run helmValues (or deployed plan).
+  pd?: PdInfo;
+  nodes?: Node[];
+  gpuSpecs?: GPUSpec[];
+  gpuVendor?: string;
   lockIdentity?: boolean;
   readOnly?: boolean;
   // Products the chosen variant declares, and those this cluster reports on
@@ -793,18 +819,43 @@ export function DeploySettings({
               )}
             </Row>
           )}
-          <Row label="GPU product" note="restricts scheduling to these products; any one will do">
-            <Products
-              selected={form.gpuProducts}
-              onChange={(v) => onChange({ gpuProducts: v })}
-              options={productChoices(supportedGPUs, clusterGPUs, form.gpuProducts)}
-              listed={supportedGPUs}
-            />
-          </Row>
-          {capacity && (
+          {(!pd?.enabled || pd.colocate || form.gpuProducts.length > 0) && (
+            <Row
+              label="GPU product"
+              note={
+                pd?.enabled && !pd.colocate
+                  ? "legacy top-level pin — clear to use Prefill / Decode GPU affinity below"
+                  : "restricts scheduling to these products; any one will do"
+              }
+            >
+              <Products
+                selected={form.gpuProducts}
+                onChange={(v) => onChange({ gpuProducts: v })}
+                options={productChoices(supportedGPUs, clusterGPUs, form.gpuProducts)}
+                listed={supportedGPUs}
+              />
+            </Row>
+          )}
+          {capacity && (!pd?.enabled || pd.colocate) && (
             <Row label="On this cluster" note="nodes with this resource and product, and what is free on them">
               <CapacityLine {...capacity} />
             </Row>
+          )}
+          {pd?.enabled && (
+            <PdRolesRows
+              pd={pd}
+              value={form.pd}
+              onChange={(next) => onChange({ pd: next })}
+              topGpuProducts={form.gpuProducts}
+              gpuResource={form.gpuResource}
+              gpuVendor={gpuVendor}
+              gpuSpecs={gpuSpecs}
+              nodes={nodes}
+              supportedGPUs={supportedGPUs}
+              clusterGPUs={clusterGPUs}
+              refreshing={!!capacity?.refreshing}
+              onRefresh={capacity?.onRefresh}
+            />
           )}
           <Row label="Resources" note="requested and limit resources from chart or site defaults (including hugepages); empty keeps default">
             <ResourceList
@@ -1735,6 +1786,178 @@ function Products({
   );
 }
 
+const PD_ROLE_LABELS: Record<PdRole, string> = {
+  prefill: "Prefill",
+  decode: "Decode",
+};
+
+function pdRoleCaption(info?: PdRoleInfo): string | undefined {
+  if (!info) return undefined;
+  const parts: string[] = [];
+  if (info.gpus > 0) parts.push(`${info.gpus} GPU${info.gpus === 1 ? "" : "s"}/pod`);
+  parts.push(`${info.replicas} replica${info.replicas === 1 ? "" : "s"}`);
+  if (info.size > 1) parts.push(`${info.size} nodes/replica`);
+  return parts.join(" · ");
+}
+
+function PdRolesRows({
+  pd,
+  value,
+  onChange,
+  topGpuProducts,
+  gpuResource,
+  gpuVendor,
+  gpuSpecs,
+  nodes,
+  supportedGPUs,
+  clusterGPUs,
+  refreshing,
+  onRefresh,
+}: {
+  pd: PdInfo;
+  value: PdOverrides;
+  onChange: (next: PdOverrides) => void;
+  topGpuProducts: string[];
+  gpuResource: string;
+  gpuVendor?: string;
+  gpuSpecs?: GPUSpec[];
+  nodes?: Node[];
+  supportedGPUs?: string[];
+  clusterGPUs?: string[];
+  refreshing: boolean;
+  onRefresh?: () => void;
+}) {
+  if (pd.colocate) {
+    const badges = PD_ROLES.map((role) => {
+      const info = pd[role];
+      return info ? `${PD_ROLE_LABELS[role]}: ${info.gpus} GPU${info.gpus === 1 ? "" : "s"}` : null;
+    }).filter(Boolean);
+    return (
+      <Row
+        label="Prefill & Decode"
+        caption="colocated in one shared Pod"
+        hint="In colocate mode prefill and decode share one Pod, so node affinity and scheduler come from the top-level settings below."
+      >
+        <div className="w-full space-y-1 text-xs text-muted-foreground">
+          {badges.length > 0 && <p className="font-mono text-foreground">{badges.join(" · ")}</p>}
+          <p>Shared Pod mode: scheduling uses the top-level GPU affinity and scheduler below.</p>
+        </div>
+      </Row>
+    );
+  }
+
+  const labelSpec = gpuSpecForRole(gpuSpecs, gpuResource, gpuVendor);
+  const missingLabelKey = gpuSpecs !== undefined && !labelSpec?.labelKey;
+  const clusterPool = nodes ? pickableProducts(nodes, gpuVendor, gpuSpecs, gpuResource) : clusterGPUs;
+
+  const patchRole = (role: PdRole, patch: Partial<PdOverrides[PdRole]>) =>
+    onChange({ ...value, [role]: { ...value[role], ...patch } });
+
+  return (
+    <>
+      {PD_ROLES.map((role) => {
+        const info = pd[role];
+        const edit = value[role];
+        const selected = canonicalizeProducts(edit.gpuProducts, gpuSpecs);
+        const options = productChoices(supportedGPUs, clusterPool, selected);
+        const unverified = (o: string) => unlistedProducts(supportedGPUs, [o]).length > 0;
+        const supported = options.filter((o) => !unverified(o));
+        const others = options.filter(unverified);
+        const forced = unlistedProducts(supportedGPUs, selected);
+        const roleCap = pdRoleCapacity(info, edit, {
+          nodes,
+          gpuSpecs,
+          gpuVendor,
+          gpuResource,
+          topGpuProducts,
+          supportedGpus: supportedGPUs,
+        });
+
+        const chip = (o: string) => {
+          const active = selected.includes(o);
+          const off = unverified(o);
+          const lockedOut = missingLabelKey && !active;
+          return (
+            <button
+              key={o}
+              type="button"
+              disabled={lockedOut}
+              aria-pressed={active}
+              title={off ? "unverified with this variant" : undefined}
+              onClick={() => patchRole(role, { gpuProducts: active ? selected.filter((p) => p !== o) : [...selected, o] })}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                !active && "bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+                active && !off && "border-success/40 bg-success/15 font-medium text-success",
+                active && off && "border-warning/50 bg-warning/15 font-medium text-warning",
+              )}
+            >
+              {active && off && <TriangleAlert className="size-3" />}
+              {o}
+            </button>
+          );
+        };
+
+        return (
+          <Row
+            key={role}
+            label={`${PD_ROLE_LABELS[role]} GPU product`}
+            caption={`pd.${role}.affinityReplace${pdRoleCaption(info) ? ` · ${pdRoleCaption(info)}` : ""}`}
+            hint={`Pins ${role} pods to specific GPU products via pd.${role}.affinityReplace. Leave empty to use the variant or top-level default. GPU resource, Resources, Tolerations, Priority class and Scheduler stay shared below.`}
+          >
+            <div className="w-full min-w-0 space-y-2 py-0.5">
+              {missingLabelKey && (
+                <p className="flex items-center gap-1.5 text-xs text-warning">
+                  <TriangleAlert className="size-3.5 shrink-0" />
+                  no labelKey in site GPU profile for this resource — configure in Plan editor
+                </p>
+              )}
+              {options.length === 0 ? (
+                <p className="text-xs text-muted-foreground">no GPU product reported by this cluster</p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  {supported.length > 0 && (
+                    <span className="inline-flex flex-wrap items-center gap-1.5">{supported.map(chip)}</span>
+                  )}
+                  {others.length > 0 && (
+                    <span className="inline-flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] text-muted-foreground">unverified</span>
+                      {others.map(chip)}
+                    </span>
+                  )}
+                </div>
+              )}
+              {forced.length > 0 ? (
+                <p className="flex items-center gap-1.5 text-xs text-warning">
+                  <TriangleAlert className="size-3.5 shrink-0" />
+                  {forced.join(", ")} unverified with this variant
+                </p>
+              ) : selected.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {info?.hasAffinityReplace
+                    ? info.gpuProducts.length > 0
+                      ? `chart/site default: ${info.gpuProducts.join(", ")}`
+                      : "chart/site defines affinityReplace"
+                    : "none selected: any supported product"}
+                </p>
+              )}
+              {roleCap && (
+                <CapacityLine
+                  value={roleCap.value}
+                  perPod={roleCap.perPod}
+                  needNodes={roleCap.needNodes}
+                  refreshing={refreshing}
+                  onRefresh={onRefresh ?? (() => {})}
+                />
+              )}
+            </div>
+          </Row>
+        );
+      })}
+    </>
+  );
+}
+
 const EDITS_PLACEHOLDER = `# last word, any key
 nodeSelector:
   nvidia.com/gpu.product: NVIDIA-B300-SXM6-AC
@@ -2014,6 +2237,8 @@ export function planRequest(
     formLayer?: Record<string, unknown>;
     values?: Record<string, unknown>;
     siteEnv?: Record<string, unknown>;
+    gpuSpecs?: GPUSpec[];
+    gpuVendor?: string;
   },
 ): PlanRequest {
   const overrides: Record<string, unknown> = {};
@@ -2119,6 +2344,12 @@ export function planRequest(
   }
   const layer = withEnv(opts.values, withPreset(base ? overlay(base, overrides) : overrides, preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
+  applyPdOverrides(layer, f.pd, {
+    gpuSpecs: opts.gpuSpecs,
+    gpuResource: f.gpuResource,
+    gpuVendor: opts.gpuVendor,
+    formLayer: opts.formLayer,
+  });
 
   return {
     catalog: opts.catalog || undefined,
@@ -2154,7 +2385,7 @@ export function applyFlags(f: Form): ApplyFlags | undefined {
 // The plan stores the composed overrides tree, not the form fields, so this is
 // the inverse of planRequest -- and the pair is why an upgrade can show the
 // settings rather than only promise it carried them forward.
-export function formFromPlan(plan: Plan): Form {
+export function formFromPlan(plan: Plan, gpuSpecs?: GPUSpec[]): Form {
   // The form's own document, not the composed result: an upgrade seeds from
   // what the operator set, so recomposing against a newer catalog keeps it.
   const o = (plan.layers?.form ?? {}) as Record<string, unknown>;
@@ -2191,8 +2422,9 @@ export function formFromPlan(plan: Plan): Form {
     // The resource the release runs on, so an upgrade stays on it.
     gpuResource: String(((plan.layers?.derived?.model ?? {}) as Record<string, unknown>).gpuResource ?? ""),
     resources: resourceEditsFromLayer(o),
+    pd: pdFromLayer(o, gpuSpecs),
     tolerations: tolerationsOf(o),
-    affinity: affinityRules(o),
+    affinity: affinityRulesForForm(o, gpuSpecs),
     replicaCount: str("replicaCount"),
     route: str("modelRoute.nginx.route"),
     images: imageEditsFromLayer(o),

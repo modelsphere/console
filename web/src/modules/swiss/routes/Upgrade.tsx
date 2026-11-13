@@ -27,6 +27,7 @@ import {
   type Form,
 } from "@swiss/components/DeploySettings";
 import { useImageSlots } from "@swiss/lib/useImageSlots";
+import { planPdInfo } from "@swiss/lib/pdRoles";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, SchemaBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
@@ -146,7 +147,7 @@ export function Upgrade() {
   useEffect(() => {
     const from = rollbackTo ? archived.data : current.data;
     if (from) {
-      setForm(formFromPlan(from));
+      setForm(formFromPlan(from, profile.data?.profile?.nodes?.gpus));
       setSeededFromPlan(true);
     }
   }, [current.data, archived.data, rollbackTo]);
@@ -198,6 +199,8 @@ export function Upgrade() {
           formLayer: current.data.layers?.form,
           values: entry.data?.variant.values ?? current.data.layers?.catalog,
           siteEnv: profile.data?.profile?.extra,
+          gpuSpecs: profile.data?.profile?.nodes?.gpus,
+          gpuVendor: keptPin?.requires.vendor ?? pin?.requires.vendor,
         })
       : undefined;
   // Chart discovery runs once on open after the form is seeded, on target changes, and on manual refresh.
@@ -211,7 +214,7 @@ export function Upgrade() {
     !profile.isPending &&
     (!catalogName || variantMissing || !entry.isPending) &&
     cluster.data?.allowDeploy !== false;
-  const discovered = useImageSlots(form, (f) => (rollbackTo ? undefined : requestOf(f)), canDiscover);
+  const discovered = useImageSlots(form, (f) => (rollbackTo ? undefined : requestOf(f)), canDiscover, profile.data?.profile?.nodes?.gpus);
 
   const planM = useMutation({
     mutationFn: () => deployApi.plan(requestOf(form)!),
@@ -530,6 +533,10 @@ export function Upgrade() {
         slots={rollbackTo ? undefined : discovered.slots}
         slotsError={rollbackTo ? undefined : discovered.queryError}
         resources={rollbackTo ? undefined : discovered.resources}
+        pd={rollbackTo ? planPdInfo(archived.data?.layers, profile.data?.profile?.nodes?.gpus) : discovered.pd}
+        nodes={nodes.data?.nodes}
+        gpuSpecs={profile.data?.profile?.nodes?.gpus}
+        gpuVendor={keptPin?.requires.vendor ?? pin?.requires.vendor}
         cache={cache}
         lockIdentity
         readOnly={rollbackTo > 0}
