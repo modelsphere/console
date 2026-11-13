@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { deployApi, type HelmValues, type PlanRequest } from "@swiss/lib/api";
 import type { Form } from "@swiss/components/DeploySettings";
@@ -59,17 +58,10 @@ export function useImageSlots(
   reload: () => Promise<HelmValues | undefined>;
 } {
   const request = requestFor(previewForm(form));
-  const requestKey = JSON.stringify(request ?? null);
-  // The shared query follows this key, not the pages. Typing while a section is
-  // open keeps the previous request until it has held still. Opening, and any
-  // change while both sections are closed, uses the request as it stands.
-  const debouncedKey = useDebounced(requestKey, IMAGE_SLOTS_DEBOUNCE_MS);
-  const wasEnabled = useRef(false);
-  const opening = enabled && !wasEnabled.current;
-  wasEnabled.current = enabled;
-  const settled = useRef({ form, requestFor, prepare });
-  if (!enabled || opening || requestKey === debouncedKey) settled.current = { form, requestFor, prepare };
-  const query = useQuery(imageSlotsQueryOptions(settled.current.form, settled.current.requestFor, enabled, settled.current.prepare));
+  // Form identity is stable between edits. The query key strips image edits,
+  // so a new requestFor each render does not refetch.
+  const debouncedForm = useDebounced(form, IMAGE_SLOTS_DEBOUNCE_MS);
+  const query = useQuery(imageSlotsQueryOptions(debouncedForm, requestFor, enabled, prepare));
   const slots = query.data ? discoverImageSlots(mergedHelmValues(query.data)) : [];
   const queryError = query.error instanceof Error ? query.error : query.error ? new Error(String(query.error)) : null;
   return {
