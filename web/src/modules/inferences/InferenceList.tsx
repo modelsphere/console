@@ -61,6 +61,7 @@ export function InferenceList() {
             {d.release}
           </Link>
           <div className="truncate text-xs text-muted-foreground" title={modelLine(d) || undefined}>{modelLine(d) || t("list.untracked")}</div>
+          {d.editedInPlace && <div className="truncate text-xs text-muted-foreground">{t("list.editedInPlace")}</div>}
         </div>
       ),
     },
@@ -99,7 +100,7 @@ export function InferenceList() {
   ];
 
   const writeBlocked = (d: Deployment, untracked = false): boolean | string =>
-    readOnly ? t("disabled.readOnly") : isUninstalling(d) ? t("disabled.uninstalling") : untracked && !d.model ? t("disabled.untracked") : false;
+    readOnly ? t("disabled.readOnly") : isUninstalling(d) ? t("disabled.uninstalling") : untracked && d.external ? t("disabled.external") : untracked && !d.model ? t("disabled.untracked") : false;
 
   const rowActions: ResourceRowAction<Row>[] = [
     { key: "detail", label: t("actions.detail"), onClick: open },

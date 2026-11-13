@@ -90,6 +90,8 @@ export interface Deployment {
   backend?: ApplyWith;
   // An LLMService swiss did not write.
   external?: boolean;
+  // An LLMService swiss wrote was edited outside swiss.
+  editedInPlace?: boolean;
 }
 
 export interface DeploymentsResponse {
@@ -735,6 +737,10 @@ export interface ReleaseStatus {
   planStatus?: PlanStatus;
   // Set when swiss manages the release; it never changes after install.
   backend?: ApplyWith;
+  // An LLMService swiss did not write.
+  external?: boolean;
+  // An LLMService swiss wrote was edited outside swiss.
+  editedInPlace?: boolean;
   // Present on the llmsvc backend. phase is "uninstalling" while the LLMService
   // has a deletionTimestamp. Absent on helm and on an older swissd.
   llmservice?: { phase?: string };

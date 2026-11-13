@@ -85,7 +85,8 @@
       "catalog": "Catalog"
     },
     "behind": "Behind catalog",
-    "untracked": "Untracked"
+    "untracked": "Untracked",
+    "editedInPlace": "Edited outside swiss"
   },
   "actions": {
     "detail": "Details",
@@ -102,6 +103,7 @@
   "disabled": {
     "readOnly": "This swissd is read-only: turn on both server.allowDeploy and rbac.allowDeploy",
     "untracked": "A release with no plan beside it cannot be upgraded here",
+    "external": "Not deployed by swiss",
     "current": "This is already the current revision",
     "sloOff": "SLO was not turned on at deploy; turn it on in an upgrade",
     "sloPending": "SLO shows once the deploy has applied",
@@ -128,6 +130,7 @@
   "detail": {
     "back": "Inference Services",
     "untracked": "Untracked: there is no plan beside this release",
+    "editedInPlace": "Edited outside swiss",
     "fields": {
       "namespace": "Namespace",
       "model": "Model",

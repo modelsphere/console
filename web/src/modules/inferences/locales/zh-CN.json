@@ -74,7 +74,8 @@
       "catalog": "目录"
     },
     "behind": "落后目录",
-    "untracked": "未纳管"
+    "untracked": "未纳管",
+    "editedInPlace": "已在 swiss 外修改"
   },
   "actions": {
     "detail": "详情",
@@ -91,6 +92,7 @@
   "disabled": {
     "readOnly": "这个 swissd 是只读的：需要同时打开 server.allowDeploy 和 rbac.allowDeploy",
     "untracked": "没有纳管计划的 release 不能在这里升级",
+    "external": "非 swiss 部署",
     "current": "这已经是当前版本",
     "sloOff": "部署时没有开启 SLO，可在升级时打开",
     "sloPending": "部署完成后才能查看 SLO",
@@ -117,6 +119,7 @@
   "detail": {
     "back": "推理服务",
     "untracked": "未纳管：这个 release 旁没有部署计划",
+    "editedInPlace": "已在 swiss 外修改",
     "fields": {
       "namespace": "命名空间",
       "model": "模型",

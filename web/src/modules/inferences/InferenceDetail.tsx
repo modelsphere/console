@@ -104,6 +104,8 @@ export function InferenceDetail() {
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
   const removing = isUninstalling(s);
   const blockedWrite = readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const external = s.external;
+  const untracked = !plan.data && plan.isError;
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
@@ -125,19 +127,19 @@ export function InferenceDetail() {
           backLabel={t("detail.back")}
           title={release}
           status={statusOf(releaseState(s), t, s.total > 0 ? `${s.ready}/${s.total}` : undefined)}
-          notice={!plan.data && plan.isError ? { tone: "warning", title: t("detail.untracked") } : undefined}
+          notice={untracked ? { tone: "warning", title: t("detail.untracked") } : s.editedInPlace ? { tone: "info", title: t("detail.editedInPlace") } : undefined}
           actions={[
             { key: "check", label: t("actions.check"), onClick: () => setTab("check") },
             {
               key: "slo",
               label: t("actions.slo"),
-              disabled: blockedWrite || (blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
+              disabled: blockedWrite || (external ? t("disabled.external") : blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
               onClick: () => setEditingSLO(true),
             },
             {
               key: "upgrade",
               label: t("actions.upgrade"),
-              disabled: blockedWrite || (!plan.data ? t("disabled.untracked") : false),
+              disabled: blockedWrite || (external ? t("disabled.external") : !plan.data ? t("disabled.untracked") : false),
               onClick: () => setUpgrading(true),
             },
             {
@@ -191,7 +193,7 @@ export function InferenceDetail() {
         )}
       </Tabs>
 
-      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
+      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !removing && !external} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
       <DeploySheet target={upgrading ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
         target={uninstalling ? { namespace, release } : null}
