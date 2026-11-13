@@ -3,9 +3,7 @@ import type { GPUSpec, Node } from "@swiss/lib/api";
 import {
   affinityRulesForForm,
   applyPdOverrides,
-  canonicalizeProducts,
   emptyPdOverrides,
-  expandProductValues,
   extractPdInfo,
   helmPdInfo,
   pdFromLayer,
@@ -127,20 +125,6 @@ describe("extractPdInfo", () => {
   });
 });
 
-describe("canonicalize & expand products", () => {
-  it("maps aliases back to canonical names and expands both on write", () => {
-    expect(canonicalizeProducts(["NVIDIA-H100-SXM5", "NVIDIA-H100-80GB-HBM3", "NVIDIA-H20"], gpuSpecs)).toEqual([
-      "NVIDIA-H100-80GB-HBM3",
-      "NVIDIA-H20",
-    ]);
-    expect(expandProductValues(["NVIDIA-H100-80GB-HBM3", "NVIDIA-H20"], gpuSpecs[0])).toEqual([
-      "NVIDIA-H100-80GB-HBM3",
-      "NVIDIA-H100-SXM5",
-      "NVIDIA-H20",
-    ]);
-  });
-});
-
 describe("pdFromLayer & applyPdOverrides", () => {
   it("writes affinityReplace using site GPUSpec labelKey and seeds back canonical product names", () => {
     const layer: Record<string, unknown> = {};
@@ -191,7 +175,7 @@ describe("pdFromLayer & applyPdOverrides", () => {
     expect(affinityRulesForForm(layer, gpuSpecs)).toEqual([]);
   });
 
-  it("carries non-UI pd role keys (such as schedulerName and replicas) untouched while returning affinityReplace to null when cleared", () => {
+  it("removes the role GPU term when cleared and leaves other role keys untouched", () => {
     const formLayer: Record<string, unknown> = {
       pd: {
         prefill: {
@@ -216,7 +200,6 @@ describe("pdFromLayer & applyPdOverrides", () => {
         prefill: {
           replicas: 2,
           schedulerName: "volcano",
-          affinityReplace: null,
         },
       },
     });

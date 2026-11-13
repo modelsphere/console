@@ -180,7 +180,6 @@ describe("DeploySettings PD roles", () => {
     });
     expect(seeded.affinity).toEqual([]);
 
-    // Upgrade clearing prefill GPU affinity preserves formLayer's prefill.schedulerName untouched.
     const upgraded = planRequest(
       {
         ...seeded,
@@ -192,7 +191,7 @@ describe("DeploySettings PD roles", () => {
       { model: "m", formLayer: existingLayer, gpuSpecs, gpuVendor: "nvidia" },
     );
     expect(upgraded.overrides?.pd).toEqual({
-      prefill: { schedulerName: "volcano", affinityReplace: null },
+      prefill: { schedulerName: "volcano" },
       decode: pdOut.decode,
     });
   });

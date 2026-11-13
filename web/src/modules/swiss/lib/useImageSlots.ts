@@ -27,7 +27,7 @@ export function helmValuesTargetKey(request: PlanRequest | undefined) {
 }
 
 export function previewForm(form: Form): Form {
-  return { ...form, images: {}, resources: emptyResourceEdits(), pd: emptyPdOverrides(), edits: "" };
+  return { ...form, images: {}, resources: emptyResourceEdits(), customResources: [], pd: emptyPdOverrides(), edits: "" };
 }
 
 export function imageSlotsQueryOptions(

@@ -25,11 +25,13 @@ import {
 } from "@swiss/lib/pdRoles";
 import {
   applyResourceEdits,
+  deriveResourceEdits,
   dropClearedResources,
   emptyResourceEdits,
   gpuRequestSummary,
-  resourceEditsFromLayer,
+  seedFormResources,
   useResourceRows,
+  type CustomResourceRow,
   type HelmResources,
   type ResourceEdits,
 } from "@swiss/lib/resources";
@@ -70,8 +72,11 @@ export interface Form {
   gpuProducts: string[];
   // The resource picked among the vendor's; empty lets swissd pick.
   gpuResource: string;
-  // Container resource overrides (requests / limits). Empty values keep chart/site defaults.
+  // Request/limit overrides for chart and site resource rows. Empty keeps the default.
   resources: ResourceEdits;
+  // Operator-added resource rows, in the order they were added. A blank row
+  // stays here until removed; plan time folds non-empty ones into resources.
+  customResources: CustomResourceRow[];
   // Per-role PD scheduling overrides (prefill / decode) when pd.enabled && !pd.colocate.
   pd: PdOverrides;
   tolerations: Toleration[];
@@ -141,6 +146,7 @@ export const EMPTY: Form = {
   gpuProducts: [],
   gpuResource: "",
   resources: emptyResourceEdits(),
+  customResources: [],
   pd: emptyPdOverrides(),
   tolerations: [],
   preset: "",
@@ -860,14 +866,15 @@ export function DeploySettings({
           <Row label="Resources" note="requested and limit resources from chart or site defaults (including hugepages); empty keeps default">
             <ResourceList
               base={resources}
-              value={form.resources}
+              resources={form.resources}
+              custom={form.customResources}
               gpu={gpuRequestSummary({
                 base: resources,
                 formGpuResource: form.gpuResource,
                 gpuResources,
                 perPodGpus: capacity?.perPod,
               })}
-              onChange={(next) => onChange({ resources: next })}
+              onChange={onChange}
             />
           </Row>
           {presets && Object.keys(presets).length > 0 && (
@@ -1444,15 +1451,6 @@ function Tolerations({
   );
 }
 
-const SWISS_RESOURCE_LABELS: Record<string, string> = {
-  cpu: "CPU",
-  memory: "Memory",
-  "ephemeral-storage": "Ephemeral storage",
-  "hugepages-2Mi": "Hugepages 2Mi",
-  "hugepages-1Gi": "Hugepages 1Gi",
-  "rdma/hca_shared": "RDMA HCA",
-};
-
 function swissResourceProblem(problem: "gpuReserved" | "exists" | "duplicate"): string {
   switch (problem) {
     case "gpuReserved":
@@ -1466,14 +1464,16 @@ function swissResourceProblem(problem: "gpuReserved" | "exists" | "duplicate"): 
 
 function ResourceList({
   base,
-  value,
+  resources,
+  custom,
   gpu,
   onChange,
 }: {
   base?: HelmResources;
-  value: ResourceEdits;
+  resources: ResourceEdits;
+  custom: CustomResourceRow[];
   gpu?: ReturnType<typeof gpuRequestSummary>;
-  onChange: (next: ResourceEdits) => void;
+  onChange: (patch: Partial<Pick<Form, "resources" | "customResources">>) => void;
 }) {
   const {
     defaultRows,
@@ -1483,9 +1483,14 @@ function ResourceList({
     addCustomRow,
     updateCustomRow,
     removeCustomRow,
-    keyChoicesFor,
-    hugepageHint,
-  } = useResourceRows({ base, value, gpuResource: gpu?.resource, onChange });
+  } = useResourceRows({
+    base,
+    resources,
+    custom,
+    gpuResource: gpu?.resource,
+    onResources: (next) => onChange({ resources: next }),
+    onCustom: (next) => onChange({ customResources: next }),
+  });
 
   const hasRows = !!gpu || defaultRows.length > 0 || customRows.length > 0;
   return (
@@ -1544,34 +1549,33 @@ function ResourceList({
               )}
             </div>
           ))}
-          {customRows.map((r) => (
-            <div key={r.id} className="contents">
-              <Suggest
+          {customRows.map((r, i) => (
+            <div key={i} className="contents">
+              <Input
                 value={r.key}
-                onChange={(v) => updateCustomRow(r.id, { key: v })}
-                choices={keyChoicesFor(r.key).map((k) => ({ value: k, label: SWISS_RESOURCE_LABELS[k] ?? "custom" }))}
+                onChange={(e) => updateCustomRow(i, { key: e.target.value })}
                 placeholder="cpu, memory, hugepages-2Mi..."
-                invalid={!!r.error}
+                aria-invalid={r.error ? true : undefined}
                 aria-label="resource key"
-                className="font-mono text-xs"
+                className={cn("font-mono text-xs", r.error && "border-destructive")}
               />
               <Input
                 value={r.request}
-                onChange={(e) => updateCustomRow(r.id, { request: e.target.value })}
+                onChange={(e) => updateCustomRow(i, { request: e.target.value })}
                 placeholder="Request"
                 aria-label={`${r.key.trim() || "resource"} request`}
                 className="font-mono text-xs"
               />
               <Input
                 value={r.limit}
-                onChange={(e) => updateCustomRow(r.id, { limit: e.target.value })}
+                onChange={(e) => updateCustomRow(i, { limit: e.target.value })}
                 placeholder="Limit"
                 aria-label={`${r.key.trim() || "resource"} limit`}
                 className="font-mono text-xs"
               />
               <button
                 type="button"
-                onClick={() => removeCustomRow(r.id)}
+                onClick={() => removeCustomRow(i)}
                 aria-label={`remove ${r.key.trim() || "resource"}`}
                 className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"
               >
@@ -1585,11 +1589,6 @@ function ResourceList({
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">No container resource requests or limits defined in chart or site defaults.</p>
-      )}
-      {hugepageHint && (
-        <p className="text-xs text-muted-foreground">
-          Kubernetes requires a cpu or memory request alongside hugepages; the chart fills cpu: 1 and memory: 4Gi when omitted.
-        </p>
       )}
       <button
         type="button"
@@ -1670,7 +1669,7 @@ export interface CapacityProps {
   perPod: number;
   needNodes: number;
   refreshing: boolean;
-  onRefresh: () => void;
+  onRefresh?: () => void;
 }
 
 // Nodes and GPUs the picked resource and products can land on, total and free.
@@ -1703,15 +1702,17 @@ function CapacityLine({ value, perPod, needNodes, refreshing, onRefresh }: Capac
           </>
         )}
       </span>
-      <button
-        type="button"
-        aria-label="refresh nodes"
-        disabled={refreshing}
-        onClick={onRefresh}
-        className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-      >
-        <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
-      </button>
+      {onRefresh && (
+        <button
+          type="button"
+          aria-label="refresh nodes"
+          disabled={refreshing}
+          onClick={onRefresh}
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+        >
+          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+        </button>
+      )}
     </div>
   );
 }
@@ -1947,7 +1948,7 @@ function PdRolesRows({
                   perPod={roleCap.perPod}
                   needNodes={roleCap.needNodes}
                   refreshing={refreshing}
-                  onRefresh={onRefresh ?? (() => {})}
+                  onRefresh={onRefresh}
                 />
               )}
             </div>
@@ -2330,7 +2331,8 @@ export function planRequest(
   // on an upgrade it is a clear, so the release's copy of that path is dropped
   // before the overlay, the same way an emptied toleration list replaces the old one.
   applyImageEdits(overrides, f.images);
-  applyResourceEdits(overrides, f.resources);
+  const resourceEdits = deriveResourceEdits(f.resources, f.customResources);
+  applyResourceEdits(overrides, resourceEdits);
   if (f.priorityClassName.trim()) overrides.priorityClassName = f.priorityClassName.trim();
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
 
@@ -2340,7 +2342,7 @@ export function planRequest(
   const base = opts.formLayer ? structuredClone(opts.formLayer) : undefined;
   if (base) {
     dropClearedImages(base, f.images);
-    dropClearedResources(base, f.resources);
+    dropClearedResources(base, resourceEdits);
   }
   const layer = withEnv(opts.values, withPreset(base ? overlay(base, overrides) : overrides, preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
@@ -2421,7 +2423,7 @@ export function formFromPlan(plan: Plan, gpuSpecs?: GPUSpec[]): Form {
     gpuProducts: gpuProductsOf(o),
     // The resource the release runs on, so an upgrade stays on it.
     gpuResource: String(((plan.layers?.derived?.model ?? {}) as Record<string, unknown>).gpuResource ?? ""),
-    resources: resourceEditsFromLayer(o),
+    ...seedFormResources(plan.layers),
     pd: pdFromLayer(o, gpuSpecs),
     tolerations: tolerationsOf(o),
     affinity: affinityRulesForForm(o, gpuSpecs),

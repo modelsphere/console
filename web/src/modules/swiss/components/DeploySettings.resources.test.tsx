@@ -9,7 +9,8 @@ describe("DeploySettings top-level resources", () => {
         form={{
           ...EMPTY,
           serviceId: "m",
-          resources: { requests: { cpu: "8" }, limits: { "hugepages-2Mi": "1Gi" } },
+          resources: { requests: { cpu: "8" }, limits: {} },
+          customResources: [{ key: "hugepages-2Mi", request: "", limit: "1Gi" }],
         }}
         onChange={() => {}}
         gpuResources={["nvidia.com/gpu"]}

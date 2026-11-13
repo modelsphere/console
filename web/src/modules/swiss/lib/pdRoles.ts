@@ -41,18 +41,13 @@ export function emptyPdOverrides(): PdOverrides {
   };
 }
 
-function parseNonNegNumber(v: unknown): number | undefined {
-  if (typeof v === "number" && Number.isFinite(v) && v >= 0) return v;
+function readNumber(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string" && v.trim() !== "") {
     const n = Number(v);
-    if (Number.isFinite(n) && n >= 0) return n;
+    if (Number.isFinite(n)) return n;
   }
   return undefined;
-}
-
-function parsePosInt(v: unknown): number | undefined {
-  const n = parseNonNegNumber(v);
-  return n !== undefined && n >= 1 ? Math.floor(n) : undefined;
 }
 
 function dedupe(xs: string[]): string[] {
@@ -87,7 +82,7 @@ export function canonicalizeProducts(values: string[], gpuSpecs?: GPUSpec[]): st
   return dedupe(values.map((v) => aliasToProduct.get(v) ?? v));
 }
 
-export function expandProductValues(products: string[], spec?: GPUSpec): string[] {
+function expandProductValues(products: string[], spec?: GPUSpec): string[] {
   const out: string[] = [];
   for (const p of products) {
     if (!p) continue;
@@ -125,7 +120,6 @@ export function isStandaloneGpuProductTerm(term: unknown, labelKeys?: Set<string
 }
 
 const REQUIRED_NODE_PATH = ["nodeAffinity", "requiredDuringSchedulingIgnoredDuringExecution"] as const;
-const PREFERRED_NODE_KEY = "preferredDuringSchedulingIgnoredDuringExecution";
 
 function nodeSelectorTermsOf(affinity: unknown): unknown[] | undefined {
   if (!isMap(affinity)) return undefined;
@@ -136,41 +130,36 @@ function nodeSelectorTermsOf(affinity: unknown): unknown[] | undefined {
   return req.nodeSelectorTerms;
 }
 
-function extractStandaloneGpuTerm(
+// One walk: products from any GPU matchExpression, and the label key plus
+// products of a term whose only expression is that GPU product.
+function readGpuAffinity(
   affinityReplace: unknown,
   gpuSpecs?: GPUSpec[],
-): { key?: string; products: string[] } {
+): { key?: string; standalone: string[]; any: string[] } {
   const terms = nodeSelectorTermsOf(affinityReplace);
-  if (!terms) return { products: [] };
+  if (!terms) return { standalone: [], any: [] };
   const keys = gpuLabelKeys(gpuSpecs);
   let key: string | undefined;
-  const rawVals: string[] = [];
-  for (const t of terms) {
-    if (!isStandaloneGpuProductTerm(t, keys)) continue;
-    const expr = (t as { matchExpressions: { key: string; values: unknown[] }[] }).matchExpressions[0];
-    key ??= expr.key;
-    for (const v of expr.values) {
-      if (typeof v === "string") rawVals.push(v);
-    }
-  }
-  return { key, products: canonicalizeProducts(rawVals, gpuSpecs) };
-}
-
-function extractAnyGpuProducts(affinityReplace: unknown, gpuSpecs?: GPUSpec[]): string[] {
-  const terms = nodeSelectorTermsOf(affinityReplace);
-  if (!terms) return [];
-  const keys = gpuLabelKeys(gpuSpecs);
-  const rawVals: string[] = [];
-  for (const t of terms) {
-    if (!isMap(t) || !Array.isArray(t.matchExpressions)) continue;
-    for (const expr of t.matchExpressions) {
+  const standaloneVals: string[] = [];
+  const anyVals: string[] = [];
+  for (const term of terms) {
+    if (!isMap(term) || !Array.isArray(term.matchExpressions)) continue;
+    const standalone = isStandaloneGpuProductTerm(term, keys);
+    for (const expr of term.matchExpressions) {
       if (!isGpuProductExpr(expr, keys)) continue;
+      if (standalone) key ??= expr.key;
       for (const v of expr.values) {
-        if (typeof v === "string") rawVals.push(v);
+        if (typeof v !== "string") continue;
+        anyVals.push(v);
+        if (standalone) standaloneVals.push(v);
       }
     }
   }
-  return canonicalizeProducts(rawVals, gpuSpecs);
+  return {
+    key,
+    standalone: canonicalizeProducts(standaloneVals, gpuSpecs),
+    any: canonicalizeProducts(anyVals, gpuSpecs),
+  };
 }
 
 export function extractPdInfo(helmValues: unknown, gpuSpecs?: GPUSpec[]): PdInfo | undefined {
@@ -179,15 +168,15 @@ export function extractPdInfo(helmValues: unknown, gpuSpecs?: GPUSpec[]): PdInfo
   }
   const pd = helmValues.pd;
   const colocate = pd.colocate === true;
-  const modelGpus = isMap(helmValues.model) ? parseNonNegNumber(helmValues.model.gpus) : undefined;
+  const modelGpus = isMap(helmValues.model) ? readNumber(helmValues.model.gpus) : undefined;
 
   const readRole = (role: PdRole): PdRoleInfo => {
     const raw = isMap(pd[role]) ? pd[role] : {};
-    const gpus = parseNonNegNumber(raw.gpus) ?? modelGpus ?? 0;
-    const replicas = parsePosInt(raw.replicas) ?? 1;
-    const size = parsePosInt(raw.size) ?? 1;
+    const gpus = readNumber(raw.gpus) ?? modelGpus ?? 0;
+    const replicas = readNumber(raw.replicas) ?? 1;
+    const size = readNumber(raw.size) ?? 1;
     const hasAffinityReplace = isMap(raw.affinityReplace);
-    const gpuProducts = hasAffinityReplace ? extractAnyGpuProducts(raw.affinityReplace, gpuSpecs) : [];
+    const gpuProducts = hasAffinityReplace ? readGpuAffinity(raw.affinityReplace, gpuSpecs).any : [];
     return {
       role,
       gpus,
@@ -245,21 +234,9 @@ export function pdFromLayer(layer: Tree, gpuSpecs?: GPUSpec[]): PdOverrides {
   for (const role of PD_ROLES) {
     const cfg = isMap(pd[role]) ? pd[role] : undefined;
     if (!cfg) continue;
-    const { products } = extractStandaloneGpuTerm(cfg.affinityReplace, gpuSpecs);
-    out[role] = { gpuProducts: products };
+    out[role] = { gpuProducts: readGpuAffinity(cfg.affinityReplace, gpuSpecs).standalone };
   }
   return out;
-}
-
-function hasAnyAffinityRule(affinityReplace: Tree): boolean {
-  if (isMap(affinityReplace.podAffinity) && Object.keys(affinityReplace.podAffinity).length > 0) return true;
-  if (isMap(affinityReplace.podAntiAffinity) && Object.keys(affinityReplace.podAntiAffinity).length > 0) return true;
-  if (!isMap(affinityReplace.nodeAffinity)) return false;
-  const na = affinityReplace.nodeAffinity;
-  if (Array.isArray(na[PREFERRED_NODE_KEY]) && na[PREFERRED_NODE_KEY].length > 0) return true;
-  const req = na[REQUIRED_NODE_PATH[1]];
-  if (isMap(req) && Array.isArray(req.nodeSelectorTerms) && req.nodeSelectorTerms.length > 0) return true;
-  return false;
 }
 
 function ensureRoleAffinityRequiredTerms(roleCfg: Tree): unknown[] {
@@ -272,9 +249,52 @@ function ensureRoleAffinityRequiredTerms(roleCfg: Tree): unknown[] {
   return req.nodeSelectorTerms as unknown[];
 }
 
-// applyPdOverrides reconciles pd.<role>.affinityReplace after base overlay,
-// preset merge, and generic setAffinity have run. Any other pd.<role> keys
-// (such as replicas, extraArgs, schedulerName) remain carried untouched on base.
+function writeRoleGpuTerm(layer: Tree, role: PdRole, labelKey: string, values: string[], labelKeys: Set<string>) {
+  const pdTarget = (isMap(layer.pd) ? layer.pd : (layer.pd = {})) as Tree;
+  const roleTarget = (isMap(pdTarget[role]) ? pdTarget[role] : (pdTarget[role] = {})) as Tree;
+  const terms = ensureRoleAffinityRequiredTerms(roleTarget);
+  const kept = terms.filter((t) => !isStandaloneGpuProductTerm(t, labelKeys));
+  kept.push({ matchExpressions: [{ key: labelKey, operator: "In", values }] });
+  const na = (roleTarget.affinityReplace as Tree).nodeAffinity as Tree;
+  (na[REQUIRED_NODE_PATH[1]] as Tree).nodeSelectorTerms = kept;
+}
+
+// Drops the role's standalone GPU product term. An empty required list is
+// removed with it: empty nodeSelectorTerms matches no node. Other affinity
+// keys and other pd.<role> keys are left in place. Nothing is set to null.
+function clearRoleGpuTerm(layer: Tree, role: PdRole, labelKeys: Set<string>) {
+  const pdMap = isMap(layer.pd) ? layer.pd : undefined;
+  const roleMap = pdMap && isMap(pdMap[role]) ? pdMap[role] : undefined;
+  if (!roleMap || !isMap(roleMap.affinityReplace)) return;
+  const aff = roleMap.affinityReplace;
+  const terms = nodeSelectorTermsOf(aff);
+  if (!terms) return;
+  const kept = terms.filter((t) => !isStandaloneGpuProductTerm(t, labelKeys));
+  if (kept.length === terms.length) return;
+  const na = isMap(aff.nodeAffinity) ? aff.nodeAffinity : undefined;
+  if (!na || !isMap(na[REQUIRED_NODE_PATH[1]])) return;
+  if (kept.length > 0) {
+    (na[REQUIRED_NODE_PATH[1]] as Tree).nodeSelectorTerms = kept;
+    return;
+  }
+  delete na[REQUIRED_NODE_PATH[1]];
+  if (Object.keys(na).length === 0) delete aff.nodeAffinity;
+  if (Object.keys(aff).length === 0) delete roleMap.affinityReplace;
+}
+
+function formRoleGpu(
+  formLayer: Tree | undefined,
+  role: PdRole,
+  gpuSpecs?: GPUSpec[],
+): { key?: string; standalone: string[]; any: string[] } {
+  const pd = isMap(formLayer?.pd) ? formLayer.pd : undefined;
+  const roleCfg = pd && isMap(pd[role]) ? pd[role] : undefined;
+  return roleCfg ? readGpuAffinity(roleCfg.affinityReplace, gpuSpecs) : { standalone: [], any: [] };
+}
+
+// Writes the one pd.<role> GPU product term from the role chips. Clearing
+// removes that term when the form layer owned it. replicas, extraArgs,
+// schedulerName, and any other role keys stay as they are.
 export function applyPdOverrides(
   layer: Tree,
   pd: PdOverrides,
@@ -285,52 +305,21 @@ export function applyPdOverrides(
     formLayer?: Tree;
   } = {},
 ): void {
-  const keys = gpuLabelKeys(opts.gpuSpecs);
+  const labelKeys = gpuLabelKeys(opts.gpuSpecs);
   const spec = gpuSpecForRole(opts.gpuSpecs, opts.gpuResource, opts.gpuVendor);
-  const prevPd = isMap(opts.formLayer?.pd) ? opts.formLayer.pd : undefined;
 
   for (const role of PD_ROLES) {
-    const edit = pd[role];
-    const prevRole = prevPd && isMap(prevPd[role]) ? prevPd[role] : undefined;
-    const products = canonicalizeProducts(edit.gpuProducts, opts.gpuSpecs);
-    const prevGpuInfo = prevRole ? extractStandaloneGpuTerm(prevRole.affinityReplace, opts.gpuSpecs) : { products: [] };
-    const hadPrevGpu = prevGpuInfo.products.length > 0;
-
-    const pdMap = isMap(layer.pd) ? layer.pd : undefined;
-    const roleMap = pdMap && isMap(pdMap[role]) ? pdMap[role] : undefined;
-
-    if (products.length > 0) {
-      const labelKey = spec?.labelKey || prevGpuInfo.key;
-      if (labelKey) {
-        const pdTarget = (isMap(layer.pd) ? layer.pd : (layer.pd = {})) as Tree;
-        const roleTarget = (isMap(pdTarget[role]) ? pdTarget[role] : (pdTarget[role] = {})) as Tree;
-        const terms = ensureRoleAffinityRequiredTerms(roleTarget);
-        const kept = terms.filter((t) => !isStandaloneGpuProductTerm(t, keys));
-        const values = spec?.labelKey ? expandProductValues(products, spec) : dedupe(products);
-        kept.push({ matchExpressions: [{ key: labelKey, operator: "In", values }] });
-        const na = (roleTarget.affinityReplace as Tree).nodeAffinity as Tree;
-        (na[REQUIRED_NODE_PATH[1]] as Tree).nodeSelectorTerms = kept;
-      }
-    } else if (hadPrevGpu && roleMap && isMap(roleMap.affinityReplace)) {
-      const aff = roleMap.affinityReplace;
-      const terms = nodeSelectorTermsOf(aff);
-      if (terms) {
-        const kept = terms.filter((t) => !isStandaloneGpuProductTerm(t, keys));
-        const na = aff.nodeAffinity as Tree;
-        if (kept.length > 0) {
-          (na[REQUIRED_NODE_PATH[1]] as Tree).nodeSelectorTerms = kept;
-        } else {
-          const hasPreferred = Array.isArray(na[PREFERRED_NODE_KEY]) && na[PREFERRED_NODE_KEY].length > 0;
-          if (hasPreferred || Object.keys(na).some((k) => k !== REQUIRED_NODE_PATH[1] && k !== PREFERRED_NODE_KEY)) {
-            na[REQUIRED_NODE_PATH[1]] = null;
-          } else {
-            delete aff.nodeAffinity;
-          }
-        }
-      }
-      if (!hasAnyAffinityRule(aff)) {
-        roleMap.affinityReplace = null;
-      }
+    const products = canonicalizeProducts(pd[role].gpuProducts, opts.gpuSpecs);
+    const prev = formRoleGpu(opts.formLayer, role, opts.gpuSpecs);
+    // setAffinity rebuilds the role list without this term (the chips own it).
+    // The spec's labelKey is how a new term is addressed; the form layer's key
+    // covers an upgrade whose profile was not passed in.
+    const labelKey = spec?.labelKey || prev.key;
+    if (products.length > 0 && labelKey) {
+      const values = spec?.labelKey ? expandProductValues(products, spec) : dedupe(products);
+      writeRoleGpuTerm(layer, role, labelKey, values, labelKeys);
+    } else if (products.length === 0 && prev.standalone.length > 0) {
+      clearRoleGpuTerm(layer, role, labelKeys);
     }
 
     if (isMap(layer.pd) && isMap(layer.pd[role]) && Object.keys(layer.pd[role]).length === 0) {

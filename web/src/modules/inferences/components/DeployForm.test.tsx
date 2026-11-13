@@ -327,7 +327,8 @@ describe("top-level resources list", () => {
         form={{
           ...EMPTY,
           serviceId: "model",
-          resources: { requests: { cpu: "8" }, limits: { "hugepages-2Mi": "1Gi" } },
+          resources: { requests: { cpu: "8" }, limits: {} },
+          customResources: [{ key: "hugepages-2Mi", request: "", limit: "1Gi" }],
         }}
         onChange={() => {}}
         submitted={false}

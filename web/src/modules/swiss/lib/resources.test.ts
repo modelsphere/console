@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY, formFromPlan, planRequest } from "@swiss/components/DeploySettings";
 import type { Plan } from "@swiss/lib/api";
-import {
-  baseResourceRows,
-  customResourceRows,
-  gpuRequestSummary,
-  helmResources,
-  needsHugepageComputeHint,
-  replaceCustomResources,
-  resourceKeyProblem,
-} from "./resources";
+import { baseResourceRows, gpuRequestSummary, helmResources } from "./resources";
 
 describe("helmResources", () => {
   it("merges chart defaults with layer overrides, handles null deletions, and reads GPU summary", () => {
@@ -104,25 +96,38 @@ describe("gpuRequestSummary", () => {
 });
 
 describe("resources form round-trip", () => {
-  it("writes only non-empty entries to overrides.resources and preserves or clears on upgrade", () => {
+  it("derives default overrides and custom rows, keeping gpu and base keys and the last non-empty duplicate", () => {
     const req = planRequest(
       {
         ...EMPTY,
-        resources: {
-          requests: { cpu: " 8 ", memory: "" },
-          limits: { "hugepages-2Mi": "1Gi" },
-        },
+        resources: { requests: { cpu: " 8 ", memory: "" }, limits: {} },
+        customResources: [
+          { key: "cpu", request: "99", limit: "" },
+          { key: "nvidia.com/gpu", request: "", limit: "1" },
+          { key: "memory", request: "32Gi", limit: "" },
+          { key: "memory", request: "", limit: "64Gi" },
+          { key: " ", request: "1", limit: "1" },
+          { key: "hugepages-2Mi", request: "", limit: "1Gi" },
+        ],
       },
       { model: "m" },
     );
     expect(req.overrides?.resources).toEqual({
-      requests: { cpu: "8" },
-      limits: { "hugepages-2Mi": "1Gi" },
+      requests: { cpu: "99", memory: "32Gi" },
+      limits: { "nvidia.com/gpu": "1", memory: "64Gi", "hugepages-2Mi": "1Gi" },
     });
+  });
 
+  it("seeds custom rows from form-layer keys outside chart/site, and drops cleared scalars", () => {
     const plan = {
       release: { namespace: "default" },
       layers: {
+        site: {
+          resources: {
+            requests: { cpu: "4", memory: "8Gi" },
+            limits: { memory: "16Gi" },
+          },
+        },
         form: {
           resources: {
             requests: { cpu: "8", memory: "16Gi" },
@@ -135,86 +140,21 @@ describe("resources form round-trip", () => {
     const seeded = formFromPlan(plan);
     expect(seeded.resources).toEqual({
       requests: { cpu: "8", memory: "16Gi" },
-      limits: { "hugepages-2Mi": "1Gi" },
+      limits: {},
     });
+    expect(seeded.customResources).toEqual([{ key: "hugepages-2Mi", request: "", limit: "1Gi" }]);
 
-    // Clearing cpu and hugepages-2Mi drops those scalar overrides from base formLayer while preserving null deletion.
-    const clearedReq = planRequest(
+    const cleared = planRequest(
       {
         ...seeded,
-        resources: {
-          requests: { memory: "32Gi" },
-          limits: {},
-        },
+        resources: { requests: { memory: "32Gi" }, limits: {} },
+        customResources: [],
       },
       { model: "m", formLayer: plan.layers.form },
     );
-    expect(clearedReq.overrides?.resources).toEqual({
+    expect(cleared.overrides?.resources).toEqual({
       requests: { memory: "32Gi" },
       limits: { "ephemeral-storage": null },
     });
-  });
-});
-
-describe("custom rows, validation, and hugepages hint", () => {
-  const base = { requests: { cpu: "4" }, limits: { "ephemeral-storage": "28Gi" } };
-
-  it("separates custom rows from base rows and validates reserved/duplicate keys", () => {
-    expect(
-      customResourceRows(base, {
-        requests: { cpu: "8", memory: "16Gi" },
-        limits: { "hugepages-2Mi": "1Gi" },
-      }),
-    ).toEqual([
-      { key: "memory", request: "16Gi", limit: "" },
-      { key: "hugepages-2Mi", request: "", limit: "1Gi" },
-    ]);
-
-    expect(
-      resourceKeyProblem("nvidia.com/gpu", {
-        gpuResource: "nvidia.com/gpu",
-        baseKeys: new Set(["cpu"]),
-      }),
-    ).toBe("gpuReserved");
-    expect(
-      resourceKeyProblem("cpu", {
-        gpuResource: "nvidia.com/gpu",
-        baseKeys: new Set(["cpu"]),
-      }),
-    ).toBe("exists");
-    expect(
-      resourceKeyProblem("memory", {
-        gpuResource: "nvidia.com/gpu",
-        baseKeys: new Set(["cpu"]),
-        duplicateKeys: new Set(["memory"]),
-      }),
-    ).toBe("duplicate");
-
-    const next = replaceCustomResources(
-      base,
-      { requests: { cpu: "8" }, limits: {} },
-      [
-        { key: "cpu", request: "99", limit: "" },
-        { key: "nvidia.com/gpu", request: "", limit: "1" },
-        { key: "memory", request: "32Gi", limit: "64Gi" },
-      ],
-      "nvidia.com/gpu",
-    );
-    expect(next).toEqual({
-      requests: { cpu: "8", memory: "32Gi" },
-      limits: { memory: "64Gi" },
-    });
-  });
-
-  it("flags hugepages without cpu or memory", () => {
-    expect(
-      needsHugepageComputeHint(undefined, { requests: {}, limits: { "hugepages-2Mi": "1Gi" } }),
-    ).toBe(true);
-    expect(
-      needsHugepageComputeHint(base, { requests: {}, limits: { "hugepages-2Mi": "1Gi" } }),
-    ).toBe(false);
-    expect(
-      needsHugepageComputeHint(undefined, { requests: { memory: "4Gi" }, limits: { "hugepages-2Mi": "1Gi" } }),
-    ).toBe(false);
   });
 });

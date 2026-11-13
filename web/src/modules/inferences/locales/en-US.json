@@ -598,16 +598,6 @@
       "resourceGpuReserved": "GPU count is controlled by the model and GPU resource field above; remove it here.",
       "resourceExists": "Already listed above.",
       "resourceDuplicate": "Duplicate resource key.",
-      "resourceHugepageHint": "Kubernetes requires a cpu or memory request alongside hugepages; the chart fills cpu: 1 and memory: 4Gi when omitted.",
-      "resourceKeyNames": {
-        "cpu": "CPU",
-        "memory": "Memory",
-        "ephemeral-storage": "Ephemeral storage",
-        "hugepages-2Mi": "Hugepages 2Mi",
-        "hugepages-1Gi": "Hugepages 1Gi",
-        "rdma/hca_shared": "RDMA HCA",
-        "custom": "Custom"
-      },
       "tolerations": "Tolerations",
       "tolerationsHint": "Lets this deploy land on tainted GPU nodes",
       "tolKey": "Key",

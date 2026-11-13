@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import type { HelmValues } from "@swiss/lib/api";
+import type { HelmValues, Plan } from "@swiss/lib/api";
 import { isMap } from "@swiss/lib/formLayer";
 import { mergedHelmValues } from "@swiss/lib/imageSlots";
 
@@ -41,15 +40,6 @@ export interface GpuRequestSummary {
 }
 
 export type ResourceKeyProblem = "gpuReserved" | "exists" | "duplicate";
-
-export const COMMON_RESOURCE_KEYS = [
-  "cpu",
-  "memory",
-  "ephemeral-storage",
-  "hugepages-2Mi",
-  "hugepages-1Gi",
-  "rdma/hca_shared",
-] as const;
 
 const RESOURCE_ORDER = new Map<string, number>([
   ["cpu", 0],
@@ -177,18 +167,6 @@ export function baseResourceRows(base?: HelmResources): ResourceDefaultRow[] {
   }));
 }
 
-export function customResourceRows(base: HelmResources | undefined, edits: ResourceEdits): CustomResourceRow[] {
-  const baseKeys = new Set(baseResourceRows(base).map((r) => r.key));
-  const customKeys = [...new Set([...Object.keys(edits.requests), ...Object.keys(edits.limits)])]
-    .filter((k) => !baseKeys.has(k))
-    .sort(compareResourceKeys);
-  return customKeys.map((key) => ({
-    key,
-    request: edits.requests[key] ?? "",
-    limit: edits.limits[key] ?? "",
-  }));
-}
-
 export function setResourceOverride(edits: ResourceEdits, key: string, scope: ResourceScope, value: string): ResourceEdits {
   const nextScope = { ...edits[scope] };
   if (value === "") delete nextScope[key];
@@ -216,113 +194,91 @@ export function resourceKeyProblem(
   return undefined;
 }
 
-export function replaceCustomResources(
-  base: HelmResources | undefined,
-  edits: ResourceEdits,
-  custom: CustomResourceRow[],
-  gpuResource?: string,
-): ResourceEdits {
-  const baseKeys = new Set(baseResourceRows(base).map((r) => r.key));
+function putResource(scope: Record<string, string>, key: string, raw: string) {
+  const value = raw.trim();
+  if (key && value) scope[key] = value;
+}
+
+// Default-row overrides and operator-added rows, as one resources map.
+// A blank custom key is skipped. For a repeated key, the last non-empty
+// request and the last non-empty limit win. A key that matches the GPU
+// resource or a chart/site row is kept; the form only warns about it.
+export function deriveResourceEdits(resources: ResourceEdits, custom: CustomResourceRow[]): ResourceEdits {
   const requests: Record<string, string> = {};
   const limits: Record<string, string> = {};
-
-  for (const [k, v] of Object.entries(edits.requests)) {
-    if (baseKeys.has(k) && v.trim()) requests[k] = v;
-  }
-  for (const [k, v] of Object.entries(edits.limits)) {
-    if (baseKeys.has(k) && v.trim()) limits[k] = v;
-  }
-
-  const seen = new Set<string>();
+  for (const [key, value] of Object.entries(resources.requests)) putResource(requests, key.trim(), value);
+  for (const [key, value] of Object.entries(resources.limits)) putResource(limits, key.trim(), value);
   for (const row of custom) {
     const key = row.key.trim();
-    if (!key || baseKeys.has(key) || (gpuResource && key === gpuResource) || seen.has(key)) continue;
-    seen.add(key);
-    if (row.request.trim()) requests[key] = row.request;
-    if (row.limit.trim()) limits[key] = row.limit;
+    putResource(requests, key, row.request);
+    putResource(limits, key, row.limit);
   }
   return { requests, limits };
 }
 
-// _pod.tpl adds cpu=1 / memory=4Gi defaults when a hugepages-* limit is set
-// without cpu or memory; surface the K8s requirement while editing.
-export function needsHugepageComputeHint(base: HelmResources | undefined, edits: ResourceEdits, drafts?: CustomResourceRow[]): boolean {
-  const reqs: Record<string, string> = { ...(base?.requests ?? {}), ...edits.requests };
-  const lims: Record<string, string> = { ...(base?.limits ?? {}), ...edits.limits };
-  for (const d of drafts ?? []) {
-    const key = d.key.trim();
-    if (!key) continue;
-    if (d.request.trim()) reqs[key] = d.request.trim();
-    if (d.limit.trim()) lims[key] = d.limit.trim();
+const CHART_SITE_LAYERS = ["defaults", "catalog", "site"] as const;
+
+// Form-layer keys that already exist on a chart or site layer stay overrides
+// of those rows. Every other key is an operator-added row.
+export function seedFormResources(layers: Plan["layers"] | undefined): { resources: ResourceEdits; customResources: CustomResourceRow[] } {
+  const baseKeys = new Set<string>();
+  for (const name of CHART_SITE_LAYERS) {
+    const layer = layers?.[name];
+    if (!isMap(layer)) continue;
+    const edits = resourceEditsFromLayer(layer);
+    for (const key of Object.keys(edits.requests)) baseKeys.add(key);
+    for (const key of Object.keys(edits.limits)) baseKeys.add(key);
   }
-  const hasHugepage = [...Object.entries(reqs), ...Object.entries(lims)].some(
-    ([k, v]) => k.startsWith("hugepages-") && v.trim() !== "",
-  );
-  if (!hasHugepage) return false;
-  const hasCpuOrMemory = ["cpu", "memory"].some((k) => (reqs[k]?.trim() ?? "") !== "" || (lims[k]?.trim() ?? "") !== "");
-  return !hasCpuOrMemory;
+  const form = isMap(layers?.form) ? resourceEditsFromLayer(layers.form) : emptyResourceEdits();
+  const resources = emptyResourceEdits();
+  const customKeys: string[] = [];
+  for (const key of new Set([...Object.keys(form.requests), ...Object.keys(form.limits)])) {
+    if (baseKeys.has(key)) {
+      if (form.requests[key]) resources.requests[key] = form.requests[key];
+      if (form.limits[key]) resources.limits[key] = form.limits[key];
+    } else {
+      customKeys.push(key);
+    }
+  }
+  customKeys.sort(compareResourceKeys);
+  return {
+    resources,
+    customResources: customKeys.map((key) => ({
+      key,
+      request: form.requests[key] ?? "",
+      limit: form.limits[key] ?? "",
+    })),
+  };
 }
 
-export interface ResourceDraftRow extends CustomResourceRow {
-  id: number;
+export interface ResourceCustomView extends CustomResourceRow {
   error?: ResourceKeyProblem;
 }
 
+// Reads the form's default overrides and custom-row array. Custom rows are
+// not copied into component state; handlers patch the arrays they are given.
 export function useResourceRows(opts: {
   base?: HelmResources;
-  value: ResourceEdits;
+  resources: ResourceEdits;
+  custom: CustomResourceRow[];
   gpuResource?: string;
-  onChange: (next: ResourceEdits) => void;
+  onResources: (next: ResourceEdits) => void;
+  onCustom: (next: CustomResourceRow[]) => void;
 }) {
-  const { base, value, gpuResource, onChange } = opts;
+  const { base, resources, custom, gpuResource, onResources, onCustom } = opts;
   const baseRows = baseResourceRows(base);
   const baseKeys = new Set(baseRows.map((r) => r.key));
-  const baseKeysKey = baseRows.map((r) => r.key).join("\0");
-
-  const nextIdRef = useRef(1);
-  const lastEmittedRef = useRef<ResourceEdits | null>(null);
-  const prevBaseKeysRef = useRef(baseKeysKey);
-
-  const [drafts, setDrafts] = useState<Array<CustomResourceRow & { id: number }>>(() =>
-    customResourceRows(base, value).map((r) => ({ id: nextIdRef.current++, ...r })),
-  );
-
-  const emit = (next: ResourceEdits) => {
-    lastEmittedRef.current = next;
-    onChange(next);
-  };
-
-  useEffect(() => {
-    const baseChanged = baseKeysKey !== prevBaseKeysRef.current;
-    prevBaseKeysRef.current = baseKeysKey;
-    if (value !== lastEmittedRef.current) {
-      lastEmittedRef.current = value;
-      setDrafts((prev) => {
-        const seeded = customResourceRows(base, value);
-        if (prev.length === 0 && seeded.length === 0) return prev;
-        return seeded.map((r) => ({ id: nextIdRef.current++, ...r }));
-      });
-      return;
-    }
-    if (baseChanged) {
-      setDrafts((prev) => {
-        const next = prev.filter((d) => !d.key.trim() || !baseKeys.has(d.key.trim()));
-        return next.length === prev.length ? prev : next;
-      });
-    }
-  }, [value, baseKeysKey]);
 
   const counts = new Map<string, number>();
-  for (const d of drafts) {
-    const k = d.key.trim();
-    if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
+  for (const row of custom) {
+    const key = row.key.trim();
+    if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   const duplicateKeys = new Set([...counts].filter(([, n]) => n > 1).map(([k]) => k));
-  const usedKeys = new Set([...baseKeys, ...counts.keys()]);
 
   const defaultRows = baseRows.map((r) => {
-    const request = value.requests[r.key] ?? "";
-    const limit = value.limits[r.key] ?? "";
+    const request = resources.requests[r.key] ?? "";
+    const limit = resources.limits[r.key] ?? "";
     return {
       key: r.key,
       defaultRequest: r.request,
@@ -334,49 +290,28 @@ export function useResourceRows(opts: {
     };
   });
 
-  const customRows: ResourceDraftRow[] = drafts.map((d) => ({
-    ...d,
-    error: resourceKeyProblem(d.key, { gpuResource, baseKeys, duplicateKeys }),
+  const customRows: ResourceCustomView[] = custom.map((row) => ({
+    ...row,
+    error: resourceKeyProblem(row.key, { gpuResource, baseKeys, duplicateKeys }),
   }));
-
-  const setDefaultValue = (key: string, scope: ResourceScope, next: string) => {
-    emit(setResourceOverride(value, key, scope, next));
-  };
-
-  const resetDefaultKey = (key: string) => {
-    emit(clearResourceOverride(value, key));
-  };
-
-  const addCustomRow = () => {
-    setDrafts((prev) => [...prev, { id: nextIdRef.current++, key: "", request: "", limit: "" }]);
-  };
-
-  const updateCustomRow = (id: number, patch: Partial<CustomResourceRow>) => {
-    const nextDrafts = drafts.map((d) => (d.id === id ? { ...d, ...patch } : d));
-    setDrafts(nextDrafts);
-    emit(replaceCustomResources(base, value, nextDrafts, gpuResource));
-  };
-
-  const removeCustomRow = (id: number) => {
-    const nextDrafts = drafts.filter((d) => d.id !== id);
-    setDrafts(nextDrafts);
-    emit(replaceCustomResources(base, value, nextDrafts, gpuResource));
-  };
-
-  const keyChoicesFor = (currentKey: string): string[] => {
-    const cur = currentKey.trim();
-    return COMMON_RESOURCE_KEYS.filter((k) => k !== gpuResource && (!usedKeys.has(k) || k === cur));
-  };
 
   return {
     defaultRows,
     customRows,
-    setDefaultValue,
-    resetDefaultKey,
-    addCustomRow,
-    updateCustomRow,
-    removeCustomRow,
-    keyChoicesFor,
-    hugepageHint: needsHugepageComputeHint(base, value, drafts),
+    setDefaultValue: (key: string, scope: ResourceScope, next: string) => {
+      onResources(setResourceOverride(resources, key, scope, next));
+    },
+    resetDefaultKey: (key: string) => {
+      onResources(clearResourceOverride(resources, key));
+    },
+    addCustomRow: () => {
+      onCustom([...custom, { key: "", request: "", limit: "" }]);
+    },
+    updateCustomRow: (index: number, patch: Partial<CustomResourceRow>) => {
+      onCustom(custom.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+    },
+    removeCustomRow: (index: number) => {
+      onCustom(custom.filter((_, i) => i !== index));
+    },
   };
 }

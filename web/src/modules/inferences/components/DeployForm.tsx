@@ -41,7 +41,7 @@ import {
   type PdRole,
   type PdRoleInfo,
 } from "@swiss/lib/pdRoles";
-import { gpuRequestSummary, useResourceRows, type HelmResources, type ResourceEdits } from "@swiss/lib/resources";
+import { gpuRequestSummary, useResourceRows, type CustomResourceRow, type HelmResources, type ResourceEdits } from "@swiss/lib/resources";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
 import { useT } from "@/modules/inferences/i18n";
@@ -192,14 +192,15 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           )}
           <ResourceRows
             base={resources}
-            value={form.resources}
+            resources={form.resources}
+            custom={form.customResources}
             gpu={gpuRequestSummary({
               base: resources,
               formGpuResource: form.gpuResource,
               gpuResources,
               perPodGpus: capacity?.perPod,
             })}
-            onChange={(next) => onChange({ resources: next })}
+            onChange={onChange}
           />
           {presets && Object.keys(presets).length > 0 && <PresetField presets={presets} value={form.preset} onChange={(preset) => onChange({ preset })} />}
           <Tolerations rows={form.tolerations} taints={taints ?? []} onChange={(v) => onChange({ tolerations: v })} />
@@ -323,14 +324,16 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
 
 function ResourceRows({
   base,
-  value,
+  resources,
+  custom,
   gpu,
   onChange,
 }: {
   base?: HelmResources;
-  value: ResourceEdits;
+  resources: ResourceEdits;
+  custom: CustomResourceRow[];
   gpu?: ReturnType<typeof gpuRequestSummary>;
-  onChange: (next: ResourceEdits) => void;
+  onChange: (patch: Partial<Pick<Form, "resources" | "customResources">>) => void;
 }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
@@ -342,23 +345,17 @@ function ResourceRows({
     addCustomRow,
     updateCustomRow,
     removeCustomRow,
-    keyChoicesFor,
-    hugepageHint,
-  } = useResourceRows({ base, value, gpuResource: gpu?.resource, onChange });
+  } = useResourceRows({
+    base,
+    resources,
+    custom,
+    gpuResource: gpu?.resource,
+    onResources: (next) => onChange({ resources: next }),
+    onCustom: (next) => onChange({ customResources: next }),
+  });
 
   const problemText = (problem: "gpuReserved" | "exists" | "duplicate") =>
     problem === "gpuReserved" ? f("resourceGpuReserved") : problem === "exists" ? f("resourceExists") : f("resourceDuplicate");
-  const keyLabel = (k: string) => {
-    const map: Record<string, string> = {
-      cpu: f("resourceKeyNames.cpu"),
-      memory: f("resourceKeyNames.memory"),
-      "ephemeral-storage": f("resourceKeyNames.ephemeral-storage"),
-      "hugepages-2Mi": f("resourceKeyNames.hugepages-2Mi"),
-      "hugepages-1Gi": f("resourceKeyNames.hugepages-1Gi"),
-      "rdma/hca_shared": f("resourceKeyNames.rdma/hca_shared"),
-    };
-    return map[k] ?? f("resourceKeyNames.custom");
-  };
 
   const hasRows = !!gpu || defaultRows.length > 0 || customRows.length > 0;
   return (
@@ -411,13 +408,11 @@ function ResourceRows({
               {r.keyProblem && <p className="col-span-4 text-xs text-warning">{problemText(r.keyProblem)}</p>}
             </div>
           ))}
-          {customRows.map((r) => (
-            <div key={r.id} className="contents">
-              <Suggest
-                bare
+          {customRows.map((r, i) => (
+            <div key={i} className="contents">
+              <Input
                 value={r.key}
-                onChange={(v) => updateCustomRow(r.id, { key: v })}
-                choices={keyChoicesFor(r.key).map((k) => ({ value: k, label: keyLabel(k) }))}
+                onChange={(e) => updateCustomRow(i, { key: e.target.value })}
                 placeholder={f("resourceKeyPlaceholder")}
                 aria-invalid={r.error ? true : undefined}
                 aria-label={f("resourceColName")}
@@ -425,19 +420,19 @@ function ResourceRows({
               />
               <Input
                 value={r.request}
-                onChange={(e) => updateCustomRow(r.id, { request: e.target.value })}
+                onChange={(e) => updateCustomRow(i, { request: e.target.value })}
                 placeholder={f("resourceColRequest")}
                 aria-label={`${r.key.trim() || f("resourceColName")} ${f("resourceColRequest")}`}
                 className="font-mono text-xs"
               />
               <Input
                 value={r.limit}
-                onChange={(e) => updateCustomRow(r.id, { limit: e.target.value })}
+                onChange={(e) => updateCustomRow(i, { limit: e.target.value })}
                 placeholder={f("resourceColLimit")}
                 aria-label={`${r.key.trim() || f("resourceColName")} ${f("resourceColLimit")}`}
                 className="font-mono text-xs"
               />
-              <Button variant="ghost" size="icon" className="size-8" aria-label={t("common:actions.delete")} onClick={() => removeCustomRow(r.id)}>
+              <Button variant="ghost" size="icon" className="size-8" aria-label={t("common:actions.delete")} onClick={() => removeCustomRow(i)}>
                 <X className="size-4" />
               </Button>
               {r.error && <p className="col-span-4 text-xs text-destructive">{problemText(r.error)}</p>}
@@ -447,7 +442,6 @@ function ResourceRows({
       ) : (
         <p className="text-xs text-muted-foreground">{f("resourceEmpty")}</p>
       )}
-      {hugepageHint && <p className="text-xs text-muted-foreground">{f("resourceHugepageHint")}</p>}
       <Button variant="ghost" size="sm" className="w-fit" onClick={addCustomRow}>
         <Plus className="size-3.5" /> {f("resourceAdd")}
       </Button>
@@ -604,7 +598,7 @@ function PdRolesFields({
                   perPod={roleCap.perPod}
                   needNodes={roleCap.needNodes}
                   refreshing={refreshing}
-                  onRefresh={onRefresh ?? (() => {})}
+                  onRefresh={onRefresh}
                 />
               )}
             </div>
@@ -696,7 +690,7 @@ export interface CapacityProps {
   perPod: number;
   needNodes: number;
   refreshing: boolean;
-  onRefresh: () => void;
+  onRefresh?: () => void;
 }
 
 // Nodes and GPUs the picked resource and products can land on, total and free.
@@ -727,9 +721,11 @@ function CapacityHint({ value, perPod, needNodes, refreshing, onRefresh }: Capac
           </>
         )}
       </span>
-      <Button variant="ghost" size="icon" className="size-6" aria-label={t("common:actions.refresh")} disabled={refreshing} onClick={onRefresh}>
-        <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
-      </Button>
+      {onRefresh && (
+        <Button variant="ghost" size="icon" className="size-6" aria-label={t("common:actions.refresh")} disabled={refreshing} onClick={onRefresh}>
+          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+        </Button>
+      )}
     </div>
   );
 }

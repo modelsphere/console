@@ -91,6 +91,7 @@ describe("image slot discovery query", () => {
       namespace: "ns2",
       images: { image: "mirror/x:1" },
       resources: { requests: { cpu: "8" }, limits: { memory: "32Gi" } },
+      customResources: [{ key: "hugepages-2Mi", request: "", limit: "1Gi" }],
       pd: {
         prefill: { gpuProducts: [] },
         decode: { gpuProducts: [] },
