@@ -147,7 +147,9 @@ export function Deploy() {
           siteEnv: profile.data?.profile?.extra,
         })
       : undefined;
-  const discovered = useImageSlots(form, requestOf, !!model.data && !!catalog && cluster.data?.allowDeploy !== false);
+  // Discovery runs only while Images is open. The engine image is already on the form, so a closed section still submits it.
+  const [imagesOpen, setImagesOpen] = useState(false);
+  const discovered = useImageSlots(form, requestOf, imagesOpen && !!model.data && !!catalog && cluster.data?.allowDeploy !== false);
 
   const planM = useMutation({
     mutationFn: () => deployApi.plan(requestOf(form)!),
@@ -289,6 +291,7 @@ export function Deploy() {
         image={imageOf(variant, model.data.imageRepository)}
         slots={discovered.slots}
         slotsError={discovered.error}
+        onImagesOpen={setImagesOpen}
         supportedGPUs={variant?.requires.gpuProduct}
         clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
         gpuResources={variant?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, variant.requires.vendor) : undefined}

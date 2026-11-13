@@ -67,6 +67,9 @@ export interface DeployFormProps {
   // returns; the engine row still shows from defaults.image.
   slots?: ImageSlot[];
   slotsError?: string;
+  // Opening Images or the Override YAML editor is what runs the shared compose dry-run.
+  onImagesOpen?: (open: boolean) => void;
+  onYamlOpen?: (open: boolean) => void;
   recovery?: ReactNode;
   // The variant's inputs, each with the answer that applies when its field is left empty.
   inputs?: InputRow[];
@@ -79,7 +82,7 @@ export interface DeployFormProps {
   taints?: ClusterTaint[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, onImagesOpen, onYamlOpen, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -197,7 +200,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
               </div>
             );
           })}
-          <ImageRows form={form} onChange={onChange} image={defaults.image} slots={slots} error={slotsError} />
+          <ImageRows form={form} onChange={onChange} image={defaults.image} slots={slots} error={slotsError} onOpen={onImagesOpen} />
         </>,
       )}
 
@@ -267,7 +270,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           <FloatingField layout="inline" label={f("skipSchemaValidation")} hint={f("skipSchemaValidationHint")}>
             {sw("skipSchemaValidation", f("skipSchemaValidation"))}
           </FloatingField>
-          <OverrideYaml value={form.edits} onChange={(edits) => onChange({ edits })} source={helmValues} />
+          <OverrideYaml value={form.edits} onChange={(edits) => onChange({ edits })} source={helmValues} onOpenChange={onYamlOpen} />
         </>,
       )}
     </div>
@@ -282,24 +285,30 @@ function ImageRows({
   image,
   slots,
   error,
+  onOpen,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
   image?: { catalog: string; site: string };
   slots?: ImageSlot[];
   error?: string;
+  onOpen?: (open: boolean) => void;
 }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
+  const [open, setOpen] = useState(false);
   const rows = imageRows(slots, image, form.images);
-  if (!rows.length && !error) return null;
   return (
-    <div className="flex flex-col gap-3 rounded-md border p-3">
-      <div>
-        <div className="text-sm font-medium">{f("images")}</div>
-        <p className="text-xs text-muted-foreground">{f("imagesHint")}</p>
-        {error && <p className="text-xs text-warning">{error}</p>}
-      </div>
+    <FormSection
+      title={f("images")}
+      expanded={open}
+      onExpandedChange={(next) => {
+        setOpen(next);
+        onOpen?.(next);
+      }}
+    >
+      <p className="text-xs text-muted-foreground">{f("imagesHint")}</p>
+      {error && <p className="text-xs text-warning">{error}</p>}
       {rows.map((slot) => {
         const value = imageText(form.images[slot.path]);
         const set = (raw: string) => onChange({ images: imagePatch(form.images, slot.path, slot.kind, raw) });
@@ -319,7 +328,7 @@ function ImageRows({
           </div>
         );
       })}
-    </div>
+    </FormSection>
   );
 }
 

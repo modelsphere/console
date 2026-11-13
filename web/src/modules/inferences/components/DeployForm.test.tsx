@@ -159,6 +159,13 @@ describe("image override", () => {
     );
   const selected = (html: string, label: string) => new RegExp(`<option[^>]*selected[^>]*>${label}</option>`).test(html);
 
+  it("keeps Images collapsed until opened, with the engine image still in the form", () => {
+    const html = render({ ...EMPTY, serviceId: "model", images: { image: image.site } });
+    const button = /<button[^>]*aria-expanded="([^"]+)"[^>]*>(?:(?!<\/button>)[\s\S])*镜像[\s\S]*?<\/button>/.exec(html);
+    expect(button?.[1]).toBe("false");
+    expect(selected(html, "站点镜像仓库")).toBe(true);
+  });
+
   it("offers both the site's mirror and the catalog's own image, marking the one in the field", () => {
     const mirrored = render({ ...EMPTY, serviceId: "model", images: { image: image.site } });
     expect(mirrored).toContain("站点镜像仓库");

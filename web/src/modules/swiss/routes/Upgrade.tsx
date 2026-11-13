@@ -195,7 +195,9 @@ export function Upgrade() {
           siteEnv: profile.data?.profile?.extra,
         })
       : undefined;
-  const discovered = useImageSlots(form, (f) => (rollbackTo ? undefined : requestOf(f)), !rollbackTo && !!current.data && cluster.data?.allowDeploy !== false);
+  // Discovery runs only while Images is open. A rollback reapplies an archived plan and does not ask the chart.
+  const [imagesOpen, setImagesOpen] = useState(false);
+  const discovered = useImageSlots(form, (f) => (rollbackTo ? undefined : requestOf(f)), imagesOpen && !rollbackTo && !!current.data && cluster.data?.allowDeploy !== false);
 
   const planM = useMutation({
     mutationFn: () => deployApi.plan(requestOf(form)!),
@@ -496,6 +498,7 @@ export function Upgrade() {
         image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
         slots={rollbackTo ? undefined : discovered.slots}
         slotsError={rollbackTo ? undefined : discovered.error}
+        onImagesOpen={setImagesOpen}
         cache={cache}
         lockIdentity
         readOnly={rollbackTo > 0}

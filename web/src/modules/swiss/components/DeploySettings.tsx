@@ -221,6 +221,7 @@ export function DeploySettings({
   remember,
   onRemember,
   presets,
+  onImagesOpen,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -258,6 +259,8 @@ export function DeploySettings({
   onRemember?: (key: string, on: boolean) => void;
   // The site profile's presets, on a deploy.
   presets?: Record<string, Preset>;
+  // The Images disclosure. Opening it is what runs slot discovery.
+  onImagesOpen?: (open: boolean) => void;
 }) {
   const checked = useDebounced(form.inputs, CHECK_MS);
   const picked = presets?.[form.preset];
@@ -858,7 +861,7 @@ export function DeploySettings({
 
       </details>
 
-      <ImagesSection form={form} onChange={onChange} image={image} slots={slots} error={slotsError} />
+      <ImagesSection form={form} onChange={onChange} image={image} slots={slots} error={slotsError} onOpen={onImagesOpen} />
 
       <Card>
         <CardHeader>
@@ -949,25 +952,29 @@ function ImagesSection({
   image,
   slots,
   error,
+  onOpen,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
   image?: { catalog: string; site: string };
   slots?: ImageSlot[];
   error?: string;
+  onOpen?: (open: boolean) => void;
 }) {
   const rows = imageRows(slots, image, form.images);
-  if (!rows.length && !error) return null;
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Images</CardTitle>
+    <details className="group rounded-lg border bg-card" onToggle={(e) => onOpen?.(e.currentTarget.open)}>
+      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+        Images
+        <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t px-4 py-3">
         <p className="text-sm text-muted-foreground">
           Each row is a values path. Empty keeps the image in the placeholder; a value is written on the form layer.
         </p>
-      </CardHeader>
-      <CardContent className="divide-y pt-0">
-        {error && <p className="py-2 text-xs text-warning">{error}</p>}
+        {error && <p className="mt-2 text-xs text-warning">{error}</p>}
+      </div>
+      <div className="divide-y border-t px-4">
         {rows.map((slot) => {
           const value = imageText(form.images[slot.path]);
           const set = (raw: string) => onChange({ images: imagePatch(form.images, slot.path, slot.kind, raw) });
@@ -986,8 +993,8 @@ function ImagesSection({
             </Row>
           );
         })}
-      </CardContent>
-    </Card>
+      </div>
+    </details>
   );
 }
 

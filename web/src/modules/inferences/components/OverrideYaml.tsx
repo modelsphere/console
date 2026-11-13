@@ -39,16 +39,24 @@ export interface HelmValuesSource {
   load: () => Promise<HelmValues | undefined>;
 }
 
-export function OverrideYaml({ value, onChange, source }: {
+export function OverrideYaml({ value, onChange, source, onOpenChange }: {
   value: string;
   onChange: (edits: string) => void;
   source?: HelmValuesSource;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
   const [open, setOpen] = useState(false);
   const paths = overridePaths(value);
-  const edit = () => setOpen(true);
+  const close = () => {
+    onOpenChange?.(false);
+    setOpen(false);
+  };
+  const edit = () => {
+    onOpenChange?.(true);
+    setOpen(true);
+  };
   return (
     <>
       <FloatingField
@@ -76,28 +84,33 @@ export function OverrideYaml({ value, onChange, source }: {
           className="cursor-pointer font-mono text-xs"
         />
       </FloatingField>
-      {open && <OverrideDialog value={value} source={source} onClose={() => setOpen(false)} onSave={(edits) => (onChange(edits), setOpen(false))} />}
+      {open && <OverrideDialog value={value} source={source} onClose={close} onSave={(edits) => (onChange(edits), close())} />}
     </>
   );
 }
 
-export function OverrideYamlButton({ value, onChange, source, disabled }: {
+export function OverrideYamlButton({ value, onChange, source, disabled, onOpenChange }: {
   value: string;
   onChange: (edits: string) => void;
   source?: HelmValuesSource;
   disabled?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const paths = overridePaths(value);
+  const close = () => {
+    onOpenChange?.(false);
+    setOpen(false);
+  };
   return (
     <>
-      <Button variant="outline" disabled={disabled} onClick={() => setOpen(true)}>
+      <Button variant="outline" disabled={disabled} onClick={() => (onOpenChange?.(true), setOpen(true))}>
         <Pencil className="size-3.5" />
         {t("deploy.fields.edits")}
         {!!paths?.length && <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{paths.length}</Badge>}
       </Button>
-      {open && <OverrideDialog value={value} source={source} onClose={() => setOpen(false)} onSave={(edits) => (onChange(edits), setOpen(false))} />}
+      {open && <OverrideDialog value={value} source={source} onClose={close} onSave={(edits) => (onChange(edits), close())} />}
     </>
   );
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import { EMPTY, formFromPlan, planRequest } from "@swiss/components/DeploySettings";
 import type { Plan } from "@swiss/lib/api";
 import {
@@ -12,6 +13,7 @@ import {
   joinImage,
   mergedHelmValues,
   splitImage,
+  withImageEdits,
   type ImageEdit,
 } from "./imageSlots";
 
@@ -98,6 +100,23 @@ describe("imageRows", () => {
       ["image", "map", "chart/engine:1"],
       ["sidecar.image", "string", "example.com/echo:1"],
     ]);
+  });
+});
+
+describe("image edits on dumped helm values", () => {
+  it("merges them onto the overrides and leaves the chart defaults", () => {
+    const values = {
+      defaults: "image:\n  repository: chart/engine\n  tag: \"1\"\n",
+      overrides: "image:\n  pullPolicy: Always\n",
+    };
+    const next = withImageEdits(values, { image: { repository: "mirror/engine", tag: "pinned@sha256:abc" }, "sidecar.image": "example.com/echo:2" });
+    expect(next.defaults).toBe(values.defaults);
+    expect(parse(next.overrides)).toEqual({
+      image: { pullPolicy: "Always", repository: "mirror/engine", tag: "pinned@sha256:abc" },
+      sidecar: { image: "example.com/echo:2" },
+    });
+    expect(withImageEdits(values, {})).toBe(values);
+    expect(withImageEdits(values, { image: "" })).toBe(values);
   });
 });
 

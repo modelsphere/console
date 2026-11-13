@@ -1,4 +1,4 @@
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import type { HelmValues } from "@swiss/lib/api";
 import { isMap } from "@swiss/lib/formLayer";
 
@@ -178,6 +178,14 @@ function dropImage(root: Tree, path: string): void {
     return;
   }
   if (leafKey in cur) delete cur[leafKey];
+}
+
+// Image edits the dry run left out, merged onto its overrides. Defaults stay as dumped.
+export function withImageEdits(values: HelmValues, images?: Record<string, ImageEdit>): HelmValues {
+  const patch: Tree = {};
+  applyImageEdits(patch, images);
+  if (!Object.keys(patch).length) return values;
+  return { ...values, overrides: stringify(mergeHelm(parseMap(values.overrides), patch)) };
 }
 
 // Non-empty image edits, written onto the form overrides. The value is already

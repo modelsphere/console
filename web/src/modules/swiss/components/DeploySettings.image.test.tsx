@@ -8,6 +8,16 @@ const render = (img: string, pair = image) =>
 const selected = (html: string, label: string) => new RegExp(`<option[^>]*selected[^>]*>${label}</option>`).test(html);
 
 describe("image override", () => {
+  it("keeps Images collapsed until opened, with the engine image still in the form", () => {
+    const html = render(image.site);
+    const at = html.indexOf("Images");
+    const start = html.lastIndexOf("<details", at);
+    const tag = html.slice(start, html.indexOf(">", start));
+    expect(tag.startsWith("<details")).toBe(true);
+    expect(tag).not.toMatch(/\sopen[\s>=]/);
+    expect(selected(html, "site mirror")).toBe(true);
+  });
+
   it("offers the site's mirror and the catalog's own image, marking the one in the field", () => {
     expect(selected(render(image.site), "site mirror")).toBe(true);
     expect(selected(render(image.catalog), "catalog original")).toBe(true);
