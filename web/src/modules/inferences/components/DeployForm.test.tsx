@@ -157,28 +157,19 @@ describe("image override", () => {
         onExpand={() => {}} idPrefix="test-"
       />,
     );
-  const selected = (html: string, label: string) => new RegExp(`<option[^>]*selected[^>]*>${label}</option>`).test(html);
 
   it("keeps Images collapsed until opened, with the engine image still in the form", () => {
     const html = render({ ...EMPTY, serviceId: "model", images: { image: image.site } });
     const button = /<button[^>]*aria-expanded="([^"]+)"[^>]*>(?:(?!<\/button>)[\s\S])*镜像[\s\S]*?<\/button>/.exec(html);
     expect(button?.[1]).toBe("false");
-    expect(selected(html, "站点镜像仓库")).toBe(true);
+    expect(html).toContain(`value="${image.site}"`);
   });
 
-  it("offers both the site's mirror and the catalog's own image, marking the one in the field", () => {
-    const mirrored = render({ ...EMPTY, serviceId: "model", images: { image: image.site } });
-    expect(mirrored).toContain("站点镜像仓库");
-    expect(mirrored).toContain("目录原始镜像");
-    expect(selected(mirrored, "站点镜像仓库")).toBe(true);
-    expect(selected(render({ ...EMPTY, serviceId: "model", images: { image: image.catalog } }), "目录原始镜像")).toBe(true);
-    const typed = render({ ...EMPTY, serviceId: "model", images: { image: "ghcr.io/me/sglang:rc1" } });
-    expect(selected(typed, "站点镜像仓库") || selected(typed, "目录原始镜像")).toBe(false);
-  });
-
-  it("offers nothing to pick between without a mirror", () => {
-    const html = render({ ...EMPTY, serviceId: "model", images: { image: image.catalog } }, { catalog: image.catalog, site: image.catalog });
-    expect(html).not.toContain("目录原始镜像");
+  it("renders a single Suggest input with the effective image as placeholder and no separate select", () => {
+    const html = render({ ...EMPTY, serviceId: "model" });
+    expect(html).toContain(`placeholder="${image.site}"`);
+    expect(html).not.toContain("<select");
+    expect(html).not.toContain('role="listbox"');
   });
 });
 

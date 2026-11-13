@@ -29,7 +29,7 @@ import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/
 import { unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
 import { CHECK_MS, inputError, rememberable, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
-import { effective, ImageSource, tolerationExtras, type Form, type Toleration } from "@swiss/components/DeploySettings";
+import { effective, imageChoices, tolerationExtras, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { imagePatch, imageRows, imageText, type ImageSlot } from "@swiss/lib/imageSlots";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
@@ -298,6 +298,7 @@ function ImageRows({
   const f = (k: string) => t(`deploy.fields.${k}`);
   const [open, setOpen] = useState(false);
   const rows = imageRows(slots, image, form.images);
+  const choices = image ? imageChoices(image).map((c) => ({ value: c.ref, label: f(c.key === "site" ? "imageSite" : "imageCatalog") })) : undefined;
   return (
     <FormSection
       title={f("images")}
@@ -312,20 +313,19 @@ function ImageRows({
       {rows.map((slot) => {
         const value = imageText(form.images[slot.path]);
         const set = (raw: string) => onChange({ images: imagePatch(form.images, slot.path, slot.kind, raw) });
+        const fallback = slot.value || "repository:tag";
         return (
-          <div key={slot.path} className="flex flex-col gap-1.5">
-            <FloatingField value={value || slot.value} label={slot.path}>
-              <Input value={value} onChange={(e) => set(e.target.value)} placeholder={slot.value || "repository:tag"} aria-label={slot.path} className="font-mono text-xs" />
-            </FloatingField>
-            {slot.path === "image" && image && (
-              <ImageSource
-                image={image}
-                value={value}
-                onPick={set}
-                labels={{ aria: f("imageSource"), site: f("imageSite"), catalog: f("imageCatalog"), custom: f("imageCustom"), inherited: f("imageInherited") }}
-              />
-            )}
-          </div>
+          <FloatingField key={slot.path} value={value || fallback} label={slot.path}>
+            <Suggest
+              value={value}
+              onChange={set}
+              suggestion={slot.value || undefined}
+              placeholder={fallback}
+              choices={slot.path === "image" && choices?.length ? choices : undefined}
+              aria-label={slot.path}
+              className="font-mono text-xs"
+            />
+          </FloatingField>
         );
       })}
     </FormSection>
