@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { deployApi, type HelmValues, type PlanRequest } from "@swiss/lib/api";
 import type { Form } from "@swiss/components/DeploySettings";
 import { helmImageSlots, type ImageSlot } from "@swiss/lib/imageSlots";
+import { emptyResourceEdits, helmResources, type HelmResources } from "@swiss/lib/resources";
 
 // Keyed only by chart target (model/catalog/release/version/variant/chartVersion),
 // so opening the deploy/upgrade window runs once using the latest form state,
@@ -25,7 +26,7 @@ export function helmValuesTargetKey(request: PlanRequest | undefined) {
 }
 
 export function previewForm(form: Form): Form {
-  return { ...form, images: {}, edits: "" };
+  return { ...form, images: {}, resources: emptyResourceEdits(), edits: "" };
 }
 
 export function imageSlotsQueryOptions(
@@ -52,6 +53,7 @@ export function useImageSlots(
   enabled: boolean,
 ): {
   slots: ImageSlot[];
+  resources?: HelmResources;
   fetching: boolean;
   queryError: Error | null;
   reload: () => Promise<HelmValues | undefined>;
@@ -59,9 +61,11 @@ export function useImageSlots(
   const request = requestFor(previewForm(form));
   const query = useQuery(imageSlotsQueryOptions(form, requestFor, enabled));
   const slots = query.data ? helmImageSlots(query.data) : [];
+  const resources = query.data ? helmResources(query.data) : undefined;
   const queryError = query.error instanceof Error ? query.error : query.error ? new Error(String(query.error)) : null;
   return {
     slots,
+    resources,
     fetching: query.isFetching,
     queryError,
     reload: async () => {

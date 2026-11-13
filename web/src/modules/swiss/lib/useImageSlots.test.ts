@@ -49,6 +49,7 @@ describe("image slot discovery query", () => {
       serviceId: "m2",
       preset: "fast",
       images: { image: "mirror/x:1" },
+      resources: { requests: { cpu: "8" }, limits: { "hugepages-2Mi": "1Gi" } },
       edits: "replicaCount: 9\n",
     };
     expect(helmValuesTargetKey(requestFor(previewForm(edited)))).toEqual(helmValuesTargetKey(requestFor(previewForm(form))));
@@ -75,13 +76,19 @@ describe("image slot discovery query", () => {
     unsubscribe();
   });
 
-  it("posts the latest form edits on manual refetch while leaving image/edit overrides stripped", async () => {
+  it("posts the latest form edits on manual refetch while leaving image/resource/edit overrides stripped", async () => {
     const form: Form = { ...EMPTY, serviceId: "m", namespace: "ns1" };
     const { fetch, observer, update, unsubscribe } = setup(form, true);
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     expect(fetch.mock.calls[0][0].namespace).toBe("ns1");
 
-    const updated: Form = { ...form, namespace: "ns2", images: { image: "mirror/x:1" }, edits: "note: typed\n" };
+    const updated: Form = {
+      ...form,
+      namespace: "ns2",
+      images: { image: "mirror/x:1" },
+      resources: { requests: { cpu: "8" }, limits: { memory: "32Gi" } },
+      edits: "note: typed\n",
+    };
     update(updated, true);
     await Promise.resolve();
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -92,6 +99,7 @@ describe("image slot discovery query", () => {
     expect(posted.namespace).toBe("ns2");
     expect(posted.editsYAML).toBeUndefined();
     expect(posted.overrides?.image).toBeUndefined();
+    expect(posted.overrides?.resources).toBeUndefined();
     unsubscribe();
   });
 });

@@ -21,7 +21,7 @@ import {
   Switch,
   cn,
 } from "@modelsphere/ui";
-import { Plus, RefreshCw, X } from "lucide-react";
+import { Plus, RefreshCw, RotateCcw, X } from "lucide-react";
 import type { ClusterInfo, Preset } from "@swiss/lib/api";
 import { editRule, listLabel, type AffinityRule } from "@swiss/lib/affinity";
 import { toYaml } from "@swiss/lib/yaml";
@@ -31,6 +31,7 @@ import { CHECK_MS, inputError, rememberable, type InputRow } from "@swiss/lib/in
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { effective, tolerationExtras, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { imagePatch, imageRows, imageText, slotImageChoices, type ImageSlot } from "@swiss/lib/imageSlots";
+import { gpuRequestSummary, useResourceRows, type HelmResources, type ResourceEdits } from "@swiss/lib/resources";
 import { MAX_VALUES, rejectKey } from "@swiss/lib/routeDirectives";
 import { FALLBACK_ROUTE_OPTIONS, routeDirectives, runtimeValue, type RouteDirective, type RouteOptions } from "@/modules/inferences/routeOptions";
 import { useT } from "@/modules/inferences/i18n";
@@ -67,6 +68,8 @@ export interface DeployFormProps {
   // returns; the engine row still shows from defaults.image.
   slots?: ImageSlot[];
   slotsError?: Error | null;
+  // Effective top-level resources and model GPU request from the compose dry run.
+  resources?: HelmResources;
   recovery?: ReactNode;
   // The variant's inputs, each with the answer that applies when its field is left empty.
   inputs?: InputRow[];
@@ -79,7 +82,7 @@ export interface DeployFormProps {
   taints?: ClusterTaint[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, resources, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -154,6 +157,17 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
             <FieldSelect multiple values={form.gpuProducts} onValuesChange={(v) => onChange({ gpuProducts: v })} options={gpuOptions.map((o) => ({ value: o, label: o, badge: unlistedProducts(gpuListed, [o]).length ? <Badge variant="warning">{f("gpuUnverified")}</Badge> : <Badge variant="success">{f("gpuVerified")}</Badge> }))} placeholder={gpuOptions.length ? undefined : f("gpuProductsEmpty")} disabled={!gpuOptions.length} />
           </FloatingField>
           {capacity && <CapacityHint {...capacity} />}
+          <ResourceRows
+            base={resources}
+            value={form.resources}
+            gpu={gpuRequestSummary({
+              base: resources,
+              formGpuResource: form.gpuResource,
+              gpuResources,
+              perPodGpus: capacity?.perPod,
+            })}
+            onChange={(next) => onChange({ resources: next })}
+          />
           {presets && Object.keys(presets).length > 0 && <PresetField presets={presets} value={form.preset} onChange={(preset) => onChange({ preset })} />}
           <Tolerations rows={form.tolerations} taints={taints ?? []} onChange={(v) => onChange({ tolerations: v })} />
           {form.affinity.length > 0 && <AffinityRules rules={form.affinity} onChange={(affinity) => onChange({ affinity })} />}
@@ -271,6 +285,140 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
         </>,
       )}
     </div>
+  );
+}
+
+function ResourceRows({
+  base,
+  value,
+  gpu,
+  onChange,
+}: {
+  base?: HelmResources;
+  value: ResourceEdits;
+  gpu?: ReturnType<typeof gpuRequestSummary>;
+  onChange: (next: ResourceEdits) => void;
+}) {
+  const t = useT();
+  const f = (k: string) => t(`deploy.fields.${k}`);
+  const {
+    defaultRows,
+    customRows,
+    setDefaultValue,
+    resetDefaultKey,
+    addCustomRow,
+    updateCustomRow,
+    removeCustomRow,
+    keyChoicesFor,
+    hugepageHint,
+  } = useResourceRows({ base, value, gpuResource: gpu?.resource, onChange });
+
+  const problemText = (problem: "gpuReserved" | "exists" | "duplicate") =>
+    problem === "gpuReserved" ? f("resourceGpuReserved") : problem === "exists" ? f("resourceExists") : f("resourceDuplicate");
+  const keyLabel = (k: string) => {
+    const map: Record<string, string> = {
+      cpu: f("resourceKeyNames.cpu"),
+      memory: f("resourceKeyNames.memory"),
+      "ephemeral-storage": f("resourceKeyNames.ephemeral-storage"),
+      "hugepages-2Mi": f("resourceKeyNames.hugepages-2Mi"),
+      "hugepages-1Gi": f("resourceKeyNames.hugepages-1Gi"),
+      "rdma/hca_shared": f("resourceKeyNames.rdma/hca_shared"),
+    };
+    return map[k] ?? f("resourceKeyNames.custom");
+  };
+
+  const hasRows = !!gpu || defaultRows.length > 0 || customRows.length > 0;
+  return (
+    <Group label={f("containerResources")} hint={f("containerResourcesHint")}>
+      {hasRows ? (
+        <div className="grid grid-cols-[minmax(8rem,1.2fr)_1fr_1fr_auto] items-center gap-x-2 gap-y-2 text-xs">
+          <span className="text-muted-foreground">{f("resourceColName")}</span>
+          <span className="text-muted-foreground">{f("resourceColRequest")}</span>
+          <span className="text-muted-foreground">{f("resourceColLimit")}</span>
+          <span />
+          {gpu && (
+            <>
+              <span className="truncate font-mono" title={gpu.resource}>{gpu.resource}</span>
+              <span className="truncate font-mono text-muted-foreground">{gpu.gpus || "—"}</span>
+              <span className="truncate font-mono">
+                {gpu.gpus || "—"}
+                {gpu.pdRoles?.length ? ` (${gpu.pdRoles.map((p) => `${p.role} ${p.gpus}`).join(", ")})` : ""}
+              </span>
+              <span className="text-[11px] text-muted-foreground">{f("resourceGpuAuto")}</span>
+            </>
+          )}
+          {defaultRows.map((r) => (
+            <div key={`default:${r.key}`} className="contents">
+              <span className="truncate font-mono" title={r.key}>{r.key}</span>
+              <Suggest
+                bare
+                value={r.request}
+                onChange={(v) => setDefaultValue(r.key, "requests", v)}
+                suggestion={r.defaultRequest || undefined}
+                placeholder={r.defaultRequest || "—"}
+                aria-label={`${r.key} ${f("resourceColRequest")}`}
+                className="font-mono text-xs"
+              />
+              <Suggest
+                bare
+                value={r.limit}
+                onChange={(v) => setDefaultValue(r.key, "limits", v)}
+                suggestion={r.defaultLimit || undefined}
+                placeholder={r.defaultLimit || "—"}
+                aria-label={`${r.key} ${f("resourceColLimit")}`}
+                className="font-mono text-xs"
+              />
+              {r.dirty ? (
+                <Button variant="ghost" size="icon" className="size-8" aria-label={`${f("resourceReset")} ${r.key}`} title={f("resourceReset")} onClick={() => resetDefaultKey(r.key)}>
+                  <RotateCcw className="size-3.5" />
+                </Button>
+              ) : (
+                <span className="size-8" />
+              )}
+              {r.keyProblem && <p className="col-span-4 text-xs text-warning">{problemText(r.keyProblem)}</p>}
+            </div>
+          ))}
+          {customRows.map((r) => (
+            <div key={r.id} className="contents">
+              <Suggest
+                bare
+                value={r.key}
+                onChange={(v) => updateCustomRow(r.id, { key: v })}
+                choices={keyChoicesFor(r.key).map((k) => ({ value: k, label: keyLabel(k) }))}
+                placeholder={f("resourceKeyPlaceholder")}
+                aria-invalid={r.error ? true : undefined}
+                aria-label={f("resourceColName")}
+                className="font-mono text-xs"
+              />
+              <Input
+                value={r.request}
+                onChange={(e) => updateCustomRow(r.id, { request: e.target.value })}
+                placeholder={f("resourceColRequest")}
+                aria-label={`${r.key.trim() || f("resourceColName")} ${f("resourceColRequest")}`}
+                className="font-mono text-xs"
+              />
+              <Input
+                value={r.limit}
+                onChange={(e) => updateCustomRow(r.id, { limit: e.target.value })}
+                placeholder={f("resourceColLimit")}
+                aria-label={`${r.key.trim() || f("resourceColName")} ${f("resourceColLimit")}`}
+                className="font-mono text-xs"
+              />
+              <Button variant="ghost" size="icon" className="size-8" aria-label={t("common:actions.delete")} onClick={() => removeCustomRow(r.id)}>
+                <X className="size-4" />
+              </Button>
+              {r.error && <p className="col-span-4 text-xs text-destructive">{problemText(r.error)}</p>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">{f("resourceEmpty")}</p>
+      )}
+      {hugepageHint && <p className="text-xs text-muted-foreground">{f("resourceHugepageHint")}</p>}
+      <Button variant="ghost" size="sm" className="w-fit" onClick={addCustomRow}>
+        <Plus className="size-3.5" /> {f("resourceAdd")}
+      </Button>
+    </Group>
   );
 }
 

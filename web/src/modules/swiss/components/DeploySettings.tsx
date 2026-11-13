@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, Plus, RefreshCw, TriangleAlert, X } from "lucide-react";
+import { ChevronDown, Plus, RefreshCw, RotateCcw, TriangleAlert, X } from "lucide-react";
 import type { ApplyFlags, ClusterInfo, Input as CatalogInput, Plan, PlanRequest, Preset, ProfileResponse, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
@@ -9,6 +9,16 @@ import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, affinityRules, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
 import { envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
 import { applyImageEdits, dropClearedImages, imageEditsFromLayer, imagePatch, imageRows, imageText, joinImage, slotImageChoices, type ImageEdit, type ImageSlot, type SlotImageChoice } from "@swiss/lib/imageSlots";
+import {
+  applyResourceEdits,
+  dropClearedResources,
+  emptyResourceEdits,
+  gpuRequestSummary,
+  resourceEditsFromLayer,
+  useResourceRows,
+  type HelmResources,
+  type ResourceEdits,
+} from "@swiss/lib/resources";
 import { toYaml } from "@swiss/lib/yaml";
 import { FEATURES, featureOn } from "@swiss/lib/profile";
 import { layersOf } from "@swiss/components/Provenance";
@@ -46,6 +56,8 @@ export interface Form {
   gpuProducts: string[];
   // The resource picked among the vendor's; empty lets swissd pick.
   gpuResource: string;
+  // Container resource overrides (requests / limits). Empty values keep chart/site defaults.
+  resources: ResourceEdits;
   tolerations: Toleration[];
   // A site profile preset, by name, merged into a deploy's form values. An
   // upgrade has none: the release's form layer already carries its values.
@@ -112,6 +124,7 @@ export const EMPTY: Form = {
   edits: "",
   gpuProducts: [],
   gpuResource: "",
+  resources: emptyResourceEdits(),
   tolerations: [],
   preset: "",
   affinity: [],
@@ -207,6 +220,7 @@ export function DeploySettings({
   imageMirror,
   slots,
   slotsError,
+  resources,
   supportedGPUs,
   clusterGPUs,
   gpuResources,
@@ -243,6 +257,8 @@ export function DeploySettings({
   // returns; the engine row still shows from `image`.
   slots?: ImageSlot[];
   slotsError?: Error | null;
+  // Effective top-level resources and model GPU request from the compose dry run.
+  resources?: HelmResources;
   lockIdentity?: boolean;
   readOnly?: boolean;
   // Products the chosen variant declares, and those this cluster reports on
@@ -790,6 +806,19 @@ export function DeploySettings({
               <CapacityLine {...capacity} />
             </Row>
           )}
+          <Row label="Resources" note="requested and limit resources from chart or site defaults (including hugepages); empty keeps default">
+            <ResourceList
+              base={resources}
+              value={form.resources}
+              gpu={gpuRequestSummary({
+                base: resources,
+                formGpuResource: form.gpuResource,
+                gpuResources,
+                perPodGpus: capacity?.perPod,
+              })}
+              onChange={(next) => onChange({ resources: next })}
+            />
+          </Row>
           {presets && Object.keys(presets).length > 0 && (
             <Row label="Preset" note="site profile values merged into this deploy's: a list keeps both sides' items, a value set here wins">
               <div className="w-full min-w-0 space-y-1.5 py-1">
@@ -1166,6 +1195,8 @@ function Suggest({
   disabled,
   invalid,
   choices,
+  className,
+  "aria-label": ariaLabel,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -1174,6 +1205,8 @@ function Suggest({
   disabled?: boolean;
   invalid?: boolean;
   choices?: { value: string; label: string }[];
+  className?: string;
+  "aria-label"?: string;
 }) {
   const s = useSuggestion(value, suggestion, disabled);
   const [listed, setListed] = useState(false);
@@ -1189,8 +1222,9 @@ function Suggest({
         }}
         disabled={disabled}
         placeholder={placeholder}
+        aria-label={ariaLabel}
         aria-invalid={invalid || undefined}
-        className={cn(s.hint && "pr-11", invalid && "border-destructive")}
+        className={cn(s.hint && "pr-11", invalid && "border-destructive", className)}
         onFocus={s.focus.onFocus}
         onBlur={() => {
           s.focus.onBlur();
@@ -1354,6 +1388,164 @@ function Tolerations({
         className="text-sm text-muted-foreground underline hover:text-foreground"
       >
         Add toleration
+      </button>
+    </div>
+  );
+}
+
+const SWISS_RESOURCE_LABELS: Record<string, string> = {
+  cpu: "CPU",
+  memory: "Memory",
+  "ephemeral-storage": "Ephemeral storage",
+  "hugepages-2Mi": "Hugepages 2Mi",
+  "hugepages-1Gi": "Hugepages 1Gi",
+  "rdma/hca_shared": "RDMA HCA",
+};
+
+function swissResourceProblem(problem: "gpuReserved" | "exists" | "duplicate"): string {
+  switch (problem) {
+    case "gpuReserved":
+      return "GPU resource count is controlled by the model and GPU resource selector above; remove it here";
+    case "exists":
+      return "already listed above";
+    case "duplicate":
+      return "duplicate resource key";
+  }
+}
+
+function ResourceList({
+  base,
+  value,
+  gpu,
+  onChange,
+}: {
+  base?: HelmResources;
+  value: ResourceEdits;
+  gpu?: ReturnType<typeof gpuRequestSummary>;
+  onChange: (next: ResourceEdits) => void;
+}) {
+  const {
+    defaultRows,
+    customRows,
+    setDefaultValue,
+    resetDefaultKey,
+    addCustomRow,
+    updateCustomRow,
+    removeCustomRow,
+    keyChoicesFor,
+    hugepageHint,
+  } = useResourceRows({ base, value, gpuResource: gpu?.resource, onChange });
+
+  const hasRows = !!gpu || defaultRows.length > 0 || customRows.length > 0;
+  return (
+    <div className="w-full min-w-0 space-y-2 py-1">
+      {hasRows ? (
+        <div className="grid grid-cols-[minmax(8rem,1.2fr)_1fr_1fr_auto] items-center gap-x-2 gap-y-1.5 text-xs">
+          <span className="text-muted-foreground">Resource</span>
+          <span className="text-muted-foreground">Request</span>
+          <span className="text-muted-foreground">Limit</span>
+          <span />
+          {gpu && (
+            <>
+              <span className="truncate font-mono" title={gpu.resource}>{gpu.resource}</span>
+              <span className="truncate font-mono text-muted-foreground">{gpu.gpus || "—"}</span>
+              <span className="truncate font-mono">
+                {gpu.gpus || "—"}
+                {gpu.pdRoles?.length ? ` (${gpu.pdRoles.map((p) => `${p.role} ${p.gpus}`).join(", ")})` : ""}
+              </span>
+              <span className="text-[11px] text-muted-foreground">GPU</span>
+            </>
+          )}
+          {defaultRows.map((r) => (
+            <div key={`default:${r.key}`} className="contents">
+              <span className="truncate font-mono" title={r.key}>{r.key}</span>
+              <Suggest
+                value={r.request}
+                onChange={(v) => setDefaultValue(r.key, "requests", v)}
+                suggestion={r.defaultRequest || undefined}
+                placeholder={r.defaultRequest || "—"}
+                aria-label={`${r.key} request`}
+                className="font-mono text-xs"
+              />
+              <Suggest
+                value={r.limit}
+                onChange={(v) => setDefaultValue(r.key, "limits", v)}
+                suggestion={r.defaultLimit || undefined}
+                placeholder={r.defaultLimit || "—"}
+                aria-label={`${r.key} limit`}
+                className="font-mono text-xs"
+              />
+              {r.dirty ? (
+                <button
+                  type="button"
+                  onClick={() => resetDefaultKey(r.key)}
+                  aria-label={`reset ${r.key}`}
+                  title="Reset to default"
+                  className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                >
+                  <RotateCcw className="size-3.5" />
+                </button>
+              ) : (
+                <span className="size-8" />
+              )}
+              {r.keyProblem && (
+                <p className="col-span-4 text-xs text-warning">{swissResourceProblem(r.keyProblem)}</p>
+              )}
+            </div>
+          ))}
+          {customRows.map((r) => (
+            <div key={r.id} className="contents">
+              <Suggest
+                value={r.key}
+                onChange={(v) => updateCustomRow(r.id, { key: v })}
+                choices={keyChoicesFor(r.key).map((k) => ({ value: k, label: SWISS_RESOURCE_LABELS[k] ?? "custom" }))}
+                placeholder="cpu, memory, hugepages-2Mi..."
+                invalid={!!r.error}
+                aria-label="resource key"
+                className="font-mono text-xs"
+              />
+              <Input
+                value={r.request}
+                onChange={(e) => updateCustomRow(r.id, { request: e.target.value })}
+                placeholder="Request"
+                aria-label={`${r.key.trim() || "resource"} request`}
+                className="font-mono text-xs"
+              />
+              <Input
+                value={r.limit}
+                onChange={(e) => updateCustomRow(r.id, { limit: e.target.value })}
+                placeholder="Limit"
+                aria-label={`${r.key.trim() || "resource"} limit`}
+                className="font-mono text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => removeCustomRow(r.id)}
+                aria-label={`remove ${r.key.trim() || "resource"}`}
+                className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-destructive"
+              >
+                <X className="size-3.5" />
+              </button>
+              {r.error && (
+                <p className="col-span-4 text-xs text-destructive">{swissResourceProblem(r.error)}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">No container resource requests or limits defined in chart or site defaults.</p>
+      )}
+      {hugepageHint && (
+        <p className="text-xs text-muted-foreground">
+          Kubernetes requires a cpu or memory request alongside hugepages; the chart fills cpu: 1 and memory: 4Gi when omitted.
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={addCustomRow}
+        className="text-sm text-muted-foreground underline hover:text-foreground"
+      >
+        Add resource
       </button>
     </div>
   );
@@ -1913,6 +2105,7 @@ export function planRequest(
   // on an upgrade it is a clear, so the release's copy of that path is dropped
   // before the overlay, the same way an emptied toleration list replaces the old one.
   applyImageEdits(overrides, f.images);
+  applyResourceEdits(overrides, f.resources);
   if (f.priorityClassName.trim()) overrides.priorityClassName = f.priorityClassName.trim();
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
 
@@ -1920,7 +2113,10 @@ export function planRequest(
   const siteEnv = envBase(opts.siteEnv);
   const preset = Object.keys(siteEnv).length ? (opts.preset ? withPreset(opts.preset, siteEnv) : siteEnv) : opts.preset;
   const base = opts.formLayer ? structuredClone(opts.formLayer) : undefined;
-  if (base) dropClearedImages(base, f.images);
+  if (base) {
+    dropClearedImages(base, f.images);
+    dropClearedResources(base, f.resources);
+  }
   const layer = withEnv(opts.values, withPreset(base ? overlay(base, overrides) : overrides, preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
 
@@ -1994,6 +2190,7 @@ export function formFromPlan(plan: Plan): Form {
     gpuProducts: gpuProductsOf(o),
     // The resource the release runs on, so an upgrade stays on it.
     gpuResource: String(((plan.layers?.derived?.model ?? {}) as Record<string, unknown>).gpuResource ?? ""),
+    resources: resourceEditsFromLayer(o),
     tolerations: tolerationsOf(o),
     affinity: affinityRules(o),
     replicaCount: str("replicaCount"),

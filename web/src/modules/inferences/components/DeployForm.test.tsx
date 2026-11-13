@@ -319,3 +319,42 @@ describe("variant inputs", () => {
     expect(planRequest(form, { model: "model", inputs: [master] }).overrides).toMatchObject({ storageKVOffload: { mooncake: { master: "mine.svc:50051" } } });
   });
 });
+
+describe("top-level resources list", () => {
+  it("shows dry-run requested and limit resources (including hugepages) alongside the requested GPU resource without native select", () => {
+    const html = renderToStaticMarkup(
+      <DeployForm
+        form={{
+          ...EMPTY,
+          serviceId: "model",
+          resources: { requests: { cpu: "8" }, limits: { "hugepages-2Mi": "1Gi" } },
+        }}
+        onChange={() => {}}
+        submitted={false}
+        target={null}
+        defaults={{}}
+        gpuOptions={[]}
+        gpuResources={["nvidia.com/gpu"]}
+        resources={{
+          requests: { cpu: "4", memory: "16Gi" },
+          limits: { memory: "32Gi" },
+          gpu: { resource: "nvidia.com/gpu", gpus: "2" },
+        }}
+        expanded={{ basic: false, resources: true, routing: false, advanced: false }}
+        onExpand={() => {}}
+        idPrefix="test-"
+      />,
+    );
+    expect(html).toContain("nvidia.com/gpu");
+    expect(html).toContain(">2<");
+    expect(html).toContain("cpu");
+    expect(html).toContain('placeholder="4"');
+    expect(html).toContain('value="8"');
+    expect(html).toContain("memory");
+    expect(html).toContain('placeholder="16Gi"');
+    expect(html).toContain('placeholder="32Gi"');
+    expect(html).toContain('value="hugepages-2Mi"');
+    expect(html).toContain('value="1Gi"');
+    expect(html).not.toContain("<select");
+  });
+});

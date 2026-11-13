@@ -529,6 +529,7 @@ export function Upgrade() {
         imageMirror={profile.data?.profile?.registry?.mirror}
         slots={rollbackTo ? undefined : discovered.slots}
         slotsError={rollbackTo ? undefined : discovered.queryError}
+        resources={rollbackTo ? undefined : discovered.resources}
         cache={cache}
         lockIdentity
         readOnly={rollbackTo > 0}
