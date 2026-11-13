@@ -24,6 +24,7 @@ type Config struct {
 	Server   Server    `yaml:"server,omitempty"`
 	Backends []Backend `yaml:"backends,omitempty"`
 	Router   Router    `yaml:"router,omitempty"`
+	Plugins  []Plugin  `yaml:"plugins,omitempty"`
 
 	Origin string `yaml:"-"`
 }
@@ -226,6 +227,9 @@ func (c *Config) origin() string {
 
 // Validate covers what console needs to serve.
 func (c *Config) Validate() error {
+	if err := validatePlugins(c.FrontendPlugins()); err != nil {
+		return fmt.Errorf("%s: %w", c.origin(), err)
+	}
 	if c.Server.Auth.JWTSecret == "" && !c.Server.Auth.Disabled {
 		return fmt.Errorf("%s: server.auth.jwtSecret is required -- it signs every token, or set server.auth.disabled to run without a login", c.origin())
 	}

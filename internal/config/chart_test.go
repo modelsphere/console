@@ -97,6 +97,26 @@ func TestHelmAuthEnabledStillNeedsASigningKey(t *testing.T) {
 	}
 }
 
+func TestHelmConfiguredFrontendPlugin(t *testing.T) {
+	cfg := renderChartConfig(t,
+		"--set", "plugins[0].id=example",
+		"--set", "plugins[0].url=http://example-frontend:8080",
+		"--set", "plugins[0].entry=index.umd.js",
+		"--set", "plugins[0].styles[0]=index.css",
+		"--set", "plugins[0].menu.title=Example",
+		"--set", "plugins[0].menu.label=Open example",
+		"--set", "plugins[0].menu.path=/example",
+		"--set", "plugins[0].menu.component=Example",
+	)
+	cfg.Server.Auth.JWTSecret = "test"
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Plugins) != 1 || cfg.Plugins[0].Menu.Component != "Example" || len(cfg.Plugins[0].Styles) != 1 || cfg.Plugins[0].Styles[0] != "index.css" {
+		t.Fatalf("rendered plugin configuration = %+v", cfg.Plugins)
+	}
+}
+
 // The swiss subchart: console proxies to its Service with swissd's front-proxy
 // key and reads its site profile, and swissd keeps its own login on.
 func TestHelmSwissSubchartIsWiredIn(t *testing.T) {
@@ -169,5 +189,12 @@ func TestHelmSwissTwiceIsRefused(t *testing.T) {
 		"--set", "externalSwiss.url=http://swiss.swiss.svc:80/api")
 	if err == nil || !strings.Contains(out, "swiss.enabled installs a swissd and externalSwiss.url names another") {
 		t.Fatalf("want a refusal naming both, got err=%v\n%s", err, out)
+	}
+}
+
+func TestHelmExplicitEmptyFrontendTree(t *testing.T) {
+	cfg := renderChartConfig(t, "--set-json", "plugins=[]")
+	if cfg.Plugins == nil || len(cfg.FrontendPlugins()) != 0 {
+		t.Fatalf("empty Helm frontend tree: %+v", cfg.Plugins)
 	}
 }

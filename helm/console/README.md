@@ -265,3 +265,9 @@ git push origin main --follow-tags
 ```
 
 A newly created GHCR package is private by default. After the first publish, set it to Public in the package settings, or anonymous pulls fail.
+
+### Frontend menus and folders
+
+`plugins: null` uses Console's embedded built-in navigation. Set an explicit `plugins` tree to order built-ins and remote SDK frontends together. Folder nodes declare `folder`, `title` and nested `children`; leaf nodes declare `id` and `source: builtin` or `source: remote`. An explicit `plugins: []` disables modules.
+
+See [the navigation example](../../docs/development/plugins.md#order-modules-and-group-menus-into-folders). After changing Helm values, roll out the Console backend and refresh the browser. Menu position and folder changes do not require rebuilding the plugin image.

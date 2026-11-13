@@ -27,6 +27,7 @@ Console is a Go backend-for-frontend with a React UI compiled into the same bina
 - **OpenAI-compatible router.** Programs call `/v1` with API keys that administrators issue — with expiry and optional per-model scope. Keys are stored hashed; usage is exported as Prometheus metrics.
 - **Gateway discovery.** The inference entrypoint, routes and gateway key are read from the cluster (Swiss's site profile or the route ConfigMap) and followed as they change — no URLs or keys copied into configuration.
 - **One `helm install`.** The image and chart are published together to GHCR; point Console at Swiss and the models deployed there are in the Playground and `/v1`.
+- **Optional frontend plugins.** Declare trusted frontend services and menus in configuration; load their pages through the ModelSphere Plugin SDK without rebuilding Console. See the [plugin guide](docs/development/plugins.md).
 - **Upgrade path to Rise Global.** Identity is wire-compatible with Rise Global (same CRDs, same token claims), so upgrading is a configuration change, not a data migration.
 
 ## Quick start

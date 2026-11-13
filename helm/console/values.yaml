@@ -71,6 +71,12 @@ admin:
 # swissd (model deployment) is not listed here: see swiss and externalSwiss.
 backends: []
 
+# Frontend navigation tree. Null uses the embedded built-in defaults; [] disables modules.
+# Explicit entries use source: builtin or remote; folders have folder, title, children.
+# Legacy remote entries without source retain the default built-ins.
+# See docs/plans/2026-11-06-configured-navigation-design.md.
+plugins: null
+
 # swissd, the model deployment backend. Pick one:
 #
 #   swiss.enabled: true   install it with this release, from the swiss chart

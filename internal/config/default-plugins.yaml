@@ -1,0 +1,10 @@
+- id: inferences
+  source: builtin
+- id: playground
+  source: builtin
+- id: router
+  source: builtin
+- id: iam
+  source: builtin
+- id: docs
+  source: builtin

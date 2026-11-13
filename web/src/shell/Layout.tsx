@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { NavLink, useLocation } from "react-router";
+import { Fragment, useState, type ReactNode } from "react";
+import { NavLink } from "react-router";
 import {
   Avatar,
   AvatarFallback,
@@ -19,7 +19,8 @@ import { ChangePasswordDialog } from "@/shell/ChangePasswordDialog";
 import { PreferencesPanel } from "@/shell/PreferencesPanel";
 import { useLayout } from "@/shell/preferences";
 import { userMenuIdentity, userMenuState } from "@/shell/user-menu";
-import { activeGroupTitle, navGroups, topbarItems, type ConsoleModule, type NavGroup, type NavItem } from "@/shell/module";
+import { navGroups, topbarItems, type ConsoleModule, type NavItem } from "@/shell/module";
+import { Sidebar } from "./Sidebar";
 import { LOCALES, navLabel, useLocale, useT } from "@/shell/i18n";
 
 // The console shell in Rise Global's layouts, picked in the preferences panel.
@@ -260,104 +261,5 @@ function LocaleMenu({ iconClass }: { iconClass: string }) {
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-// Global's menu item. On the minimal board it is 14px/500 with 10px vertical
-// padding (BOARD_MENU_ITEM); elsewhere regular weight with 8px.
-const ITEM_BASE = "flex items-center gap-3 rounded-lg px-3 text-sm transition-colors";
-const itemSize = (board: boolean) => (board ? "py-2.5 font-medium" : "py-2");
-const ITEM_IDLE = "text-foreground/80 hover:bg-accent hover:text-foreground";
-const ITEM_ACTIVE = "bg-primary/10 text-primary";
-
-// Accordion like Global's sidebar: one group open at a time, starting with the
-// group that holds the current page.
-function Sidebar({ groups, collapsed, board = false }: { groups: NavGroup[]; collapsed: boolean; board?: boolean }) {
-  const { pathname } = useLocation();
-  const t = useT("shell");
-  const activeGroup = activeGroupTitle(groups, pathname);
-  const [open, setOpen] = useState<string | undefined>(activeGroup ?? groups.find((g) => g.title)?.title);
-  const shown = open ?? activeGroup;
-  // Navigating into another module (a link, the back button) opens its group.
-  useEffect(() => {
-    if (activeGroup) setOpen(activeGroup);
-  }, [activeGroup]);
-
-  if (collapsed) {
-    return (
-      <div className="space-y-1">
-        {groups.flatMap((g) => g.items).map((item) => (
-          <MenuLink key={item.to} item={item} iconOnly />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-1">
-      {groups.map((g, i) =>
-        !g.title ? (
-          <div key={i} className="mb-1 space-y-0.5">
-            {g.items.map((item) => (
-              <MenuLink key={item.to} item={item} board={board} />
-            ))}
-          </div>
-        ) : (
-          <div key={g.title} className="mb-1">
-            <button
-              type="button"
-              onClick={() => setOpen(shown === g.title ? "" : g.title)}
-              className={`flex w-full items-center justify-between rounded-lg px-3 text-sm transition-colors hover:bg-accent ${itemSize(board)} ${
-                g.title === activeGroup ? "text-primary" : "text-foreground/80"
-              }`}
-            >
-              <span>{navLabel(t, g.ns, "group", g.title, g.title)}</span>
-              <ChevronRight
-                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${shown === g.title ? "rotate-90" : ""}`}
-              />
-            </button>
-            <div
-              className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
-                shown === g.title ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-              }`}
-              inert={shown !== g.title}
-            >
-              <div className="overflow-hidden">
-                <div className="pl-4">
-                  {g.items.map((item) => (
-                    <MenuLink key={item.to} item={item} board={board} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        ),
-      )}
-    </div>
-  );
-}
-
-function MenuLink({ item, iconOnly = false, board = false }: { item: NavItem; iconOnly?: boolean; board?: boolean }) {
-  const t = useT("shell");
-  const { to, icon: Icon, end } = item;
-  const label = navLabel(t, item.ns, "menu", item.key, item.label);
-  return (
-    <NavLink
-      to={to}
-      end={end}
-      title={iconOnly ? label : undefined}
-      className={({ isActive }) =>
-        iconOnly
-          ? `flex h-10 items-center justify-center rounded-lg transition-colors ${isActive ? ITEM_ACTIVE : ITEM_IDLE}`
-          : `${ITEM_BASE} ${itemSize(board)} ${isActive ? `${ITEM_ACTIVE} font-medium` : ITEM_IDLE}`
-      }
-    >
-      {({ isActive }) => (
-        <>
-          <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
-          {!iconOnly && <span className="truncate">{label}</span>}
-        </>
-      )}
-    </NavLink>
   );
 }
