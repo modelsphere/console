@@ -4,8 +4,8 @@ import type { Form } from "@swiss/components/DeploySettings";
 import { helmImageSlots, type ImageSlot } from "@swiss/lib/imageSlots";
 
 // Keyed only by chart target (model/catalog/release/version/variant/chartVersion),
-// so editing other form fields does not automatically re-compose while Images is
-// open. Opening Images runs once using the latest form state, and manual reload()
+// so opening the deploy/upgrade window runs once using the latest form state,
+// editing other form fields does not automatically re-compose, and manual reload()
 // re-composes with the latest form state.
 export function helmValuesTargetKey(request: PlanRequest | undefined) {
   return [

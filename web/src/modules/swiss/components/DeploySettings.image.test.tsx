@@ -48,16 +48,16 @@ describe("image override", () => {
     expect(html).not.toContain('aria-label="refresh images"');
   });
 
-  it("renders a refresh button in Images when onImagesRefresh is provided", () => {
+  it("does not render a refresh button inside Images", () => {
     const html = renderToStaticMarkup(
       <DeploySettings
         form={{ ...EMPTY, serviceId: "m" }}
         onChange={() => {}}
         image={image}
-        onImagesRefresh={() => {}}
+        slots={[{ path: "image", kind: "map", value: image.site }]}
       />,
     );
-    expect(html).toContain('aria-label="refresh images"');
+    expect(html).not.toContain('aria-label="refresh images"');
   });
 
   it("offers site mirror and default options on every discovered image slot when imageMirror is set", () => {

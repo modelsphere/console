@@ -415,6 +415,7 @@
     "titleUpgrade": "Upgrade {release}",
     "description": "Pick a model and variant, compose the plan, review what changes, then confirm.",
     "descriptionUpgrade": "Change the target or settings, compose a new plan, review what changes, then confirm.",
+    "refreshPreviewHint": "Re-run dry-run compose with current settings to refresh chart defaults",
     "sections": {
       "basic": "Basics",
       "target": "Upgrade target",

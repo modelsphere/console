@@ -173,15 +173,16 @@ describe("image override", () => {
     expect(html).not.toMatch(/aria-label="(Refresh|刷新)"/);
   });
 
-  it("renders a refresh button inside Images when onImagesRefresh is provided", () => {
+  it("does not render a refresh button inside Images", () => {
     const html = renderToStaticMarkup(
       <DeployForm
         form={{ ...EMPTY, serviceId: "model" }} onChange={() => {}} submitted={false} target={null} defaults={{ image }} gpuOptions={[]}
         expanded={{ basic: false, resources: true, routing: false, advanced: false }}
-        onExpand={() => {}} idPrefix="test-" onImagesRefresh={() => {}}
+        onExpand={() => {}} idPrefix="test-"
+        slots={[{ path: "image", kind: "map", value: image.site }]}
       />,
     );
-    expect(html).toMatch(/aria-label="(Refresh|刷新)"/);
+    expect(html).not.toMatch(/aria-label="(Refresh|刷新)"/);
   });
 
   it("renders discovered non-engine slots with the same Suggest input shape", () => {

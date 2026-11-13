@@ -67,10 +67,6 @@ export interface DeployFormProps {
   // returns; the engine row still shows from defaults.image.
   slots?: ImageSlot[];
   slotsError?: Error | null;
-  // Opening Images runs the initial slot-discovery compose dry-run; refresh re-runs it manually.
-  onImagesOpen?: (open: boolean) => void;
-  imagesRefreshing?: boolean;
-  onImagesRefresh?: () => void;
   recovery?: ReactNode;
   // The variant's inputs, each with the answer that applies when its field is left empty.
   inputs?: InputRow[];
@@ -83,7 +79,7 @@ export interface DeployFormProps {
   taints?: ClusterTaint[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, onImagesOpen, imagesRefreshing, onImagesRefresh, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -201,7 +197,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
               </div>
             );
           })}
-          <ImageRows form={form} onChange={onChange} image={defaults.image} mirror={defaults.imageMirror} slots={slots} error={slotsError} onOpen={onImagesOpen} refreshing={imagesRefreshing} onRefresh={onImagesRefresh} />
+          <ImageRows form={form} onChange={onChange} image={defaults.image} mirror={defaults.imageMirror} slots={slots} error={slotsError} />
         </>,
       )}
 
@@ -287,9 +283,6 @@ function ImageRows({
   mirror,
   slots,
   error,
-  onOpen,
-  refreshing,
-  onRefresh,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -297,31 +290,14 @@ function ImageRows({
   mirror?: string;
   slots?: ImageSlot[];
   error?: Error | null;
-  onOpen?: (open: boolean) => void;
-  refreshing?: boolean;
-  onRefresh?: () => void;
 }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
   const [open, setOpen] = useState(false);
   const rows = imageRows(slots, image, form.images);
   return (
-    <FormSection
-      title={f("images")}
-      expanded={open}
-      onExpandedChange={(next) => {
-        setOpen(next);
-        onOpen?.(next);
-      }}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs text-muted-foreground">{f("imagesHint")}</p>
-        {onRefresh && (
-          <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0" aria-label={t("common:actions.refresh")} title={t("common:actions.refresh")} disabled={refreshing} onClick={onRefresh}>
-            <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
-          </Button>
-        )}
-      </div>
+    <FormSection title={f("images")} expanded={open} onExpandedChange={setOpen}>
+      <p className="text-xs text-muted-foreground">{f("imagesHint")}</p>
       {error && <p className="text-xs text-warning">{error.message}</p>}
       {rows.map((slot) => {
         const value = imageText(form.images[slot.path]);

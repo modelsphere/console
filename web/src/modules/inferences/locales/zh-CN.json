@@ -404,6 +404,7 @@
     "titleUpgrade": "升级 {release}",
     "description": "选模型、选变体，生成部署计划，预览变更后再确认。",
     "descriptionUpgrade": "改目标或设置后生成新计划，预览变更后再确认。",
+    "refreshPreviewHint": "用当前设置重新执行 dry-run compose，刷新 chart 默认值",
     "sections": {
       "basic": "基本信息",
       "target": "升级目标",

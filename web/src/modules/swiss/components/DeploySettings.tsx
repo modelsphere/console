@@ -222,9 +222,6 @@ export function DeploySettings({
   remember,
   onRemember,
   presets,
-  onImagesOpen,
-  imagesRefreshing,
-  onImagesRefresh,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -264,10 +261,6 @@ export function DeploySettings({
   onRemember?: (key: string, on: boolean) => void;
   // The site profile's presets, on a deploy.
   presets?: Record<string, Preset>;
-  // The Images disclosure. Opening it runs initial slot discovery; refresh re-runs it manually.
-  onImagesOpen?: (open: boolean) => void;
-  imagesRefreshing?: boolean;
-  onImagesRefresh?: () => void;
 }) {
   const checked = useDebounced(form.inputs, CHECK_MS);
   const picked = presets?.[form.preset];
@@ -868,7 +861,7 @@ export function DeploySettings({
 
       </details>
 
-      <ImagesSection form={form} onChange={onChange} image={image} imageMirror={imageMirror} slots={slots} error={slotsError} onOpen={onImagesOpen} refreshing={imagesRefreshing} onRefresh={onImagesRefresh} />
+      <ImagesSection form={form} onChange={onChange} image={image} imageMirror={imageMirror} slots={slots} error={slotsError} />
 
       <Card>
         <CardHeader>
@@ -960,9 +953,6 @@ function ImagesSection({
   imageMirror,
   slots,
   error,
-  onOpen,
-  refreshing,
-  onRefresh,
 }: {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
@@ -970,35 +960,18 @@ function ImagesSection({
   imageMirror?: string;
   slots?: ImageSlot[];
   error?: Error | null;
-  onOpen?: (open: boolean) => void;
-  refreshing?: boolean;
-  onRefresh?: () => void;
 }) {
   const rows = imageRows(slots, image, form.images);
   return (
-    <details className="group rounded-lg border bg-card" onToggle={(e) => onOpen?.(e.currentTarget.open)}>
+    <details className="group rounded-lg border bg-card">
       <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
         Images
         <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
       </summary>
       <div className="border-t px-4 py-3">
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-sm text-muted-foreground">
-            Each row is a values path. Empty keeps the image in the placeholder; a value is written on the form layer.
-          </p>
-          {onRefresh && (
-            <button
-              type="button"
-              aria-label="refresh images"
-              title="Refresh images"
-              disabled={refreshing}
-              onClick={onRefresh}
-              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-            >
-              <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
-            </button>
-          )}
-        </div>
+        <p className="text-sm text-muted-foreground">
+          Each row is a values path. Empty keeps the image in the placeholder; a value is written on the form layer.
+        </p>
         {error && <p className="mt-2 text-xs text-warning">{error.message}</p>}
       </div>
       <div className="divide-y border-t px-4">
