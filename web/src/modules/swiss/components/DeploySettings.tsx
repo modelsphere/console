@@ -1028,28 +1028,25 @@ function ImagesSection({
 
 export function ImageSource({
   choices,
-  image,
   value,
   onPick,
   labels = IMAGE_SOURCE_LABELS,
 }: {
-  choices?: SlotImageChoice[];
-  image?: { catalog: string; site: string };
+  choices: SlotImageChoice[];
   value: string;
   onPick: (ref: string) => void;
-  labels?: { aria: string; site: string; catalog: string; default?: string; custom: string; inherited: string };
+  labels?: { aria: string; site: string; catalog: string; default: string; custom: string; inherited: string };
 }) {
-  const list: SlotImageChoice[] = choices ?? (image ? imageChoices(image) : []);
-  if (!list.length) return null;
-  const selected = list.find((c) => c.ref === value.trim())?.ref ?? "";
+  if (!choices.length) return null;
+  const selected = choices.find((c) => c.ref === value.trim())?.ref ?? "";
   const labelOf = (k: SlotImageChoice["key"]) =>
-    k === "site" ? labels.site : k === "catalog" ? labels.catalog : (labels.default ?? labels.catalog);
+    k === "site" ? labels.site : k === "catalog" ? labels.catalog : labels.default;
   return (
     <SourceSelect
       ariaLabel={labels.aria}
       value={selected}
       onChange={onPick}
-      options={list.map((c) => ({ value: c.ref, label: labelOf(c.key) }))}
+      options={choices.map((c) => ({ value: c.ref, label: labelOf(c.key) }))}
       emptyLabel={value.trim() ? labels.custom : labels.inherited}
     />
   );
@@ -1827,12 +1824,6 @@ export function imageOf(
     catalog: joinImage(repo, tag),
     site: joinImage(mirrored?.[variant.id] ?? repo, tag),
   };
-}
-
-// imageChoices is what an override offers to fill in. None without a mirror:
-// both would be the same image.
-export function imageChoices(image: { catalog: string; site: string }): { key: "site" | "catalog"; ref: string }[] {
-  return image.site === image.catalog ? [] : [{ key: "site", ref: image.site }, { key: "catalog", ref: image.catalog }];
 }
 
 export { splitImage } from "@swiss/lib/imageSlots";

@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { deployApi, type HelmValues, type PlanRequest } from "@swiss/lib/api";
 import type { Form } from "@swiss/components/DeploySettings";
@@ -33,15 +32,12 @@ export function imageSlotsQueryOptions(
   form: Form,
   requestFor: (form: Form) => PlanRequest | undefined,
   enabled: boolean,
-  latestRequest?: () => PlanRequest | undefined,
 ) {
-  const bare = previewForm(form);
-  const request = requestFor(bare);
+  const request = requestFor(previewForm(form));
   return {
     queryKey: helmValuesTargetKey(request),
     // enabled is false without a request, so this does not post an empty body.
-    // latestRequest reads current form edits on first open or manual refresh.
-    queryFn: (): Promise<HelmValues> => deployApi.helmValues((latestRequest?.() ?? request) as PlanRequest),
+    queryFn: (): Promise<HelmValues> => deployApi.helmValues(request as PlanRequest),
     enabled: enabled && !!request,
     retry: false as const,
     staleTime: Infinity,
@@ -60,9 +56,8 @@ export function useImageSlots(
   queryError: Error | null;
   reload: () => Promise<HelmValues | undefined>;
 } {
-  const latestRequestRef = useRef<() => PlanRequest | undefined>(() => undefined);
-  latestRequestRef.current = () => requestFor(previewForm(form));
-  const query = useQuery(imageSlotsQueryOptions(form, requestFor, enabled, () => latestRequestRef.current()));
+  const request = requestFor(previewForm(form));
+  const query = useQuery(imageSlotsQueryOptions(form, requestFor, enabled));
   const slots = query.data ? helmImageSlots(query.data) : [];
   const queryError = query.error instanceof Error ? query.error : query.error ? new Error(String(query.error)) : null;
   return {
@@ -70,7 +65,7 @@ export function useImageSlots(
     fetching: query.isFetching,
     queryError,
     reload: async () => {
-      if (!latestRequestRef.current()) return undefined;
+      if (!request) return undefined;
       const result = await query.refetch();
       return result.data;
     },

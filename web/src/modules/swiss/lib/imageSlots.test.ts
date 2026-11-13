@@ -259,6 +259,7 @@ describe("mirrorImage and slotImageChoices", () => {
       { key: "default", ref: "ghcr.io/org/hang-watcher:0.1.0" },
     ]);
     // Without a mirror, offers no duplicate choices.
+    expect(slotImageChoices({ path: "image", kind: "map", value: "docker.io/a:1" }, { catalog: "docker.io/a:1", site: "docker.io/a:1" })).toEqual([]);
     expect(slotImageChoices({ path: "hangWatcher.image", kind: "map", value: "ghcr.io/org/hang-watcher:0.1.0" }, undefined, "")).toEqual([]);
   });
 });

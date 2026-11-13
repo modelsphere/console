@@ -17,12 +17,8 @@ function setup(initialForm: Form, initialEnabled: boolean, chartVersion?: string
   environmentManager.setIsServer(() => false);
   const fetch = vi.spyOn(deployApi, "helmValues").mockResolvedValue(helm);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  let current = { form: initialForm, chartVersion };
-  const latest = () => requestFor(previewForm(current.form), current.chartVersion);
-  const options = (form: Form, enabled: boolean, nextChartVersion?: string) => {
-    current = { form, chartVersion: nextChartVersion };
-    return imageSlotsQueryOptions(form, (f) => requestFor(f, nextChartVersion), enabled, latest);
-  };
+  const options = (form: Form, enabled: boolean, nextChartVersion?: string) =>
+    imageSlotsQueryOptions(form, (f) => requestFor(f, nextChartVersion), enabled);
   const observer = new QueryObserver(client, options(initialForm, initialEnabled, chartVersion));
   const unsubscribe = observer.subscribe(() => {});
   return {

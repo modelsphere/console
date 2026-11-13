@@ -232,12 +232,13 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     (f) => (canDiscover ? withAdaptiveConcurrency(withRecovery(requestFor(f), recovery), f, routeOptions.data) : undefined),
     imagesOpen && canDiscover,
   );
-  const valuesRequest = canDiscover
-    ? withAdaptiveConcurrency(withRecovery(requestFor({ ...form, edits: "" }), recovery), form, routeOptions.data)
-    : undefined;
-  const valuesQuery = useQuery({
-    queryKey: ["helmValues", "dialog", JSON.stringify(valuesRequest ?? null)],
-    queryFn: async () => {
+  const valuesKey = JSON.stringify(
+    canDiscover
+      ? withAdaptiveConcurrency(withRecovery(requestFor({ ...form, edits: "" }), recovery), form, routeOptions.data)
+      : null,
+  );
+  const valuesM = useMutation({
+    mutationFn: async (_key: string) => {
       try {
         const next = await composeRecoveryValuesRequest(
           requestFor({ ...form, edits: "" }),
@@ -250,19 +251,19 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         throw compositionError(error);
       }
     },
-    enabled: false,
-    retry: false,
-    staleTime: Infinity,
-    gcTime: 0,
   });
+  const valuesFresh = valuesM.variables === valuesKey;
   const valuesSource: HelmValuesSource = {
-    data: valuesQuery.data,
-    loading: valuesQuery.isFetching,
-    error: valuesQuery.error instanceof Error ? valuesQuery.error : valuesQuery.error ? new Error(String(valuesQuery.error)) : null,
+    data: valuesFresh && !valuesM.isError ? valuesM.data : undefined,
+    loading: valuesM.isPending,
+    error: valuesFresh && valuesM.error ? (valuesM.error instanceof Error ? valuesM.error : new Error(String(valuesM.error))) : null,
     load: async () => {
-      if (!valuesRequest) return undefined;
-      const result = await valuesQuery.refetch();
-      return result.data;
+      if (!canDiscover) return undefined;
+      try {
+        return await valuesM.mutateAsync(valuesKey);
+      } catch {
+        return undefined;
+      }
     },
   };
   const compose = useMutation({

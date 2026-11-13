@@ -115,7 +115,7 @@ export function helmImageSlots(values: Pick<HelmValues, "defaults" | "overrides"
 }
 
 // Rewrites an image ref to the site's registry mirror keeping the final repo segment
-// and tag/digest, matching Profile.MirrorImage on swissd.
+// and tag/digest; keep in sync with Profile.MirrorImage in swiss/internal/site/profile.go.
 export function mirrorImage(ref: string, mirror?: string): string {
   const base = mirror?.trim().replace(/\/+$/, "");
   if (!base || !ref.trim()) return ref;

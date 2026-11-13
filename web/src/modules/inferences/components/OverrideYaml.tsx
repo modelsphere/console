@@ -136,32 +136,25 @@ function OverrideDialog({ value, source, onClose, onSave }: {
   const t = useT();
   const o = (k: string, params?: Record<string, string | number>) => t(`deploy.overrides.${k}`, params);
   const [draft, setDraft] = useState(value);
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
   // Values read earlier for this form open the tabs straight away; otherwise load them on open.
   const [loaded, setLoaded] = useState(() => (source?.data ? loadedFor(source.data, value) : undefined));
   const [final, setFinal] = useState(() => loaded?.computed ?? "");
   useEffect(() => {
     if (loaded || !source) return;
     if (source.data) {
-      const l = loadedFor(source.data, draftRef.current);
+      const l = loadedFor(source.data, draft);
       if (!l) return;
       setLoaded(l);
       setFinal(l.computed);
       return;
     }
     if (!source.loading && !source.error) {
-      let cancelled = false;
       void source.load().then((values) => {
-        if (cancelled) return;
-        const l = values && loadedFor(values, draftRef.current);
+        const l = values && loadedFor(values, draft);
         if (!l) return;
         setLoaded(l);
         setFinal(l.computed);
       });
-      return () => {
-        cancelled = true;
-      };
     }
   }, [source?.data]);
   const [tab, setTab] = useState<Tab>(source ? "final" : "edit");
