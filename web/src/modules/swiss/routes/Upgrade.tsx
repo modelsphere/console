@@ -497,7 +497,7 @@ export function Upgrade() {
         onRemember={siteSaver.onRemember}
         image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
         slots={rollbackTo ? undefined : discovered.slots}
-        slotsError={rollbackTo ? undefined : discovered.error}
+        slotsError={rollbackTo ? undefined : discovered.queryError}
         onImagesOpen={setImagesOpen}
         cache={cache}
         lockIdentity

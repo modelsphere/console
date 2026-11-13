@@ -1,12 +1,16 @@
+import { useRef } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { deployApi, type HelmValues, type PlanRequest } from "@swiss/lib/api";
 import type { Form } from "@swiss/components/DeploySettings";
+import { useDebounced } from "@swiss/lib/useDebounced";
 import { discoverImageSlots, mergedHelmValues, type ImageSlot } from "@swiss/lib/imageSlots";
 
 // One compose dry-run for this form state. The Images section and the Override
 // YAML editor both use it, so opening both is one call. Image edits and edit
 // YAML are left out; callers apply them on the returned values. The query runs
 // only while `enabled` (one of those sections is open).
+export const IMAGE_SLOTS_DEBOUNCE_MS = 400;
+
 export function helmValuesQueryKey(request: PlanRequest | undefined) {
   return ["helmValues", JSON.stringify(request ?? null)] as const;
 }
@@ -27,10 +31,10 @@ export function imageSlotsQueryOptions(
   const request = requestFor(bare);
   return {
     queryKey: helmValuesQueryKey(request),
+    // enabled is false without a request, so this does not post an empty body.
     queryFn: async (): Promise<HelmValues> => {
       const posted = prepare ? await prepare(bare) : request;
-      if (!posted) throw new Error("nothing to compose");
-      return deployApi.helmValues(posted);
+      return deployApi.helmValues(posted as PlanRequest);
     },
     enabled: enabled && !!request,
     retry: false as const,
@@ -48,25 +52,33 @@ export function useImageSlots(
   prepare?: (form: Form) => Promise<PlanRequest>,
 ): {
   slots: ImageSlot[];
-  error?: string;
   // Server values, without this form's image edits. Undefined while a refetch is still showing the previous form.
   values?: HelmValues;
   fetching: boolean;
   queryError: Error | null;
   reload: () => Promise<HelmValues | undefined>;
 } {
-  const query = useQuery(imageSlotsQueryOptions(form, requestFor, enabled, prepare));
+  const request = requestFor(previewForm(form));
+  const requestKey = JSON.stringify(request ?? null);
+  // The shared query follows this key, not the pages. Typing while a section is
+  // open keeps the previous request until it has held still. Opening, and any
+  // change while both sections are closed, uses the request as it stands.
+  const debouncedKey = useDebounced(requestKey, IMAGE_SLOTS_DEBOUNCE_MS);
+  const wasEnabled = useRef(false);
+  const opening = enabled && !wasEnabled.current;
+  wasEnabled.current = enabled;
+  const settled = useRef({ form, requestFor, prepare });
+  if (!enabled || opening || requestKey === debouncedKey) settled.current = { form, requestFor, prepare };
+  const query = useQuery(imageSlotsQueryOptions(settled.current.form, settled.current.requestFor, enabled, settled.current.prepare));
   const slots = query.data ? discoverImageSlots(mergedHelmValues(query.data)) : [];
-  const error = query.error instanceof Error ? query.error.message : query.error ? String(query.error) : undefined;
   const queryError = query.error instanceof Error ? query.error : query.error ? new Error(String(query.error)) : null;
   return {
     slots,
-    error,
     values: query.isPlaceholderData ? undefined : query.data,
     fetching: query.isFetching,
     queryError,
     reload: async () => {
-      if (!imageSlotsQueryOptions(form, requestFor, true, prepare).enabled) return undefined;
+      if (!request) return undefined;
       const result = await query.refetch();
       return result.data;
     },

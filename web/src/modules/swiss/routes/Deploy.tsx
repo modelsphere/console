@@ -290,7 +290,7 @@ export function Deploy() {
         onRemember={siteSaver.onRemember}
         image={imageOf(variant, model.data.imageRepository)}
         slots={discovered.slots}
-        slotsError={discovered.error}
+        slotsError={discovered.queryError}
         onImagesOpen={setImagesOpen}
         supportedGPUs={variant?.requires.gpuProduct}
         clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}

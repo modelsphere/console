@@ -66,7 +66,7 @@ export interface DeployFormProps {
   // Every image the chart renders, from the compose dry run. Absent until that
   // returns; the engine row still shows from defaults.image.
   slots?: ImageSlot[];
-  slotsError?: string;
+  slotsError?: Error | null;
   // Opening Images or the Override YAML editor is what runs the shared compose dry-run.
   onImagesOpen?: (open: boolean) => void;
   onYamlOpen?: (open: boolean) => void;
@@ -291,7 +291,7 @@ function ImageRows({
   onChange: (patch: Partial<Form>) => void;
   image?: { catalog: string; site: string };
   slots?: ImageSlot[];
-  error?: string;
+  error?: Error | null;
   onOpen?: (open: boolean) => void;
 }) {
   const t = useT();
@@ -308,7 +308,7 @@ function ImageRows({
       }}
     >
       <p className="text-xs text-muted-foreground">{f("imagesHint")}</p>
-      {error && <p className="text-xs text-warning">{error}</p>}
+      {error && <p className="text-xs text-warning">{error.message}</p>}
       {rows.map((slot) => {
         const value = imageText(form.images[slot.path]);
         const set = (raw: string) => onChange({ images: imagePatch(form.images, slot.path, slot.kind, raw) });

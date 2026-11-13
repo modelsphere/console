@@ -240,7 +240,7 @@ export function DeploySettings({
   // Every image the chart renders, from the compose dry run. Absent until that
   // returns; the engine row still shows from `image`.
   slots?: ImageSlot[];
-  slotsError?: string;
+  slotsError?: Error | null;
   lockIdentity?: boolean;
   readOnly?: boolean;
   // Products the chosen variant declares, and those this cluster reports on
@@ -958,7 +958,7 @@ function ImagesSection({
   onChange: (patch: Partial<Form>) => void;
   image?: { catalog: string; site: string };
   slots?: ImageSlot[];
-  error?: string;
+  error?: Error | null;
   onOpen?: (open: boolean) => void;
 }) {
   const rows = imageRows(slots, image, form.images);
@@ -972,7 +972,7 @@ function ImagesSection({
         <p className="text-sm text-muted-foreground">
           Each row is a values path. Empty keeps the image in the placeholder; a value is written on the form layer.
         </p>
-        {error && <p className="mt-2 text-xs text-warning">{error}</p>}
+        {error && <p className="mt-2 text-xs text-warning">{error.message}</p>}
       </div>
       <div className="divide-y border-t px-4">
         {rows.map((slot) => {
