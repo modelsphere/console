@@ -342,7 +342,7 @@ DeploySheet -> GET /api/llm/route-options[?route=<existing>]
 The deploy and upgrade forms expose the charts' existing `continuationGateway` values (console #63).
 
 ```text
-form -> recovery values -> adaptive compose -> optional timeout reset -> validate -> diff -> apply
+form <-> user values <-> YAML -> compose -> validate -> diff -> apply
 nginx -> continuation gateway -> CART -> engine
 ```
 
@@ -351,10 +351,36 @@ nginx -> continuation gateway -> CART -> engine
 | Controls | Enable gateway, actual model identity, idle timeout, continuation execution and tool-call buffering |
 | Upgrade state | Seed from the stored plan once; query refreshes preserve edits |
 | Validation | Check all recorded plan layers, chart compatibility, CART, ModelRoute, actual model, timeout and engine |
-| Advanced YAML | Preserve precedence; stop when its effective settings differ from the recovery controls |
-| Timeout reset | Clearing removes a retained form override by recomposing the validated form without `fromRelease`, pinned to the resolved source and chart |
-| Integrity | Recovery and adaptive cleanup share source pinning and normalized plan comparison; reject unrelated changes |
-| Ownership | Existing plan API and chart values; copied Swiss sources remain unchanged |
+| Configuration draft | Structured controls and YAML share one document; validate recovery against the complete server composition |
+| Timeout reset | Keep the existing guarded cleanup for an explicit form reset; omitted YAML alone retains saved form settings |
+| Integrity | Keep `fromRelease` validation and later system layers; verify the running revision before and after planning and before apply |
+| Ownership | Existing chart values, form/edit layers and plan/diff/apply API; no backend change |
+
+### Unified deployment configuration
+
+Deploy and upgrade use one shared editing model; structured controls patch their owned paths and YAML edits project back into those controls.
+
+| Surface | Source |
+|---|---|
+| Deployment baseline | Chart defaults plus non-user target layers, composed by the deployment service |
+| User configuration | YAML draft over retained form settings; unknown values and comments survive form edits |
+| Effective configuration | The deployment service's complete layer order; read-only |
+| Current configuration | The running revision's actual Helm values; independent of target defaults |
+
+```text
+form <-> user document <-> YAML
+              |
+ overrides + editsYAML + fromRelease -> compose -> diff -> apply
+              ^                                |
+              +---------- re-preview <---------+ (revision moved)
+```
+
+- Open the editor through **Edit YAML** in the deployment form's top toolbar; the YAML summary field also names its format explicitly.
+- Use existing `overrides` and `editsYAML` requests. Upgrades merge form values and replace the YAML override layer; omitted YAML fields preserve saved form settings. No backend capability is required.
+- Invalid YAML remains editable and blocks structured changes and planning. Preview failures retain the draft and clear the effective display.
+- Disabling a feature retains its settings unless an existing explicit cleanup action removes dependent fields. Removing a YAML-only override reveals the underlying form or target value.
+- System layers that change a user value appear with the configured value, effective value and responsible layer.
+- Design and local checks: `docs/plans/2026-11-07-deployment-configuration.md` and `2026-11-07-deployment-configuration-checks.md`.
 
 ### Unpublished Monitor integration
 
@@ -377,8 +403,8 @@ The master switch and every `needsAdaptive` field share one section (console #75
 | Groups | Gateway `needsAdaptive` metadata decides membership; known `adaptive_cc_*` keys are recognized without a live catalog |
 | Off | Hide dependent common/advanced inputs, clear their entered values, and prevent adding adaptive custom keys while off |
 | Capacity | `default_max` remains in Capacity & failover; it governs limits even with adaptive control off |
-| Upgrade removal | Swiss `fromRelease` recursively retains omitted map keys. Compose normally first for its model-move/chart validation; if stale adaptive form keys survive, recompose the full validated form with those keys removed, pinned to the just-resolved model/version/chart |
-| Integrity | Preserve unrelated form values and explicit advanced YAML; reject source/chart identity or other layer changes between the two compositions |
+| Upgrade removal | Keep the existing guarded recomposition for explicit dependent-parameter cleanup; effective preview follows the same final request |
+| Integrity | Preserve unrelated user values; normal upgrade composition retains source/chart validation and later system layers |
 | Application | Only the cleaned plan enters the existing diff/revision/apply flow; composition performs no workload write |
 
 ### Workload reads (`/api/k8s/...`)

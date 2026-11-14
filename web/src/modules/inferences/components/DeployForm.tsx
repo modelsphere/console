@@ -74,6 +74,9 @@ export interface DeployFormProps {
   catalogRoute?: string;
   // The chart's values and swissd's layers for the Override YAML editor.
   helmValues?: HelmValuesSource;
+  configurationOpen?: boolean;
+  onConfigurationOpenChange?: (open: boolean) => void;
+  disabled?: boolean;
   // Every image the chart renders, from the compose dry run. Absent until that
   // returns; the engine row still shows from defaults.image.
   slots?: ImageSlot[];
@@ -97,7 +100,7 @@ export interface DeployFormProps {
   taints?: ClusterTaint[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, resources, pd, nodes, gpuSpecs, gpuVendor, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, resources, pd, nodes, gpuSpecs, gpuVendor, recovery, inputs, remember, onRemember, presets, taints, configurationOpen, onConfigurationOpenChange, disabled }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -121,7 +124,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
   const section = (id: Section, children: ReactNode) => (
     <div id={`${idPrefix}${id}`}>
       <FormSection id={`${idPrefix}${id}-section`} title={t(`deploy.sections.${upgrade && id === "basic" ? "target" : id}`)} expanded={expanded[id]} onExpandedChange={(o) => onExpand(id, o)}>
-        <div className="flex flex-col gap-3">{children}</div>
+        <fieldset disabled={disabled} className="flex min-w-0 flex-col gap-3">{children}</fieldset>
       </FormSection>
     </div>
   );
@@ -167,6 +170,13 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
       {section(
         "resources",
         <>
+          <FloatingField layout="inline" label={f("scaler")} hint={f("scalerHint")} expanded={form.scaler} expandedContent={
+            <div className="grid grid-cols-2 gap-3 pb-3">
+              <FloatingField label={f("scalerMin")}><FieldInput {...text("scalerMin")} inputMode="numeric" /></FloatingField>
+              <FloatingField label={f("scalerMax")}><FieldInput {...text("scalerMax")} inputMode="numeric" /></FloatingField>
+            </div>
+          }>{sw("scaler", f("scaler"))}</FloatingField>
+          {!form.scaler && <FloatingField label={f("replicas")}><FieldInput {...text("replicaCount")} inputMode="numeric" /></FloatingField>}
           {gpuResources && <GpuResource resources={gpuResources} value={form.gpuResource} onChange={(gpuResource) => onChange({ gpuResource })} />}
           {(!pd?.enabled || pd.colocate || form.gpuProducts.length > 0) && (
             <FloatingField label={f("gpuProducts")} hint={f("gpuProductsHint")} notice={forced.length > 0 ? t("deploy.fields.gpuForced", { products: forced.join(", ") }) : undefined}>
@@ -315,9 +325,10 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           <FloatingField layout="inline" label={f("skipSchemaValidation")} hint={f("skipSchemaValidationHint")}>
             {sw("skipSchemaValidation", f("skipSchemaValidation"))}
           </FloatingField>
-          <OverrideYaml value={form.edits} onChange={(edits) => onChange({ edits })} source={helmValues} />
+
         </>,
       )}
+      <OverrideYaml value={form.edits} onChange={(edits) => onChange({ edits })} source={helmValues} open={configurationOpen} onOpenChange={onConfigurationOpenChange} />
     </div>
   );
 }

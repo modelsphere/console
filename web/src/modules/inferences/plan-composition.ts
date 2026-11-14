@@ -16,6 +16,10 @@ function canonical(value: unknown): string {
   return JSON.stringify(value) ?? "undefined";
 }
 
+export function sameValues(left: unknown, right: unknown): boolean {
+  return canonical(left) === canonical(right);
+}
+
 export function samePlanBaseline(before: Plan, after: Plan, normalize: (layers: Plan["layers"]) => void): boolean {
   const snapshot = (plan: Plan) => {
     const layers = structuredClone(plan.layers ?? {});

@@ -31,7 +31,7 @@ const WHAT = {
 
 // layersOf is every layer the plan carries: the known ones in merge order, then
 // any this console does not know, so none is hidden.
-export function layersOf(plan: Plan): string[] {
+export function layersOf(plan: Pick<Plan, "layers">): string[] {
   const present = Object.keys(plan.layers ?? {});
   const ordered: string[] = LAYERS.filter((l) => present.includes(l));
   return [...ordered, ...present.filter((l) => !ordered.includes(l)).sort()];

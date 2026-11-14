@@ -26,6 +26,11 @@ extra:
 `;
 
 describe("override YAML", () => {
+  it("rejects scalar null and integers that would silently lose precision", () => {
+    expect(parseValues("# empty document\n")).toEqual({});
+    expect(() => parseValues("null")).toThrow("mapping");
+    expect(() => parseValues("replicaCount: 9007199254740993")).toThrow("integer range");
+  });
   it("writes the overrides into the chart's values.yaml, its comments kept", () => {
     const computed = computedYaml(defaults, overrides);
     expect(computed).toContain("# Engine replicas.\nreplicaCount: 2\n");
