@@ -100,4 +100,54 @@ Serve the built files with a static-resource image. Change the descriptor to `ur
 
 Configuration is read at backend startup. Open tabs retain their registry until refreshed. Plugin JavaScript runs with Console frontend privileges, so operators must select trusted services. The resource proxy strips Cookie/Authorization and upstream Set-Cookie; existing business API authentication/authorization still applies.
 
+## Package and install with ModelSphere CLI
+
+`cmd/modelsphere` provides the first local lifecycle adapter. It uses Helm for both the plugin
+release and the existing Console release; it does not create a Plugin CRD or store a second
+plugin registry.
+
+The packaged Chart must contain `Chart.yaml` and `plugin.yaml`. The latter declares the two
+Services that the Chart creates, so the CLI never guesses names from a Chart or scans arbitrary
+cluster Services:
+
+```yaml
+frontend:
+  entry: index.umd.js
+  service: {name: ${RELEASE}-frontend, port: 8080}
+backend:
+  name: example
+  prefix: /api/example
+  path: /api/example
+  service: {name: ${RELEASE}-backend, port: 8080}
+```
+
+Set non-secret defaults in the platform config directory reported by Go (`$XDG_CONFIG_HOME` on
+Linux, `~/Library/Application Support` on macOS) or pass flags explicitly:
+
+```yaml
+kubeconfig: ~/.kube/config
+context: cpu16
+console:
+  release: console
+  namespace: console
+  chart: oci://ghcr.io/modelsphere/charts/console
+  chartVersion: 0.3.0
+  url: http://console.example.test
+```
+
+Commands:
+
+```sh
+go run ./cmd/modelsphere plugin validate ./helm/canaryd
+go run ./cmd/modelsphere plugin package ./helm/canaryd --destination ./dist
+go run ./cmd/modelsphere plugin install ./dist/canaryd-0.3.0.tgz --wait
+go run ./cmd/modelsphere plugin uninstall canary --wait
+```
+
+Install reads the Console release values, merges one plugin entry, installs/upgrades the plugin
+Chart, verifies declared Services, then upgrades Console with `--reuse-values`. Uninstall removes
+the Console registration and verifies the plugin index before uninstalling the plugin release.
+Console registration failures do not delete the plugin release; uninstall verification failures do
+not continue with deletion.
+
 `web/test/plugin-runtime.html` is a development browser test fixture using configured plugins and actual host providers. It is excluded from the production entry and does not disable application authentication.
