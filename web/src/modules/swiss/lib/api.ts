@@ -65,23 +65,6 @@ export interface Site {
   url: string;
 }
 
-export type CanaryState = "standalone" | "referenced" | "owned";
-
-export interface ServiceOwner {
-  apiVersion: string;
-  kind: string;
-  namespace: string;
-  name: string;
-  uid: string;
-  verified: boolean;
-}
-
-export interface ServiceAssignment extends Omit<ServiceOwner, "verified"> {
-  role: "production" | "arm";
-  arm?: string;
-  verified: boolean;
-}
-
 export interface Deployment {
   release: string;
   namespace: string;
@@ -105,10 +88,7 @@ export interface Deployment {
   // names no route.
   route?: string;
   backend?: ApplyWith;
-  canaryState?: CanaryState;
   uid?: string;
-  assignedTo?: ServiceAssignment;
-  managedBy?: ServiceOwner;
   // An LLMService swiss did not write.
   external?: boolean;
   // An LLMService swiss wrote was edited outside swiss.
@@ -776,10 +756,6 @@ export interface ReleaseStatus {
   external?: boolean;
   // An LLMService swiss wrote was edited outside swiss.
   editedInPlace?: boolean;
-  canaryState?: CanaryState;
-  uid?: string;
-  assignedTo?: ServiceAssignment;
-  managedBy?: ServiceOwner;
   // Present on the llmsvc backend. phase is "uninstalling" while the LLMService
   // has a deletionTimestamp. Absent on helm and on an older swissd.
   llmservice?: { phase?: string };

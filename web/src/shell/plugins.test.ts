@@ -36,7 +36,7 @@ afterEach(() => {
   extensions.data.length = 0;
   extensions.visibility.length = 0;
   extensions.presentations.length = 0;
-  extensions.serviceOwners.length = 0;
+  extensions.actions.length = 0;
 });
 
 describe("configured SDK plugins", () => {
@@ -53,7 +53,7 @@ describe("configured SDK plugins", () => {
     expect(result.modules[1].pages.map(page => page.path)).toEqual(["", "items/:id"]);
     expect(navGroups(result.modules, () => false).at(-1)?.items[0].label).toBe("Example");
   });
-  it("registers data, visibility, presentation and owner extensions", async () => {
+  it("registers data, visibility, presentation and action extensions", async () => {
     browser([example()], asset => {
       register();
       const sdk = window.__MODELSPHERE_SDK__;
@@ -61,14 +61,14 @@ describe("configured SDK plugins", () => {
       sdk.registerDataExtension("example", { id: "owner", resourceType: "inference-service", load: () => ({}) });
       sdk.registerVisibilityExtension("example", { id: "owner-visible", resourceType: "inference-service", placement: "resource.header", evaluate: () => true });
       sdk.registerPresentationExtension("example", { id: "owner-view", resourceType: "inference-service", placement: "resource.header", key: "owner", component: "Owner" });
-      sdk.registerServiceOwnerExtension("example", { apiVersion: "example/v1", kind: "Owner", component: "Owner" });
+      sdk.registerActionExtension("example", { id: "owner-action", resourceType: "inference-service", action: "upgrade", evaluate: () => false });
       asset.onload?.();
     });
     expect((await loadPlugins([builtin])).errors).toEqual([]);
     expect(extensions.data.map(item => item.id)).toEqual(["owner"]);
     expect(extensions.visibility.map(item => item.id)).toEqual(["owner-visible"]);
     expect(extensions.presentations.map(item => item.id)).toEqual(["owner-view"]);
-    expect(extensions.serviceOwners.map(item => item.kind)).toEqual(["Owner"]);
+    expect(extensions.actions.map(item => item.id)).toEqual(["owner-action"]);
   });
   it("uses a classic bundle for deployment", async () => {
     const assets = browser([example()], asset => { register(); asset.onload?.(); });

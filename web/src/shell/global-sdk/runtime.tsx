@@ -3,16 +3,16 @@ import { useLocation, useParams } from "react-router";
 import { Boxes, FlaskConical, Puzzle } from "lucide-react";
 import { type ConsoleModule, type ModulePage } from "@/shell/module";
 import {
+  registerActionExtension,
   registerDataExtension,
   registerPresentationExtension,
-  registerServiceOwnerExtension,
   registerVisibilityExtension,
 } from "@/extensions/registry";
 import type {
+  ResourceActionExtension,
   ResourceDataExtension,
   ResourcePresentationExtension,
   ResourceVisibilityExtension,
-  ServiceOwnerExtension,
 } from "@/extensions/types";
 
 export interface PluginMenu {
@@ -39,7 +39,7 @@ type PluginComponent = React.ComponentType<any>;
 interface DataDefinition extends Omit<ResourceDataExtension, "plugin"> {}
 interface VisibilityDefinition extends Omit<ResourceVisibilityExtension, "plugin"> {}
 interface PresentationDefinition extends Omit<ResourcePresentationExtension, "plugin" | "component"> { component: string }
-interface ServiceOwnerDefinition extends Omit<ServiceOwnerExtension, "plugin" | "component"> { component: string }
+interface ActionDefinition extends Omit<ResourceActionExtension, "plugin"> {}
 interface Registration {
   plugin: InstalledPlugin;
   definition?: Definition;
@@ -48,7 +48,7 @@ interface Registration {
   data: DataDefinition[];
   visibility: VisibilityDefinition[];
   presentations: PresentationDefinition[];
-  serviceOwners: ServiceOwnerDefinition[];
+  actions: ActionDefinition[];
   cleanups: (() => void)[];
   error?: Error;
 }
@@ -95,10 +95,8 @@ function registerExtensions(registration: Registration): void {
     if (!component) throw new Error(`Presentation component "${extension.component}" was not registered`);
     registration.cleanups.push(registerPresentationExtension({ ...extension, plugin: registration.plugin.id, component }));
   }
-  for (const extension of registration.serviceOwners) {
-    const component = registration.components[extension.component];
-    if (!component) throw new Error(`Service owner component "${extension.component}" was not registered`);
-    registration.cleanups.push(registerServiceOwnerExtension({ ...extension, plugin: registration.plugin.id, component }));
+  for (const extension of registration.actions) {
+    registration.cleanups.push(registerActionExtension({ ...extension, plugin: registration.plugin.id }));
   }
 }
 
@@ -153,12 +151,10 @@ export function createRegistration() {
         registration.presentations.push(extension);
       });
     },
-    registerServiceOwnerExtension(name: string, extension: ServiceOwnerDefinition) {
+    registerActionExtension(name: string, extension: ActionDefinition) {
       record(name, (registration) => {
-        if (registration.serviceOwners.some((item) => item.apiVersion === extension.apiVersion && item.kind === extension.kind)) {
-          throw new Error(`Service owner extension "${extension.apiVersion}/${extension.kind}" registered twice`);
-        }
-        registration.serviceOwners.push(extension);
+        if (registration.actions.some((item) => item.id === extension.id)) throw new Error(`Action extension "${extension.id}" registered twice`);
+        registration.actions.push(extension);
       });
     },
     getPluginComponents: (name: string) => current?.plugin.id === name ? current.components : installed.get(name) ?? {},
@@ -177,7 +173,7 @@ export function createRegistration() {
   };
   return {
     sdk,
-    begin(plugin: InstalledPlugin) { current = { plugin, components: {}, routes: {}, data: [], visibility: [], presentations: [], serviceOwners: [], cleanups: [] }; },
+    begin(plugin: InstalledPlugin) { current = { plugin, components: {}, routes: {}, data: [], visibility: [], presentations: [], actions: [], cleanups: [] }; },
     finish() {
       if (!current) throw new Error("No SDK entry is loading");
       const module = buildModule(current);

@@ -399,7 +399,7 @@ function registerComponentsAndSlots(sdk: RiseHostSDK, def: PluginDefinition): vo
   for (const extension of def.dataExtensions ?? []) sdk.registerDataExtension(def.name, extension)
   for (const extension of def.visibilityExtensions ?? []) sdk.registerVisibilityExtension(def.name, extension)
   for (const extension of def.presentationExtensions ?? []) sdk.registerPresentationExtension(def.name, extension)
-  for (const extension of def.serviceOwnerExtensions ?? []) sdk.registerServiceOwnerExtension(def.name, extension)
+  for (const extension of def.actionExtensions ?? []) sdk.registerActionExtension(def.name, extension)
 
 }
 

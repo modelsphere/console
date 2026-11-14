@@ -16,7 +16,7 @@ export type {
   DataExtensionRegistration,
   VisibilityExtensionRegistration,
   PresentationExtensionRegistration,
-  ServiceOwnerExtensionRegistration,
+  ActionExtensionRegistration,
   PluginDefinition,
   PluginInstance,
   RiseHostSDK,

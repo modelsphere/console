@@ -1,19 +1,5 @@
 import type { ComponentType } from "react";
 import type { ConsoleModule } from "@/shell/module";
-import type { ServiceOwner } from "@swiss/lib/api";
-
-export interface ServiceOwnerProps {
-  owner: ServiceOwner;
-  compact?: boolean;
-  assigned?: boolean;
-}
-
-export interface ServiceOwnerExtension {
-  plugin: string;
-  apiVersion: string;
-  kind: string;
-  component: ComponentType<ServiceOwnerProps>;
-}
 
 export interface ResourceExtensionContext<T = unknown> {
   resourceType: string;
@@ -50,10 +36,22 @@ export interface ResourcePresentationExtension<T = unknown> {
   component: ComponentType<ResourcePresentationProps<T>>;
 }
 
+export interface ResourceActionContext<T = unknown> extends ResourceExtensionContext<T> {
+  action: string;
+}
+
+export interface ResourceActionExtension<T = unknown> {
+  plugin: string;
+  id: string;
+  resourceType: string;
+  action: string;
+  evaluate: (context: ResourceActionContext<T>) => false | string;
+}
+
 export interface ConsoleExtensions {
   modules: ConsoleModule[];
-  serviceOwners: ServiceOwnerExtension[];
   data: ResourceDataExtension[];
   visibility: ResourceVisibilityExtension[];
   presentations: ResourcePresentationExtension[];
+  actions: ResourceActionExtension[];
 }

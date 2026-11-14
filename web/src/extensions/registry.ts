@@ -1,17 +1,17 @@
 import type {
   ConsoleExtensions,
+  ResourceActionExtension,
   ResourceDataExtension,
   ResourcePresentationExtension,
   ResourceVisibilityExtension,
-  ServiceOwnerExtension,
 } from "./types";
 
 export const extensions: ConsoleExtensions = {
   modules: [],
-  serviceOwners: [],
   data: [],
   visibility: [],
   presentations: [],
+  actions: [],
 };
 
 function add<T>(items: T[], item: T): () => void {
@@ -34,6 +34,26 @@ export function registerPresentationExtension(extension: ResourcePresentationExt
   return add(extensions.presentations, extension);
 }
 
-export function registerServiceOwnerExtension(extension: ServiceOwnerExtension): () => void {
-  return add(extensions.serviceOwners, extension);
+export function registerActionExtension(extension: ResourceActionExtension): () => void {
+  return add(extensions.actions, extension);
+}
+
+export function evaluateResourceAction<T>(
+  resourceType: string,
+  resourceKey: string,
+  resource: T,
+  action: string,
+): false | string {
+  const context = { resourceType, resourceKey, resource, data: {}, action };
+  for (const extension of extensions.actions) {
+    if (extension.resourceType !== resourceType || extension.action !== action) continue;
+    try {
+      const blocked = extension.evaluate(context);
+      if (blocked) return blocked;
+    } catch (error) {
+      console.error(`[console] resource action policy failed: ${extension.plugin}/${extension.id}`, error);
+      return "扩展策略暂不可用";
+    }
+  }
+  return false;
 }

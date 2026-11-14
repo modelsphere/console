@@ -234,10 +234,11 @@ export interface PresentationExtensionRegistration {
   component: string
 }
 
-export interface ServiceOwnerExtensionRegistration {
-  apiVersion: string
-  kind: string
-  component: string
+export interface ActionExtensionRegistration {
+  id: string
+  resourceType: string
+  action: string
+  evaluate: (context: { resourceType: string; resourceKey: string; resource: unknown; data: Record<string, unknown>; action: string }) => false | string
 }
 
 // ── Scope Declaration (Dock metadata) ────────────────────────
@@ -304,7 +305,7 @@ export interface PluginDefinition {
   dataExtensions?: DataExtensionRegistration[]
   visibilityExtensions?: VisibilityExtensionRegistration[]
   presentationExtensions?: PresentationExtensionRegistration[]
-  serviceOwnerExtensions?: ServiceOwnerExtensionRegistration[]
+  actionExtensions?: ActionExtensionRegistration[]
 
   // ── Lifecycle hooks ──
 
@@ -460,7 +461,7 @@ export interface RiseHostSDK {
   registerDataExtension: (pluginName: string, extension: DataExtensionRegistration) => void
   registerVisibilityExtension: (pluginName: string, extension: VisibilityExtensionRegistration) => void
   registerPresentationExtension: (pluginName: string, extension: PresentationExtensionRegistration) => void
-  registerServiceOwnerExtension: (pluginName: string, extension: ServiceOwnerExtensionRegistration) => void
+  registerActionExtension: (pluginName: string, extension: ActionExtensionRegistration) => void
   registerSlot: (def: unknown) => void
   createPlugin: (def: unknown) => unknown
   /**
