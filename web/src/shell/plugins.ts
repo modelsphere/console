@@ -47,6 +47,7 @@ async function loadEntry(plugin: InstalledPlugin, modules: ConsoleModule[], runt
     modules.push(module);
     runtime.commit();
   } catch (error) {
+    runtime.rollback();
     assets.forEach((asset) => asset.remove());
     throw error;
   } finally {

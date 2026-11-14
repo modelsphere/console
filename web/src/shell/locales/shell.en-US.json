@@ -2,6 +2,13 @@
   "plugins": {
     "failed": "Some plugins failed to load. Expand for details."
   },
+  "capability": {
+    "loading": "Checking module access…",
+    "failed": "Module access could not be checked.",
+    "unconfigured": "This module is not configured.",
+    "forbidden": "You do not have access to this module.",
+    "retry": "Retry"
+  },
   "menu": {
     "overview": "Overview"
   },

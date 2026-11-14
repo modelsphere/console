@@ -3,6 +3,7 @@ import { loadPlugins } from "@/shell/plugins";
 import { navGroups, type ConsoleModule } from "@/shell/module";
 import type { InstalledPlugin } from "@/shell/global-sdk/runtime";
 import { importDevelopmentEntry } from "./plugin-development";
+import { extensions } from "@/extensions/registry";
 vi.mock("./plugin-development", () => ({ importDevelopmentEntry: vi.fn() }));
 
 const builtin: ConsoleModule = { id: "core", title: "Core", basePath: "/core", pages: [] };
@@ -28,7 +29,15 @@ function register(id = "example") {
   sdk.registerPluginComponent(id, "Example", () => null);
   sdk.registerPluginRoutes(id, { "items/[id]": () => null });
 }
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.resetAllMocks(); });
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.resetAllMocks();
+  extensions.data.length = 0;
+  extensions.visibility.length = 0;
+  extensions.presentations.length = 0;
+  extensions.serviceOwners.length = 0;
+});
 
 describe("configured SDK plugins", () => {
   it("keeps the shell unchanged with no configured plugins", async () => {
@@ -43,6 +52,23 @@ describe("configured SDK plugins", () => {
     expect(window.__MODELSPHERE_SDK__).toBe(window.__RISE_SDK__);
     expect(result.modules[1].pages.map(page => page.path)).toEqual(["", "items/:id"]);
     expect(navGroups(result.modules, () => false).at(-1)?.items[0].label).toBe("Example");
+  });
+  it("registers data, visibility, presentation and owner extensions", async () => {
+    browser([example()], asset => {
+      register();
+      const sdk = window.__MODELSPHERE_SDK__;
+      sdk.registerPluginComponent("example", "Owner", () => null);
+      sdk.registerDataExtension("example", { id: "owner", resourceType: "inference-service", load: () => ({}) });
+      sdk.registerVisibilityExtension("example", { id: "owner-visible", resourceType: "inference-service", placement: "resource.header", evaluate: () => true });
+      sdk.registerPresentationExtension("example", { id: "owner-view", resourceType: "inference-service", placement: "resource.header", key: "owner", component: "Owner" });
+      sdk.registerServiceOwnerExtension("example", { apiVersion: "example/v1", kind: "Owner", component: "Owner" });
+      asset.onload?.();
+    });
+    expect((await loadPlugins([builtin])).errors).toEqual([]);
+    expect(extensions.data.map(item => item.id)).toEqual(["owner"]);
+    expect(extensions.visibility.map(item => item.id)).toEqual(["owner-visible"]);
+    expect(extensions.presentations.map(item => item.id)).toEqual(["owner-view"]);
+    expect(extensions.serviceOwners.map(item => item.kind)).toEqual(["Owner"]);
   });
   it("uses a classic bundle for deployment", async () => {
     const assets = browser([example()], asset => { register(); asset.onload?.(); });
@@ -68,7 +94,16 @@ describe("configured SDK plugins", () => {
   it.each([
     ["identity", () => register("other"), /registered/],
     ["missing component", () => window.__MODELSPHERE_SDK__.registerPlugin({name:"example",version:"1"}), /not registered/],
-    ["slots", () => { register(); window.__MODELSPHERE_SDK__.registerSlot(); }, /slots/],
+    ["missing presentation component", () => {
+      register();
+      window.__MODELSPHERE_SDK__.registerPresentationExtension("example", {
+        id: "broken-view",
+        resourceType: "inference-service",
+        placement: "resource.header",
+        key: "broken",
+        component: "Missing",
+      });
+    }, /Presentation component/],
     ["duplicate registration", () => { register(); register(); }, /more than one/],
   ])("reports %s failures and removes failed assets", async (_name, execute, error) => {
     const assets = browser([example()], asset => { execute(); asset.onload?.(); });

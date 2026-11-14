@@ -2,6 +2,13 @@
   "plugins": {
     "failed": "部分插件加载失败，展开查看详情"
   },
+  "capability": {
+    "loading": "正在检查模块权限…",
+    "failed": "模块权限检查失败。",
+    "unconfigured": "该模块尚未配置。",
+    "forbidden": "你没有访问该模块的权限。",
+    "retry": "重试"
+  },
   "layout": {
     "expandSidebar": "展开侧边栏",
     "collapseSidebar": "折叠侧边栏",
