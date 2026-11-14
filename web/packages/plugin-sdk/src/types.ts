@@ -207,6 +207,37 @@ export interface SlotRegistration {
   target: string
   /** Sort order */
   order?: number
+  /** Resource contract for Console host extensions. Legacy slots may omit both. */
+  resourceType?: string
+  /** Host placement such as collection.column or resource.section. */
+  placement?: string
+}
+
+export interface DataExtensionRegistration {
+  id: string
+  resourceType: string
+  load: (context: { resourceType: string; resourceKey: string; resource: unknown }) => Promise<unknown> | unknown
+}
+
+export interface VisibilityExtensionRegistration {
+  id: string
+  resourceType: string
+  placement: string
+  evaluate: (context: { resourceType: string; resourceKey: string; resource: unknown; data: Record<string, unknown> }) => boolean
+}
+
+export interface PresentationExtensionRegistration {
+  id: string
+  resourceType: string
+  placement: string
+  key: string
+  component: string
+}
+
+export interface ServiceOwnerExtensionRegistration {
+  apiVersion: string
+  kind: string
+  component: string
 }
 
 // ── Scope Declaration (Dock metadata) ────────────────────────
@@ -268,6 +299,12 @@ export interface PluginDefinition {
    * Values are React component functions.
    */
   routes?: Record<string, unknown>
+
+  /** Data, visibility and presentation are independent extension dimensions. */
+  dataExtensions?: DataExtensionRegistration[]
+  visibilityExtensions?: VisibilityExtensionRegistration[]
+  presentationExtensions?: PresentationExtensionRegistration[]
+  serviceOwnerExtensions?: ServiceOwnerExtensionRegistration[]
 
   // ── Lifecycle hooks ──
 
@@ -420,6 +457,10 @@ export interface RiseHostSDK {
   /** Lookup every component the given plugin has registered. Added in Story 7.4. */
   getPluginComponents?: (pluginName: string) => Record<string, unknown>
   registerPluginRoutes: (pluginName: string, routes: Record<string, unknown>) => void
+  registerDataExtension: (pluginName: string, extension: DataExtensionRegistration) => void
+  registerVisibilityExtension: (pluginName: string, extension: VisibilityExtensionRegistration) => void
+  registerPresentationExtension: (pluginName: string, extension: PresentationExtensionRegistration) => void
+  registerServiceOwnerExtension: (pluginName: string, extension: ServiceOwnerExtensionRegistration) => void
   registerSlot: (def: unknown) => void
   createPlugin: (def: unknown) => unknown
   /**

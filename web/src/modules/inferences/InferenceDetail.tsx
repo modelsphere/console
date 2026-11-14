@@ -13,6 +13,9 @@ import { Endpoint } from "@swiss/components/Endpoint";
 import { Provenance } from "@swiss/components/Provenance";
 import { useT } from "@/modules/inferences/i18n";
 import { modelLine, parseTab, releaseState, sloBlocked, visibleTabs, type Tab } from "@/modules/inferences/lib";
+import { serviceRelationship } from "./service-relationship";
+import { ResourceExtensionSurface } from "@/extensions/surface";
+import { ServiceRelationshipBadge } from "@/modules/inferences/components/ServiceOwnership";
 import { statusOf } from "@/modules/inferences/components/StatusDot";
 import { DeploySheet } from "@/modules/inferences/components/DeploySheet";
 import { UninstallDialog } from "@/modules/inferences/components/UninstallDialog";
@@ -106,14 +109,16 @@ export function InferenceDetail() {
 
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
   const removing = isUninstalling(s);
-  const blockedWrite = readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const relationship = serviceRelationship(s);
+  const blockedWrite = relationship.owned ? t("disabled.serviceManaged") : relationship.assignmentLocked ? t("disabled.serviceAssigned") : readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const upgradeBlocked = relationship.adaptiveOnly ? readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false : blockedWrite;
   const external = s.external;
   const untracked = !plan.data && plan.isError;
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
   const blocked = sloBlocked(s, plan.data);
-  const sloOpen = !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
+  const sloOpen = !relationship.owned && !relationship.assignmentLocked && !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
   const closeSLO = () => {
     setEditingSLO(false);
     if (!sloSetup) return;
@@ -142,7 +147,7 @@ export function InferenceDetail() {
             {
               key: "upgrade",
               label: t("actions.upgrade"),
-              disabled: blockedWrite || (external ? t("disabled.external") : !plan.data ? t("disabled.untracked") : false),
+              disabled: upgradeBlocked || (external ? t("disabled.external") : !plan.data ? t("disabled.untracked") : false),
               onClick: () => setUpgrading(true),
             },
             {
@@ -161,6 +166,8 @@ export function InferenceDetail() {
           ]}
           metaColumns={4}
         />
+        <ServiceRelationshipBadge service={s} />
+        <ResourceExtensionSurface resourceType="inference-service" resourceKey={`${namespace}/${release}`} resource={s} placement="resource.header" />
         <PanelTabs items={visible.map((key) => ({ value: key, label: t(`tabs.${key}`), count: counts[key] }))} />
 
         <TabsContent value="overview">
@@ -196,10 +203,10 @@ export function InferenceDetail() {
         )}
       </Tabs>
 
-      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !removing && !external} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
-      <DeploySheet target={upgrading ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
+      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !removing && !external && !relationship.assignmentLocked && !relationship.owned} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
+      <DeploySheet target={upgrading && !relationship.owned && (!relationship.assignmentLocked || relationship.adaptiveOnly) && !removing ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
-        target={uninstalling ? { namespace, release } : null}
+        target={uninstalling && !relationship.owned && !relationship.assignmentLocked && !removing ? { namespace, release } : null}
         onClose={() => setUninstalling(false)}
         onDone={() => navigate(p(""))}
       />

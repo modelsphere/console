@@ -57,7 +57,7 @@ var unresolved = &backendTarget{url: url.URL{Scheme: "http", Host: "backend-with
 func (s *Server) mountBackends(mux *http.ServeMux) {
 	targets := s.backendTargets()
 	catalogMounted := false
-	for _, b := range s.cfg.Backends {
+	for _, b := range s.cfg.ConfiguredBackends() {
 		resolve, ok := targets[b.Name]
 		if !ok {
 			continue
@@ -109,7 +109,7 @@ func (s *Server) mountBackends(mux *http.ServeMux) {
 func (s *Server) backendTargets() map[string]targetResolver {
 	s.targetsOnce.Do(func() {
 		s.targets = map[string]targetResolver{}
-		for _, b := range s.cfg.Backends {
+		for _, b := range s.cfg.ConfiguredBackends() {
 			resolve, err := s.targetFunc(b)
 			if err != nil {
 				s.log.Error("backend skipped", "backend", b.Name, "err", err)

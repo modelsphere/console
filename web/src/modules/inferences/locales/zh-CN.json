@@ -96,7 +96,20 @@
     "current": "这已经是当前版本",
     "sloOff": "部署时没有开启 SLO，可在升级时打开",
     "sloPending": "部署完成后才能查看 SLO",
-    "uninstalling": "这个服务正在卸载，等 Pod 消失后再操作"
+    "uninstalling": "这个服务正在卸载，等 Pod 消失后再操作",
+    "serviceManaged": "这个服务由北极星管理",
+    "serviceAssigned": "这个服务已分配给北极星实验"
+  },
+  "serviceRelationship": {
+    "standalone": "独立服务",
+    "referenced": "实验分流",
+    "owned": "实验管理"
+  },
+  "serviceOwner": {
+    "assigned": "分配给",
+    "managed": "管理者",
+    "description": "该服务关系由插件管理。",
+    "anomaly": "服务关系身份未通过校验。"
   },
   "state": {
     "applied": "已应用",

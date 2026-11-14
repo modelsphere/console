@@ -107,7 +107,20 @@
     "current": "This is already the current revision",
     "sloOff": "SLO was not turned on at deploy; turn it on in an upgrade",
     "sloPending": "SLO shows once the deploy has applied",
-    "uninstalling": "This release is uninstalling; wait until its pods are gone"
+    "uninstalling": "This release is uninstalling; wait until its pods are gone",
+    "serviceManaged": "This service is managed by Canary",
+    "serviceAssigned": "This service is assigned to a Canary experiment"
+  },
+  "serviceRelationship": {
+    "standalone": "Standalone",
+    "referenced": "Canary arm",
+    "owned": "Canary managed"
+  },
+  "serviceOwner": {
+    "assigned": "Assigned to",
+    "managed": "Managed by",
+    "description": "The owning plugin controls this service relationship.",
+    "anomaly": "The relationship identity could not be verified."
   },
   "state": {
     "applied": "Applied",

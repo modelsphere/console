@@ -24,13 +24,17 @@ func TestPluginImageService(t *testing.T) {
 	}))
 	defer upstream.Close()
 	srv := pluginServer(t)
-	srv.cfg.Plugins = []config.Plugin{{ID: "example", URL: upstream.URL + "/frontend", Entry: "index.umd.js", Menu: config.PluginMenu{Title: "Example", Label: "Example", Path: "/example", Component: "Example"}}}
+	srv.cfg.Plugins = []config.Plugin{{
+		ID: "example", URL: upstream.URL + "/frontend", Entry: "index.umd.js",
+		Menu:    config.PluginMenu{Title: "Example", Label: "Example", Path: "/example", Component: "Example"},
+		Backend: &config.PluginBackend{Name: "example", Prefix: "/api/example", URL: upstream.URL + "/api", WritePermission: "example.write"},
+	}}
 	index := do(srv.Handler(), "GET", "/plugins/index.json", "", "")
 	var descriptors []pluginManifest
 	if err := json.Unmarshal(index.Body.Bytes(), &descriptors); err != nil {
 		t.Fatal(err)
 	}
-	if len(descriptors) != 1 || descriptors[0].Entry != "/plugins/example/index.umd.js" || descriptors[0].Menu.Component != "Example" || strings.Contains(index.Body.String(), upstream.URL) {
+	if len(descriptors) != 1 || descriptors[0].Entry != "/plugins/example/index.umd.js" || descriptors[0].Menu.Component != "Example" || descriptors[0].Backend == nil || descriptors[0].Backend.Prefix != "/api/example" || descriptors[0].Backend.WritePermission != "example.write" || strings.Contains(index.Body.String(), upstream.URL) {
 		t.Fatalf("discovery: %s", index.Body.String())
 	}
 	request := httptest.NewRequest("GET", "/plugins/example/index.umd.js", nil)

@@ -28,6 +28,9 @@ data:
         {{- with .apiKeyEnv }}
         apiKeyEnv: {{ . | quote }}
         {{- end }}
+        {{- with .writePermission }}
+        writePermission: {{ . | quote }}
+        {{- end }}
       {{- end }}
       {{- $swissd := include "console.swiss.backend" . }}
       {{- if $swissd }}

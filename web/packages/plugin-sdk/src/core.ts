@@ -390,9 +390,16 @@ function registerComponentsAndSlots(sdk: RiseHostSDK, def: PluginDefinition): vo
         plugin: def.name,
         target: slot.target,
         order: slot.order ?? 999,
+        resourceType: slot.resourceType,
+        placement: slot.placement,
       })
     }
   }
+
+  for (const extension of def.dataExtensions ?? []) sdk.registerDataExtension(def.name, extension)
+  for (const extension of def.visibilityExtensions ?? []) sdk.registerVisibilityExtension(def.name, extension)
+  for (const extension of def.presentationExtensions ?? []) sdk.registerPresentationExtension(def.name, extension)
+  for (const extension of def.serviceOwnerExtensions ?? []) sdk.registerServiceOwnerExtension(def.name, extension)
 
 }
 

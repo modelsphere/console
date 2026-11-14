@@ -21,6 +21,11 @@ plugins:
       label: Example
       path: /example
       component: Example
+    backend:
+      name: example
+      prefix: /api/example
+      url: http://example-backend:8080
+      writePermission: example.write
 `
 	file := filepath.Join(t.TempDir(), "console.yaml")
 	if err := os.WriteFile(file, []byte(valid), 0600); err != nil {
@@ -32,6 +37,10 @@ plugins:
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
+	}
+	backends := cfg.ConfiguredBackends()
+	if len(backends) != 1 || backends[0].Name != "example" || backends[0].WritePermission != "example.write" {
+		t.Fatalf("plugin backend = %+v", backends)
 	}
 }
 

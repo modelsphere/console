@@ -29,6 +29,27 @@ type Config struct {
 	Origin string `yaml:"-"`
 }
 
+func (c *Config) ConfiguredBackends() []Backend {
+	backends := append([]Backend(nil), c.Backends...)
+	for _, plugin := range c.Plugins {
+		if plugin.Backend == nil {
+			continue
+		}
+		name := plugin.Backend.Name
+		if name == "" {
+			name = plugin.ID
+		}
+		backends = append(backends, Backend{
+			Name:            name,
+			Prefix:          plugin.Backend.Prefix,
+			URL:             plugin.Backend.URL,
+			APIKeyEnv:       plugin.Backend.APIKeyEnv,
+			WritePermission: plugin.Backend.WritePermission,
+		})
+	}
+	return backends
+}
+
 // Router is /v1, the endpoint programs call models through with API keys admins
 // issue. Empty Secret leaves it, and key management, off.
 type Router struct {
@@ -108,6 +129,8 @@ type Backend struct {
 	// names, so a cluster that keeps the console and the gateway in one
 	// namespace can still take a copied key through a Secret volume.
 	APIKeyEnv string `yaml:"apiKeyEnv,omitempty"`
+	// WritePermission is an optional permission required in addition to backend update access.
+	WritePermission string `yaml:"writePermission,omitempty"`
 }
 
 // Gateway is an inference entrypoint resolved from the cluster at startup and
@@ -234,7 +257,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("%s: server.auth.jwtSecret is required -- it signs every token, or set server.auth.disabled to run without a login", c.origin())
 	}
 	names, prefixes := map[string]bool{}, map[string]bool{}
-	for i, b := range c.Backends {
+	for i, b := range c.ConfiguredBackends() {
 		if b.Name == "" || b.Prefix == "" {
 			return fmt.Errorf("%s: backends[%d] needs name and prefix", c.origin(), i)
 		}

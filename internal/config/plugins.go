@@ -10,20 +10,31 @@ import (
 
 // Plugin identifies a trusted frontend image service and its navigation entry.
 type Plugin struct {
-	Development bool       `yaml:"development,omitempty" json:"development,omitempty"`
-	ID          string     `yaml:"id" json:"id"`
-	URL         string     `yaml:"url" json:"-"`
-	Entry       string     `yaml:"entry" json:"entry"`
-	Styles      []string   `yaml:"styles,omitempty" json:"styles,omitempty"`
-	Menu        PluginMenu `yaml:"menu" json:"menu"`
+	Development bool           `yaml:"development,omitempty" json:"development,omitempty"`
+	ID          string         `yaml:"id" json:"id"`
+	URL         string         `yaml:"url" json:"-"`
+	Entry       string         `yaml:"entry" json:"entry"`
+	Styles      []string       `yaml:"styles,omitempty" json:"styles,omitempty"`
+	Menu        PluginMenu     `yaml:"menu" json:"menu"`
+	Backend     *PluginBackend `yaml:"backend,omitempty" json:"backend,omitempty"`
+}
+
+type PluginBackend struct {
+	Name            string `yaml:"name,omitempty" json:"name,omitempty"`
+	Prefix          string `yaml:"prefix" json:"prefix"`
+	URL             string `yaml:"url" json:"-"`
+	APIKeyEnv       string `yaml:"apiKeyEnv,omitempty" json:"-"`
+	WritePermission string `yaml:"writePermission,omitempty" json:"writePermission,omitempty"`
 }
 
 type PluginMenu struct {
-	Title     string `yaml:"title" json:"title"`
-	Label     string `yaml:"label" json:"label"`
-	Path      string `yaml:"path" json:"path"`
-	Component string `yaml:"component" json:"component"`
-	Icon      string `yaml:"icon,omitempty" json:"icon,omitempty"`
+	Title         string `yaml:"title" json:"title"`
+	Label         string `yaml:"label" json:"label"`
+	Path          string `yaml:"path" json:"path"`
+	Component     string `yaml:"component" json:"component"`
+	Icon          string `yaml:"icon,omitempty" json:"icon,omitempty"`
+	Capability    string `yaml:"capability,omitempty" json:"capability,omitempty"`
+	RequiresWrite bool   `yaml:"requiresWrite,omitempty" json:"requiresWrite,omitempty"`
 }
 
 var pluginName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
@@ -59,6 +70,17 @@ func validatePlugin(plugin Plugin) error {
 	for _, asset := range append([]string{plugin.Entry}, plugin.Styles...) {
 		if !ValidPluginAsset(asset) {
 			return fmt.Errorf("asset %q must be a relative file path", asset)
+		}
+	}
+	if plugin.Backend != nil {
+		if plugin.Backend.Prefix == "" || plugin.Backend.URL == "" {
+			return fmt.Errorf("backend needs prefix and url")
+		}
+		if plugin.Backend.Name != "" && plugin.Backend.Name != plugin.ID {
+			return fmt.Errorf("backend name %q must match plugin id %q", plugin.Backend.Name, plugin.ID)
+		}
+		if err := validateBackend(Backend{Name: plugin.ID, Prefix: plugin.Backend.Prefix, URL: plugin.Backend.URL, APIKeyEnv: plugin.Backend.APIKeyEnv, WritePermission: plugin.Backend.WritePermission}); err != nil {
+			return fmt.Errorf("backend: %w", err)
 		}
 	}
 	menu := plugin.Menu

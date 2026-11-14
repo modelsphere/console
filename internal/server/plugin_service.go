@@ -23,6 +23,13 @@ func (s *Server) pluginIndex() []pluginManifest {
 	for _, plugin := range s.cfg.Plugins {
 		prefix := "/plugins/" + plugin.ID + "/"
 		manifest := pluginManifest{ID: plugin.ID, Entry: prefix + plugin.Entry, Menu: &plugin.Menu, Development: plugin.Development}
+		if plugin.Backend != nil {
+			name := plugin.Backend.Name
+			if name == "" {
+				name = plugin.ID
+			}
+			manifest.Backend = &pluginBackendManifest{Name: name, Prefix: plugin.Backend.Prefix, WritePermission: plugin.Backend.WritePermission}
+		}
 		for _, style := range plugin.Styles {
 			manifest.Styles = append(manifest.Styles, prefix+style)
 		}

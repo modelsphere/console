@@ -19,6 +19,9 @@ import { isUninstalling } from "@swiss/lib/phase";
 import { pollOptions, usePollingPaused } from "@swiss/lib/polling";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, modelLine, rowState } from "@/modules/inferences/lib";
+import { serviceRelationship } from "./service-relationship";
+import { ResourceExtensionSurface } from "@/extensions/surface";
+import { ServiceRelationshipBadge } from "@/modules/inferences/components/ServiceOwnership";
 import { StatusDot } from "@/modules/inferences/components/StatusDot";
 import { DeploySheet, type DeployTarget } from "@/modules/inferences/components/DeploySheet";
 import { UninstallDialog, type UninstallTarget } from "@/modules/inferences/components/UninstallDialog";
@@ -64,6 +67,8 @@ export function InferenceList() {
           </Link>
           <div className="truncate text-xs text-muted-foreground" title={modelLine(d) || undefined}>{modelLine(d) || t("list.untracked")}</div>
           {d.editedInPlace && <div className="truncate text-xs text-muted-foreground">{t("list.editedInPlace")}</div>}
+          <ServiceRelationshipBadge service={d} compact />
+          <ResourceExtensionSurface resourceType="inference-service" resourceKey={`${d.namespace}/${d.release}`} resource={d} placement="collection.row" />
         </div>
       ),
     },
@@ -101,12 +106,16 @@ export function InferenceList() {
     },
   ];
 
-  const writeBlocked = (d: Deployment, untracked = false): boolean | string =>
-    readOnly ? t("disabled.readOnly") : isUninstalling(d) ? t("disabled.uninstalling") : untracked && d.external ? t("disabled.external") : untracked && !d.model ? t("disabled.untracked") : false;
+  const writeBlocked = (d: Deployment, untracked = false, adaptive = false): boolean | string => {
+    const relationship = serviceRelationship(d);
+    if (relationship.owned) return t("disabled.serviceManaged");
+    if (relationship.assignmentLocked && !(adaptive && relationship.adaptiveOnly)) return t("disabled.serviceAssigned");
+    return readOnly ? t("disabled.readOnly") : isUninstalling(d) ? t("disabled.uninstalling") : untracked && d.external ? t("disabled.external") : untracked && !d.model ? t("disabled.untracked") : false;
+  };
 
   const rowActions: ResourceRowAction<Row>[] = [
     { key: "detail", label: t("actions.detail"), onClick: open },
-    { key: "upgrade", label: t("actions.upgrade"), onClick: (d) => setUpgrading({ kind: "upgrade", namespace: d.namespace, release: d.release }), disabled: (d) => writeBlocked(d, true) },
+    { key: "upgrade", label: t("actions.upgrade"), onClick: (d) => setUpgrading({ kind: "upgrade", namespace: d.namespace, release: d.release }), disabled: (d) => writeBlocked(d, true, true) },
     { key: "versions", label: t("actions.versions"), onClick: (d) => navigate(p(detailPath(d.release, d.namespace, "versions"))) },
     {
       key: "uninstall",

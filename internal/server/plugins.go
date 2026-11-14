@@ -7,11 +7,18 @@ import (
 )
 
 type pluginManifest struct {
-	ID          string             `json:"id"`
-	Entry       string             `json:"entry"`
-	Styles      []string           `json:"styles,omitempty"`
-	Menu        *config.PluginMenu `json:"menu"`
-	Development bool               `json:"development,omitempty"`
+	ID          string                 `json:"id"`
+	Entry       string                 `json:"entry"`
+	Styles      []string               `json:"styles,omitempty"`
+	Menu        *config.PluginMenu     `json:"menu"`
+	Development bool                   `json:"development,omitempty"`
+	Backend     *pluginBackendManifest `json:"backend,omitempty"`
+}
+
+type pluginBackendManifest struct {
+	Name            string `json:"name"`
+	Prefix          string `json:"prefix"`
+	WritePermission string `json:"writePermission,omitempty"`
 }
 
 func (s *Server) handlePluginIndex(writer http.ResponseWriter, _ *http.Request) {
