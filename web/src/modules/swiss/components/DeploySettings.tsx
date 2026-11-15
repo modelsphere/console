@@ -2386,7 +2386,10 @@ export function planRequest(
     gpuVendor: opts.gpuVendor,
     formLayer: opts.formLayer,
   });
-  const annotations = inputAnnotations(written, { replace: inputState?.present });
+  // A variant with inputs always sends the annotation, `[]` when nothing was
+  // typed or carried, so the next upgrade does not read site or default
+  // writes back from the form layer as release answers.
+  const annotations = inputAnnotations(written, { replace: !!opts.inputs?.length || inputState?.present });
 
   return {
     catalog: opts.catalog || undefined,
