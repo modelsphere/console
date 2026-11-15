@@ -127,8 +127,6 @@ export function typed(input: Input, text: string): unknown {
 }
 
 export const INPUTS_ANNOTATION = "swiss.modelsphere.dev/inputs";
-// swissd refuses a longer value with 400. Omitting the field keeps the previous one.
-const MAX_INPUT_ANNOTATION_BYTES = 16384;
 
 export interface InputRecord {
   key: string;
@@ -232,9 +230,7 @@ export function filledSiteAnswers(
 
 export function inputAnnotations(records: InputRecord[], opts?: { replace?: boolean }): Record<string, string> | undefined {
   if (!records.length && !opts?.replace) return undefined;
-  const json = JSON.stringify(records.map(({ key, value }) => ({ key, value })));
-  if (new TextEncoder().encode(json).length > MAX_INPUT_ANNOTATION_BYTES) return undefined;
-  return { [INPUTS_ANNOTATION]: json };
+  return { [INPUTS_ANNOTATION]: JSON.stringify(records) };
 }
 
 export interface InputWriteOpts {
@@ -243,9 +239,10 @@ export interface InputWriteOpts {
   site?: Record<string, string>;
 }
 
-// A field-only key sends a typed answer, or on an upgrade the release's; the
-// site and the default stay with swissd. A key swissd cannot write sends the
-// effective answer: typed, else release, else site, else the input's default.
+// Every key, a field-only dotted one included, writes the effective answer:
+// typed, else the release's, else the site's, else the input's default.
+// Only a typed answer or one carried from the release is returned, so a site
+// or default answer is in the form layer and not the annotation.
 export function setInputOverrides(
   overrides: Record<string, unknown>,
   inputs: Input[] | undefined,
@@ -255,16 +252,13 @@ export function setInputOverrides(
   const written: InputRecord[] = [];
   for (const input of inputs ?? []) {
     const typedText = answers[input.key]?.trim() ?? "";
-    let raw = typedText;
-    if (!raw) {
-      const release = opts?.release?.[input.key] ?? "";
-      raw = isFieldKey(input.key) ? release : release || opts?.site?.[input.key] || (input.default != null ? String(input.default) : "");
-    }
+    const release = opts?.release?.[input.key] ?? "";
+    const raw = typedText || release || opts?.site?.[input.key] || (input.default != null ? String(input.default) : "");
     if (!raw) continue;
     const value = typed(input, raw);
     const patcher = !input.type || input.type === "string" ? input.patcher : undefined;
     if (!writeAt(overrides, opts?.values, input.key, value, patcher)) continue;
-    written.push({ key: input.key, value });
+    if (typedText || release) written.push({ key: input.key, value });
   }
   return written;
 }

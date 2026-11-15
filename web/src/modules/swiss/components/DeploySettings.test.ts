@@ -146,7 +146,7 @@ describe("catalog input answers", () => {
   it("fills a list key from the site when nothing is typed", () => {
     const req = planRequest(EMPTY, { model: "glm", inputs: [arg], values, siteInputs: { [arg.key]: "mc-{{model}}" }, hf: "org/name" });
     expect(req.overrides?.extraArgs).toEqual(["mc-glm", "--bar"]);
-    expect(JSON.parse(req.additionalAnnotations?.[INPUTS_ANNOTATION] ?? "")).toEqual([{ key: arg.key, value: "mc-glm" }]);
+    expect(req.additionalAnnotations).toBeUndefined();
   });
 });
 

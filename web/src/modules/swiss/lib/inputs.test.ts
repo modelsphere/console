@@ -131,13 +131,23 @@ describe("setInputOverrides", () => {
       { key: port.key, value: 8050 },
     ]);
   });
-  it("writes a field-only release answer and leaves a site answer to swissd", () => {
+  it("writes a field key's site answer and default, and records only typed and release", () => {
     const layer: Record<string, unknown> = {};
-    setInputOverrides(layer, [master], {}, { release: { [master.key]: "mine:1" }, site: { [master.key]: "site:1" } });
+    expect(setInputOverrides(layer, [master], {}, { release: { [master.key]: "mine:1" }, site: { [master.key]: "site:1" } })).toEqual([
+      { key: master.key, value: "mine:1" },
+    ]);
     expect(layer).toEqual({ storageKVOffload: { mooncake: { master: "mine:1" } } });
     const typedWins: Record<string, unknown> = {};
-    setInputOverrides(typedWins, [master], { [master.key]: " typed:1 " }, { release: { [master.key]: "mine:1" } });
+    expect(setInputOverrides(typedWins, [master], { [master.key]: " typed:1 " }, { release: { [master.key]: "mine:1" } })).toEqual([
+      { key: master.key, value: "typed:1" },
+    ]);
     expect(typedWins).toEqual({ storageKVOffload: { mooncake: { master: "typed:1" } } });
+    const fromSite: Record<string, unknown> = {};
+    expect(setInputOverrides(fromSite, [master], {}, { site: { [master.key]: "site:1" } })).toEqual([]);
+    expect(fromSite).toEqual({ storageKVOffload: { mooncake: { master: "site:1" } } });
+    const fromDefault: Record<string, unknown> = {};
+    expect(setInputOverrides(fromDefault, [{ ...master, default: "tuned:1" }], {})).toEqual([]);
+    expect(fromDefault).toEqual({ storageKVOffload: { mooncake: { master: "tuned:1" } } });
   });
   it("writes a list key's effective answer into a copy of the variant list", () => {
     const arg: Input = { key: "extraArgs.[=--foo=1]", title: "t", example: "e", patcher: "pre-{value}" };
@@ -146,11 +156,17 @@ describe("setInputOverrides", () => {
     const siteOnly: Record<string, unknown> = {};
     const wrote = setInputOverrides(siteOnly, [arg], {}, { values, site: { [arg.key]: "site" } });
     expect(siteOnly).toEqual({ extraArgs: ["pre-site", "--bar"] });
-    expect(wrote).toEqual([{ key: arg.key, value: "site" }]);
+    expect(wrote).toEqual([]);
     expect(values).toEqual(before);
     const def: Record<string, unknown> = {};
-    setInputOverrides(def, [{ ...arg, patcher: undefined, default: "--foo=def" }], {}, { values });
+    expect(setInputOverrides(def, [{ ...arg, patcher: undefined, default: "--foo=def" }], {}, { values })).toEqual([]);
     expect(def).toEqual({ extraArgs: ["--foo=def", "--bar"] });
+    const typedList: Record<string, unknown> = {};
+    expect(setInputOverrides(typedList, [arg], { [arg.key]: " mine " }, { values, release: { [arg.key]: "rel" } })).toEqual([{ key: arg.key, value: "mine" }]);
+    expect(typedList).toEqual({ extraArgs: ["pre-mine", "--bar"] });
+    const releaseList: Record<string, unknown> = {};
+    expect(setInputOverrides(releaseList, [arg], {}, { values, release: { [arg.key]: "rel" }, site: { [arg.key]: "site" } })).toEqual([{ key: arg.key, value: "rel" }]);
+    expect(releaseList).toEqual({ extraArgs: ["pre-rel", "--bar"] });
     const none: Record<string, unknown> = {};
     expect(setInputOverrides(none, [{ ...arg, patcher: undefined }], {}, { values })).toEqual([]);
     expect(none).toEqual({});
@@ -176,7 +192,6 @@ describe("input annotations", () => {
     });
     expect(inputAnnotations([])).toBeUndefined();
     expect(inputAnnotations([], { replace: true })).toEqual({ [INPUTS_ANNOTATION]: "[]" });
-    expect(inputAnnotations([{ key: "a", value: "x".repeat(17000) }])).toBeUndefined();
   });
   it("parses defensively", () => {
     expect(parseInputRecords(undefined)).toEqual({ present: false, records: [] });
