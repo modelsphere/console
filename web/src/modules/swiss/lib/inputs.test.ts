@@ -127,8 +127,8 @@ describe("setInputOverrides", () => {
       service: { port: 8050 },
     });
     expect(written).toEqual([
-      { key: master.key, keyType: "kyaml", value: "mc:50051" },
-      { key: port.key, keyType: "kyaml", value: 8050 },
+      { key: master.key, value: "mc:50051" },
+      { key: port.key, value: 8050 },
     ]);
   });
   it("writes a field-only release answer and leaves a site answer to swissd", () => {
@@ -146,7 +146,7 @@ describe("setInputOverrides", () => {
     const siteOnly: Record<string, unknown> = {};
     const wrote = setInputOverrides(siteOnly, [arg], {}, { values, site: { [arg.key]: "site" } });
     expect(siteOnly).toEqual({ extraArgs: ["pre-site", "--bar"] });
-    expect(wrote).toEqual([{ key: arg.key, keyType: "kyaml", value: "site" }]);
+    expect(wrote).toEqual([{ key: arg.key, value: "site" }]);
     expect(values).toEqual(before);
     const def: Record<string, unknown> = {};
     setInputOverrides(def, [{ ...arg, patcher: undefined, default: "--foo=def" }], {}, { values });
@@ -163,26 +163,26 @@ describe("setInputOverrides", () => {
 describe("input annotations", () => {
   it("records written answers in variant order, typed, before the patcher", () => {
     const got = inputAnnotations([
-      { key: "b", keyType: "kyaml", value: true },
-      { key: "a", keyType: "kyaml", value: "mc" },
-      { key: port.key, keyType: "kyaml", value: 8050 },
+      { key: "b", value: true },
+      { key: "a", value: "mc" },
+      { key: port.key, value: 8050 },
     ]);
     expect(got).toEqual({
       [INPUTS_ANNOTATION]: JSON.stringify([
-        { key: "b", keyType: "kyaml", value: true },
-        { key: "a", keyType: "kyaml", value: "mc" },
-        { key: port.key, keyType: "kyaml", value: 8050 },
+        { key: "b", value: true },
+        { key: "a", value: "mc" },
+        { key: port.key, value: 8050 },
       ]),
     });
     expect(inputAnnotations([])).toBeUndefined();
     expect(inputAnnotations([], { replace: true })).toEqual({ [INPUTS_ANNOTATION]: "[]" });
-    expect(inputAnnotations([{ key: "a", keyType: "kyaml", value: "x".repeat(17000) }])).toBeUndefined();
+    expect(inputAnnotations([{ key: "a", value: "x".repeat(17000) }])).toBeUndefined();
   });
   it("parses defensively", () => {
     expect(parseInputRecords(undefined)).toEqual({ present: false, records: [] });
     expect(parseInputRecords("not json")).toEqual({ present: true, records: [] });
     expect(parseInputRecords('{"key":"a"}')).toEqual({ present: true, records: [] });
-    expect(parseInputRecords('[{"key":"a","keyType":"kyaml","value":1},{"nope":true},{"key":"b","value":"s"},{"key":"c","keyType":"other","value":"z"},{"key":"d","value":null}]')).toEqual({
+    expect(parseInputRecords('[{"key":"a","value":1},{"nope":true},{"key":"b","value":"s"},{"key":"d","value":null}]')).toEqual({
       present: true,
       records: [
         { key: "a", value: 1 },
@@ -198,10 +198,10 @@ describe("upgrade recheck", () => {
   const inputs = [master, arg, broken];
   const values = { extraArgs: ["--foo=1", "--bar"], volumes: [{ name: "other", path: "/x" }] };
   const annotation = JSON.stringify([
-    { key: master.key, keyType: "kyaml", value: "mine:1" },
-    { key: "old.flag", keyType: "kyaml", value: "gone" },
-    { key: arg.key, keyType: "kyaml", value: "yes" },
-    { key: broken.key, keyType: "kyaml", value: "/old" },
+    { key: master.key, value: "mine:1" },
+    { key: "old.flag", value: "gone" },
+    { key: arg.key, value: "yes" },
+    { key: broken.key, value: "/old" },
   ]);
 
   it("marks a missing key deprecated and a list key that does not resolve broken", () => {

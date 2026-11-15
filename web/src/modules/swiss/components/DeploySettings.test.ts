@@ -112,9 +112,9 @@ describe("catalog input answers", () => {
   const arg: Input = { key: "extraArgs.[=--foo=1]", title: "t", example: "e" };
   const values = { extraArgs: ["--foo=1", "--bar"] };
   const annotation = JSON.stringify([
-    { key: master.key, keyType: "kyaml", value: "mine:1" },
-    { key: "old.flag", keyType: "kyaml", value: "gone" },
-    { key: arg.key, keyType: "kyaml", value: "yes" },
+    { key: master.key, value: "mine:1" },
+    { key: "old.flag", value: "gone" },
+    { key: arg.key, value: "yes" },
   ]);
 
   it("records what the form writes and rebuilds the release form layer from the new variant", () => {
@@ -136,8 +136,8 @@ describe("catalog input answers", () => {
     });
     expect(req.overrides).not.toHaveProperty("old.flag");
     expect(JSON.parse(req.additionalAnnotations?.[INPUTS_ANNOTATION] ?? "")).toEqual([
-      { key: master.key, keyType: "kyaml", value: "new:1" },
-      { key: arg.key, keyType: "kyaml", value: "yes" },
+      { key: master.key, value: "new:1" },
+      { key: arg.key, value: "yes" },
     ]);
     expect(formLayer.extraArgs).toEqual(["--foo=OLD", "--bar"]);
     expect(values.extraArgs).toEqual(["--foo=1", "--bar"]);
@@ -146,7 +146,7 @@ describe("catalog input answers", () => {
   it("fills a list key from the site when nothing is typed", () => {
     const req = planRequest(EMPTY, { model: "glm", inputs: [arg], values, siteInputs: { [arg.key]: "mc-{{model}}" }, hf: "org/name" });
     expect(req.overrides?.extraArgs).toEqual(["mc-glm", "--bar"]);
-    expect(JSON.parse(req.additionalAnnotations?.[INPUTS_ANNOTATION] ?? "")).toEqual([{ key: arg.key, keyType: "kyaml", value: "mc-glm" }]);
+    expect(JSON.parse(req.additionalAnnotations?.[INPUTS_ANNOTATION] ?? "")).toEqual([{ key: arg.key, value: "mc-glm" }]);
   });
 });
 

@@ -127,13 +127,11 @@ export function typed(input: Input, text: string): unknown {
 }
 
 export const INPUTS_ANNOTATION = "swiss.modelsphere.dev/inputs";
-export const INPUT_KEY_TYPE = "kyaml" as const;
 // swissd refuses a longer value with 400. Omitting the field keeps the previous one.
 const MAX_INPUT_ANNOTATION_BYTES = 16384;
 
 export interface InputRecord {
   key: string;
-  keyType: typeof INPUT_KEY_TYPE;
   value: unknown;
 }
 
@@ -164,7 +162,6 @@ export function parseInputRecords(raw: string | undefined): { present: boolean; 
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const rec = item as Record<string, unknown>;
     if (typeof rec.key !== "string") continue;
-    if (rec.keyType !== undefined && rec.keyType !== INPUT_KEY_TYPE) continue;
     if (typeof rec.value !== "string" && typeof rec.value !== "number" && typeof rec.value !== "boolean") continue;
     records.push({ key: rec.key, value: rec.value });
   }
@@ -235,7 +232,7 @@ export function filledSiteAnswers(
 
 export function inputAnnotations(records: InputRecord[], opts?: { replace?: boolean }): Record<string, string> | undefined {
   if (!records.length && !opts?.replace) return undefined;
-  const json = JSON.stringify(records.map(({ key, value }) => ({ key, keyType: INPUT_KEY_TYPE, value })));
+  const json = JSON.stringify(records.map(({ key, value }) => ({ key, value })));
   if (new TextEncoder().encode(json).length > MAX_INPUT_ANNOTATION_BYTES) return undefined;
   return { [INPUTS_ANNOTATION]: json };
 }
@@ -267,7 +264,7 @@ export function setInputOverrides(
     const value = typed(input, raw);
     const patcher = !input.type || input.type === "string" ? input.patcher : undefined;
     if (!writeAt(overrides, opts?.values, input.key, value, patcher)) continue;
-    written.push({ key: input.key, keyType: INPUT_KEY_TYPE, value });
+    written.push({ key: input.key, value });
   }
   return written;
 }
