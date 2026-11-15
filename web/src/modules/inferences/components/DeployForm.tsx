@@ -27,7 +27,7 @@ import { editRule, listLabel, type AffinityRule } from "@swiss/lib/affinity";
 import { toYaml } from "@swiss/lib/yaml";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { pickableProducts, productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
-import { CHECK_MS, inputError, rememberable, type InputRow } from "@swiss/lib/inputs";
+import { CHECK_MS, inputError, rememberable, type DroppedInput, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { effective, tolerationExtras, type Form, type Toleration } from "@swiss/components/DeploySettings";
 import { imagePatch, imageRows, imageText, slotImageChoices, type ImageSlot } from "@swiss/lib/imageSlots";
@@ -88,6 +88,8 @@ export interface DeployFormProps {
   recovery?: ReactNode;
   // The variant's inputs, each with the answer that applies when its field is left empty.
   inputs?: InputRow[];
+  // Old answers the new variant no longer accepts.
+  droppedInputs?: DroppedInput[];
   // Which typed answers to save to the site profile once the deploy applies; absent where it cannot be saved.
   remember?: Record<string, boolean>;
   onRemember?: (key: string, on: boolean) => void;
@@ -97,7 +99,7 @@ export interface DeployFormProps {
   taints?: ClusterTaint[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, resources, pd, nodes, gpuSpecs, gpuVendor, recovery, inputs, remember, onRemember, presets, taints }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, resources, pd, nodes, gpuSpecs, gpuVendor, recovery, inputs, droppedInputs, remember, onRemember, presets, taints }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -217,6 +219,18 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           <FloatingField value={shown(form.localPath, defaults.localPath || defaults.localPathTemplate)} label={f("localPath")} hint={f("localPathHint")}>
             <Suggest value={form.localPath} onChange={(localPath) => onChange({ localPath })} suggestion={defaults.localPath} placeholder={defaults.localPath || defaults.localPathTemplate} />
           </FloatingField>
+          {!!droppedInputs?.length && (
+            <div className="flex items-start gap-2 text-sm text-warning">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+              <div className="min-w-0 space-y-1">
+                {droppedInputs.map((d) => (
+                  <p key={d.key} className="break-all">
+                    {t(d.reason === "deprecated" ? "deploy.fields.inputDroppedDeprecated" : "deploy.fields.inputDroppedBroken", { key: d.key, value: d.value })}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
           {inputs?.map((row) => {
             const { input, answer, choices, site } = row;
             const value = form.inputs[input.key] ?? "";

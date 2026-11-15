@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Plan } from "@swiss/lib/api";
+import type { Input, Plan } from "@swiss/lib/api";
+import { INPUTS_ANNOTATION } from "@swiss/lib/inputs";
 import { applyFlags, EMPTY, formFromPlan, planRequest, reseed, siteSwitchDefaults, switchDefaults } from "./DeploySettings";
 
 const site = { modelRoute: false, cart: true, serviceMonitor: false, sloRequirement: true, scaler: false };
@@ -103,6 +104,49 @@ describe("applyFlags", () => {
   it("starts off on an upgrade, whatever the plan says", () => {
     const plan = { release: { name: "r", namespace: "n" }, layers: {}, skipSchemaValidation: true, createNamespace: true } as unknown as Plan;
     expect(formFromPlan(plan)).toMatchObject({ skipSchemaValidation: false, createNamespace: false });
+  });
+});
+
+describe("catalog input answers", () => {
+  const master: Input = { key: "storageKVOffload.mooncake.master", title: "t", example: "e" };
+  const arg: Input = { key: "extraArgs.[=--foo=1]", title: "t", example: "e" };
+  const values = { extraArgs: ["--foo=1", "--bar"] };
+  const annotation = JSON.stringify([
+    { key: master.key, keyType: "kyaml", value: "mine:1" },
+    { key: "old.flag", keyType: "kyaml", value: "gone" },
+    { key: arg.key, keyType: "kyaml", value: "yes" },
+  ]);
+
+  it("records what the form writes and rebuilds the release form layer from the new variant", () => {
+    const formLayer = {
+      storageKVOffload: { mooncake: { master: "mine:1", protocol: "rdma" } },
+      old: { flag: "gone", keep: 1 },
+      extraArgs: ["--foo=OLD", "--bar"],
+      untouched: 1,
+    };
+    const req = planRequest(
+      { ...EMPTY, inputs: { [master.key]: " new:1 " } },
+      { model: "m", inputs: [master, arg], values, formLayer, inputsAnnotation: annotation, siteInputs: { [arg.key]: "site-{{model}}" }, hf: "" },
+    );
+    expect(req.overrides).toMatchObject({
+      storageKVOffload: { mooncake: { master: "new:1", protocol: "rdma" } },
+      old: { keep: 1 },
+      extraArgs: ["yes", "--bar"],
+      untouched: 1,
+    });
+    expect(req.overrides).not.toHaveProperty("old.flag");
+    expect(JSON.parse(req.additionalAnnotations?.[INPUTS_ANNOTATION] ?? "")).toEqual([
+      { key: master.key, keyType: "kyaml", value: "new:1" },
+      { key: arg.key, keyType: "kyaml", value: "yes" },
+    ]);
+    expect(formLayer.extraArgs).toEqual(["--foo=OLD", "--bar"]);
+    expect(values.extraArgs).toEqual(["--foo=1", "--bar"]);
+  });
+
+  it("fills a list key from the site when nothing is typed", () => {
+    const req = planRequest(EMPTY, { model: "glm", inputs: [arg], values, siteInputs: { [arg.key]: "mc-{{model}}" }, hf: "org/name" });
+    expect(req.overrides?.extraArgs).toEqual(["mc-glm", "--bar"]);
+    expect(JSON.parse(req.additionalAnnotations?.[INPUTS_ANNOTATION] ?? "")).toEqual([{ key: arg.key, keyType: "kyaml", value: "mc-glm" }]);
   });
 });
 

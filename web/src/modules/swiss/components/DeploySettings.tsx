@@ -4,7 +4,7 @@ import type { ApplyFlags, ClusterInfo, GPUSpec, Input as CatalogInput, Node, Pla
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { pickableProducts, productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
-import { CHECK_MS, inputError, inputProblem, rememberable, setInputOverrides, type InputChoice, type InputRow } from "@swiss/lib/inputs";
+import { CHECK_MS, dropInputWrites, filledSiteAnswers, inputAnnotations, inputError, inputProblem, releaseInputState, rememberable, setInputOverrides, type DroppedInput, type InputChoice, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
 import { envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
@@ -239,6 +239,7 @@ export function DeploySettings({
   localPathDefault,
   localPathPlaceholder,
   inputs,
+  droppedInputs,
   image,
   imageMirror,
   slots,
@@ -274,6 +275,8 @@ export function DeploySettings({
   localPathDefault?: string;
   localPathPlaceholder?: string;
   inputs?: InputRow[];
+  // Old answers the new variant no longer accepts, shown above the input rows.
+  droppedInputs?: DroppedInput[];
   // The engine image the catalog pins, and what the site's mirror rewrites it
   // to. Equal when this site mirrors nothing, which is when there is no rewrite
   // to offer a choice about.
@@ -404,6 +407,20 @@ export function DeploySettings({
               placeholder={localPathDefault ?? localPathPlaceholder}
             />
           </Row>
+
+          {!!droppedInputs?.length && (
+            <div className="flex items-start gap-2 py-2.5 text-sm text-warning">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+              <div className="min-w-0 space-y-1">
+                {droppedInputs.map((d) => (
+                  <p key={d.key} className="break-all">
+                    {d.reason === "deprecated" ? "No longer an input" : "Does not match this variant"}: {d.key}
+                    {d.value ? ` (${d.value})` : ""}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
 
           {inputs?.map((row) => {
             const { input, answer, from, choices, site } = row;
@@ -2229,8 +2246,15 @@ export function planRequest(
     forceGpuProducts?: boolean;
     // The chart has no cache section (CHART_FEATURES): the switch is forced off.
     cacheUnsupported?: boolean;
-    // To send the form's answers typed.
+    // To send the form's answers typed. Absent until the variant has loaded;
+    // an empty list is a variant that declares none.
     inputs?: CatalogInput[];
+    // The release plan's swiss.modelsphere.dev/inputs value. Absent on a release
+    // deployed before answers were recorded.
+    inputsAnnotation?: string;
+    // Site profile answers. A list key writes one; a field key leaves it to swissd.
+    siteInputs?: Record<string, string | number | boolean>;
+    hf?: string;
     // The values of the preset f picks.
     preset?: Record<string, unknown>;
     // The release's form layer, on an upgrade: the form's values are put over
@@ -2336,13 +2360,23 @@ export function planRequest(
   if (f.priorityClassName.trim()) overrides.priorityClassName = f.priorityClassName.trim();
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
 
-  setInputOverrides(overrides, opts.inputs, f.inputs);
+  // Absent inputs means the variant is not loaded yet: leave the release's
+  // input writes where they are instead of treating every old answer as dropped.
+  const inputState = opts.inputs
+    ? releaseInputState(opts.inputs, opts.values, opts.formLayer, opts.inputsAnnotation)
+    : undefined;
+  const written = setInputOverrides(overrides, opts.inputs, f.inputs, {
+    values: opts.values,
+    release: inputState?.answers,
+    site: filledSiteAnswers(opts.inputs, opts.siteInputs, opts.hf ?? "", opts.model),
+  });
   const siteEnv = envBase(opts.siteEnv);
   const preset = Object.keys(siteEnv).length ? (opts.preset ? withPreset(opts.preset, siteEnv) : siteEnv) : opts.preset;
   const base = opts.formLayer ? structuredClone(opts.formLayer) : undefined;
   if (base) {
     dropClearedImages(base, f.images);
     dropClearedResources(base, resourceEdits);
+    if (inputState?.present) dropInputWrites(base, inputState.dropKeys);
   }
   const layer = withEnv(opts.values, withPreset(base ? overlay(base, overrides) : overrides, preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
@@ -2352,6 +2386,7 @@ export function planRequest(
     gpuVendor: opts.gpuVendor,
     formLayer: opts.formLayer,
   });
+  const annotations = inputAnnotations(written, { replace: inputState?.present });
 
   return {
     catalog: opts.catalog || undefined,
@@ -2371,6 +2406,7 @@ export function planRequest(
     serviceId: f.serviceId.trim() || undefined,
     localPath: f.localPath.trim() || undefined,
     overrides: layer,
+    ...(annotations && { additionalAnnotations: annotations }),
   };
 }
 

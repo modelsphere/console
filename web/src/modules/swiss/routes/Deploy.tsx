@@ -143,6 +143,8 @@ export function Deploy() {
           forceGpuProducts: unlistedProducts(model.data.variant.requires.gpuProduct, f.gpuProducts).length > 0,
           cacheUnsupported: !!cache.unsupported,
           inputs: model.data.variant.inputs,
+          siteInputs: profile.data?.profile?.inputs,
+          hf: model.data.model.source?.hf,
           preset: presetValues(profile.data?.profile, f.preset),
           values: model.data.variant.values,
           siteEnv: profile.data?.profile?.extra,

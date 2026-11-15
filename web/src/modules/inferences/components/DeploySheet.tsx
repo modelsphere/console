@@ -35,7 +35,7 @@ import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
 import { deployCapacity, gpuShort, pickableProducts, productChoices, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { isChartRange, movableCatalogs } from "@swiss/lib/upgrade";
-import { CHECK_MS, inputRows, inputsAnswered, siteSaves, type SiteSave } from "@swiss/lib/inputs";
+import { CHECK_MS, INPUTS_ANNOTATION, inputRows, inputsAnswered, releaseInputState, siteSaves, type SiteSave } from "@swiss/lib/inputs";
 import { affinityInvalid } from "@swiss/lib/affinity";
 import { saveSiteAnswers } from "@swiss/lib/siteAnswers";
 import { messageOf, useToast } from "@swiss/components/ui/toast";
@@ -214,7 +214,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // A product the variant does not list is one swissd takes only as forced.
   const forceGpuProducts = unlistedProducts(v?.requires.gpuProduct, form.gpuProducts).length > 0;
   const change = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
-  const inputs = inputRows(v?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", modelName ?? "", v?.values, upgrade ? current.data?.layers?.form : undefined);
+  const inputsAnnotation = upgrade ? current.data?.additionalAnnotations?.[INPUTS_ANNOTATION] : undefined;
+  const inputs = inputRows(v?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", modelName ?? "", v?.values, upgrade ? current.data?.layers?.form : undefined, inputsAnnotation);
+  const droppedInputs = upgrade && entry.data ? releaseInputState(v?.inputs ?? [], v?.values, current.data?.layers?.form, inputsAnnotation).dropped : [];
   // A profile swissd did not parse is not written to from here.
   const canRemember = profile.data?.yaml !== undefined && !profile.data.error && !!cluster.data?.allowDeploy;
   const saves = canRemember ? siteSaves(inputs, form.inputs, remember) : [];
@@ -222,8 +224,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const requestFor = (f: Form) => planRequest(
     { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
     upgrade
-      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: v?.inputs, formLayer: seedPlan?.layers?.form, values: v?.values ?? seedPlan?.layers?.catalog }
-      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: v?.inputs, values: v?.values },
+      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: entry.data ? (v?.inputs ?? []) : undefined, inputsAnnotation: seedPlan?.additionalAnnotations?.[INPUTS_ANNOTATION], hf: entry.data?.model.source?.hf, formLayer: seedPlan?.layers?.form, values: v?.values ?? seedPlan?.layers?.catalog }
+      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: v?.inputs, hf: entry.data?.model.source?.hf, values: v?.values },
     profile.data?.profile,
   );
   // An upgrade waits for the profile too: it decides Monitor (planRequest).
@@ -564,6 +566,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               idPrefix={ID_PREFIX}
               helmValues={readOnly ? undefined : valuesSource}
               inputs={inputs}
+              droppedInputs={droppedInputs}
               remember={canRemember ? remember : undefined}
               onRemember={(key, on) => setRemember((r) => ({ ...r, [key]: on }))}
               presets={upgrade ? undefined : profile.data?.profile?.presets}

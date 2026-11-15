@@ -621,6 +621,8 @@
         "site": "站点配置",
         "variant": "变体默认值"
       },
+      "inputDroppedDeprecated": "不再是输入项：{key}（{value}）",
+      "inputDroppedBroken": "与此变体不匹配：{key}（{value}）",
       "inputProblem": {
         "string": "需匹配 {pattern}",
         "integer": "请输入整数",

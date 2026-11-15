@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Input, SiteProfile } from "./api";
-import { answerText, fillTemplate, inputError, inputProblem, inputRows, inputsAnswered, parseAnswer, rememberable, setInputOverrides, siteSaves } from "./inputs";
+import { overlay } from "./formLayer";
+import { dropInputWrites, fillTemplate, inputAnnotations, inputError, inputProblem, inputRows, inputsAnswered, INPUTS_ANNOTATION, parseAnswer, parseInputRecords, releaseInputState, rememberable, setInputOverrides, siteSaves, answerText } from "./inputs";
 
 const master: Input = {
   key: "storageKVOffload.mooncake.master",
@@ -116,7 +117,7 @@ describe("saving an answer to the site profile", () => {
 describe("setInputOverrides", () => {
   it("sends only typed answers, typed, beside the other overrides in a section", () => {
     const overrides: Record<string, unknown> = { storageKVOffload: { enabled: true }, service: "dropped" };
-    setInputOverrides(overrides, [master, port, { ...master, key: "unset.here" }], {
+    const written = setInputOverrides(overrides, [master, port, { ...master, key: "unset.here" }], {
       [master.key]: " mc:50051 ",
       [port.key]: "8050",
       "unset.here": "  ",
@@ -125,6 +126,127 @@ describe("setInputOverrides", () => {
       storageKVOffload: { enabled: true, mooncake: { master: "mc:50051" } },
       service: { port: 8050 },
     });
+    expect(written).toEqual([
+      { key: master.key, keyType: "kyaml", value: "mc:50051" },
+      { key: port.key, keyType: "kyaml", value: 8050 },
+    ]);
+  });
+  it("writes a field-only release answer and leaves a site answer to swissd", () => {
+    const layer: Record<string, unknown> = {};
+    setInputOverrides(layer, [master], {}, { release: { [master.key]: "mine:1" }, site: { [master.key]: "site:1" } });
+    expect(layer).toEqual({ storageKVOffload: { mooncake: { master: "mine:1" } } });
+    const typedWins: Record<string, unknown> = {};
+    setInputOverrides(typedWins, [master], { [master.key]: " typed:1 " }, { release: { [master.key]: "mine:1" } });
+    expect(typedWins).toEqual({ storageKVOffload: { mooncake: { master: "typed:1" } } });
+  });
+  it("writes a list key's effective answer into a copy of the variant list", () => {
+    const arg: Input = { key: "extraArgs.[=--foo=1]", title: "t", example: "e", patcher: "pre-{value}" };
+    const values = { extraArgs: ["--foo=1", "--bar"] };
+    const before = structuredClone(values);
+    const siteOnly: Record<string, unknown> = {};
+    const wrote = setInputOverrides(siteOnly, [arg], {}, { values, site: { [arg.key]: "site" } });
+    expect(siteOnly).toEqual({ extraArgs: ["pre-site", "--bar"] });
+    expect(wrote).toEqual([{ key: arg.key, keyType: "kyaml", value: "site" }]);
+    expect(values).toEqual(before);
+    const def: Record<string, unknown> = {};
+    setInputOverrides(def, [{ ...arg, patcher: undefined, default: "--foo=def" }], {}, { values });
+    expect(def).toEqual({ extraArgs: ["--foo=def", "--bar"] });
+    const none: Record<string, unknown> = {};
+    expect(setInputOverrides(none, [{ ...arg, patcher: undefined }], {}, { values })).toEqual([]);
+    expect(none).toEqual({});
+    const missed: Record<string, unknown> = {};
+    expect(setInputOverrides(missed, [arg], { [arg.key]: "x" }, { values: { extraArgs: ["--bar"] } })).toEqual([]);
+    expect(missed).toEqual({});
+  });
+});
+
+describe("input annotations", () => {
+  it("records written answers in variant order, typed, before the patcher", () => {
+    const got = inputAnnotations([
+      { key: "b", keyType: "kyaml", value: true },
+      { key: "a", keyType: "kyaml", value: "mc" },
+      { key: port.key, keyType: "kyaml", value: 8050 },
+    ]);
+    expect(got).toEqual({
+      [INPUTS_ANNOTATION]: JSON.stringify([
+        { key: "b", keyType: "kyaml", value: true },
+        { key: "a", keyType: "kyaml", value: "mc" },
+        { key: port.key, keyType: "kyaml", value: 8050 },
+      ]),
+    });
+    expect(inputAnnotations([])).toBeUndefined();
+    expect(inputAnnotations([], { replace: true })).toEqual({ [INPUTS_ANNOTATION]: "[]" });
+    expect(inputAnnotations([{ key: "a", keyType: "kyaml", value: "x".repeat(17000) }])).toBeUndefined();
+  });
+  it("parses defensively", () => {
+    expect(parseInputRecords(undefined)).toEqual({ present: false, records: [] });
+    expect(parseInputRecords("not json")).toEqual({ present: true, records: [] });
+    expect(parseInputRecords('{"key":"a"}')).toEqual({ present: true, records: [] });
+    expect(parseInputRecords('[{"key":"a","keyType":"kyaml","value":1},{"nope":true},{"key":"b","value":"s"},{"key":"c","keyType":"other","value":"z"},{"key":"d","value":null}]')).toEqual({
+      present: true,
+      records: [
+        { key: "a", value: 1 },
+        { key: "b", value: "s" },
+      ],
+    });
+  });
+});
+
+describe("upgrade recheck", () => {
+  const arg: Input = { key: "extraArgs.[=--foo=1]", title: "t", example: "e" };
+  const broken: Input = { key: "volumes.[name=nope].path", title: "t", example: "e" };
+  const inputs = [master, arg, broken];
+  const values = { extraArgs: ["--foo=1", "--bar"], volumes: [{ name: "other", path: "/x" }] };
+  const annotation = JSON.stringify([
+    { key: master.key, keyType: "kyaml", value: "mine:1" },
+    { key: "old.flag", keyType: "kyaml", value: "gone" },
+    { key: arg.key, keyType: "kyaml", value: "yes" },
+    { key: broken.key, keyType: "kyaml", value: "/old" },
+  ]);
+
+  it("marks a missing key deprecated and a list key that does not resolve broken", () => {
+    const state = releaseInputState(inputs, values, undefined, annotation);
+    expect(state.dropped).toEqual([
+      { key: "old.flag", value: "gone", reason: "deprecated" },
+      { key: broken.key, value: "/old", reason: "broken" },
+    ]);
+    expect(state.answers).toEqual({ [master.key]: "mine:1", [arg.key]: "yes" });
+    expect(releaseInputState([{ ...master, key: "a.b" }], {}, undefined, JSON.stringify([{ key: "a.b", value: "mine" }])).dropped).toEqual([]);
+    expect(releaseInputState([master], undefined, { storageKVOffload: { mooncake: { master: "form:1" } } }, undefined).answers).toEqual({ [master.key]: "form:1" });
+    expect(releaseInputState([arg], values, { extraArgs: ["--foo=1"] }, undefined).answers).toEqual({});
+  });
+
+  it("drops the old leaf and the copied list, then rewrites against the new variant", () => {
+    const state = releaseInputState(inputs, values, undefined, annotation);
+    const base: Record<string, unknown> = {
+      storageKVOffload: { enabled: true, mooncake: { master: "mine:1", protocol: "rdma" } },
+      old: { flag: "gone", keep: 1 },
+      extraArgs: ["--foo=OLD", "--bar"],
+      volumes: [{ name: "nope", path: "/old" }],
+      untouched: 1,
+    };
+    dropInputWrites(base, state.dropKeys);
+    const overrides: Record<string, unknown> = {};
+    setInputOverrides(overrides, inputs, { [master.key]: " new:1 " }, { values, release: state.answers });
+    expect(overlay(base, overrides)).toEqual({
+      storageKVOffload: { enabled: true, mooncake: { master: "new:1", protocol: "rdma" } },
+      old: { keep: 1 },
+      extraArgs: ["yes", "--bar"],
+      untouched: 1,
+    });
+  });
+
+  it("shows a recorded answer over the form layer, and not a broken one", () => {
+    const rows = inputRows(inputs, site({}), "a/b", "m", values, { storageKVOffload: { mooncake: { master: "form:1" } }, extraArgs: ["yes"] }, annotation);
+    expect(rows[0]).toMatchObject({ answer: "mine:1", from: "release" });
+    expect(rows[1]).toMatchObject({ answer: "yes", from: "release" });
+    expect(rows[2].from).not.toBe("release");
+  });
+
+  it("reads a patcher back to the answer", () => {
+    const input: Input = { key: "extraArgs.[^=--flag=]", title: "t", example: "/m", patcher: "--flag={value}" };
+    expect(inputRows([input], site({}), "a/b", "m", { extraArgs: ["--flag=/models/draft", "--x"] })[0]).toMatchObject({ answer: "/models/draft", from: "variant" });
+    expect(inputRows([{ ...input, patcher: "nope-{value}-tail" }], site({}), "a/b", "m", { extraArgs: ["--flag=/models/draft"] })[0].answer).toBeUndefined();
   });
 });
 

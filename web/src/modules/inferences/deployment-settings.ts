@@ -21,4 +21,5 @@ export const planRequest = (form: Form, options: Parameters<typeof swissPlanRequ
     gpuSpecs: profile?.nodes?.gpus ?? options.gpuSpecs,
     preset: presetValues(profile, form.preset),
     siteEnv: profile?.extra ?? options.siteEnv,
+    siteInputs: options.siteInputs ?? profile?.inputs,
   });

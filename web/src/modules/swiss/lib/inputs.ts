@@ -1,4 +1,5 @@
 import type { Input, SiteProfile } from "./api";
+import { dropWritten, findAt, isFieldKey, readAt, splitKey, writeAt } from "./inputKey";
 
 export interface InputChoice {
   answer: string;
@@ -26,14 +27,8 @@ export function fillTemplate(tmpl: string, hf: string, model: string): string | 
   return out.includes("{{") ? undefined : out;
 }
 
-export function answerAt(tree: Record<string, unknown> | undefined, key: string): string | undefined {
-  let node: unknown = tree;
-  for (const k of key.split(".")) {
-    if (!node || typeof node !== "object" || Array.isArray(node)) return undefined;
-    node = (node as Record<string, unknown>)[k];
-  }
-  if (node === undefined || node === null || typeof node === "object") return undefined;
-  return String(node);
+export function answerAt(tree: Record<string, unknown> | undefined, key: string, patcher?: string): string | undefined {
+  return readAt(tree, key, patcher);
 }
 
 // The order swissd answers in: the release's form layer (carried forward on upgrade),
@@ -45,14 +40,16 @@ export function inputRows(
   model: string,
   variantValues?: Record<string, unknown>,
   release?: Record<string, unknown>,
+  annotation?: string,
 ): InputRow[] {
+  const recorded = releaseInputState(inputs, variantValues, release, annotation).answers;
   return (inputs ?? []).map((input) => {
     const v = profile?.inputs?.[input.key];
     const site = v === undefined || v === null ? undefined : { answer: typeof v === "string" ? fillTemplate(v, hf, model) : String(v), written: String(v) };
     const found: [string | undefined, InputChoice["from"]][] = [
-      [answerAt(release, input.key), "release"],
+      [recorded[input.key], "release"],
       [site?.answer, "site"],
-      [input.default !== undefined && input.default !== null ? String(input.default) : answerAt(variantValues, input.key), "variant"],
+      [input.default !== undefined && input.default !== null ? String(input.default) : answerAt(variantValues, input.key, input.patcher), "variant"],
     ];
     const answers = found.flatMap(([answer, from]) => (answer === undefined ? [] : [{ answer, from }]));
     if (!answers.length) return site ? { input, site } : { input };
@@ -129,20 +126,150 @@ export function typed(input: Input, text: string): unknown {
   }
 }
 
-// An empty field sends nothing, so its answer stays the site's and follows the profile.
-export function setInputOverrides(overrides: Record<string, unknown>, inputs: Input[] | undefined, answers: Record<string, string>) {
-  for (const input of inputs ?? []) {
-    const text = answers[input.key]?.trim();
-    if (!text) continue;
-    const keys = input.key.split(".");
-    let node = overrides;
-    for (const key of keys.slice(0, -1)) {
-      const next = node[key];
-      if (!next || typeof next !== "object" || Array.isArray(next)) node[key] = {};
-      node = node[key] as Record<string, unknown>;
-    }
-    node[keys[keys.length - 1]] = typed(input, text);
+export const INPUTS_ANNOTATION = "swiss.modelsphere.dev/inputs";
+export const INPUT_KEY_TYPE = "kyaml" as const;
+// swissd refuses a longer value with 400. Omitting the field keeps the previous one.
+const MAX_INPUT_ANNOTATION_BYTES = 16384;
+
+export interface InputRecord {
+  key: string;
+  keyType: typeof INPUT_KEY_TYPE;
+  value: unknown;
+}
+
+export interface DroppedInput {
+  key: string;
+  value: string;
+  reason: "deprecated" | "broken";
+}
+
+type Recorded = { key: string; value: string | number | boolean };
+
+function onePrimitive(root: unknown, key: string): boolean {
+  const found = findAt(root, splitKey(key));
+  return found.length === 1 && ["string", "number", "boolean"].includes(typeof found[0].value);
+}
+
+export function parseInputRecords(raw: string | undefined): { present: boolean; records: Recorded[] } {
+  if (raw === undefined) return { present: false, records: [] };
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return { present: true, records: [] };
   }
+  if (!Array.isArray(data)) return { present: true, records: [] };
+  const records: Recorded[] = [];
+  for (const item of data) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    if (typeof rec.key !== "string") continue;
+    if (rec.keyType !== undefined && rec.keyType !== INPUT_KEY_TYPE) continue;
+    if (typeof rec.value !== "string" && typeof rec.value !== "number" && typeof rec.value !== "boolean") continue;
+    records.push({ key: rec.key, value: rec.value });
+  }
+  return { present: true, records };
+}
+
+// Annotation present: recheck every recorded answer against the new variant.
+// None: field-only keys still read from the release form layer, as they did before.
+export function releaseInputState(
+  inputs: Input[] | undefined,
+  values: Record<string, unknown> | undefined,
+  formLayer: Record<string, unknown> | undefined,
+  annotation: string | undefined,
+): { present: boolean; answers: Record<string, string>; dropped: DroppedInput[]; dropKeys: string[] } {
+  const parsed = parseInputRecords(annotation);
+  if (!parsed.present) {
+    const answers: Record<string, string> = {};
+    for (const input of inputs ?? []) {
+      if (!isFieldKey(input.key)) continue;
+      const text = answerAt(formLayer, input.key, input.patcher);
+      if (text !== undefined) answers[input.key] = text;
+    }
+    return { present: false, answers, dropped: [], dropKeys: [] };
+  }
+  const byKey = new Map((inputs ?? []).map((input) => [input.key, input]));
+  const answers: Record<string, string> = {};
+  const dropped: DroppedInput[] = [];
+  const dropKeys: string[] = [];
+  const seen = new Set<string>();
+  for (const rec of parsed.records) {
+    if (seen.has(rec.key)) continue;
+    seen.add(rec.key);
+    dropKeys.push(rec.key);
+    const value = String(rec.value);
+    if (!byKey.has(rec.key)) {
+      dropped.push({ key: rec.key, value, reason: "deprecated" });
+      continue;
+    }
+    if (!isFieldKey(rec.key) && !onePrimitive(values, rec.key)) {
+      dropped.push({ key: rec.key, value, reason: "broken" });
+      continue;
+    }
+    answers[rec.key] = value;
+  }
+  return { present: true, answers, dropped, dropKeys };
+}
+
+export function dropInputWrites(layer: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) dropWritten(layer, key);
+}
+
+export function filledSiteAnswers(
+  inputs: Input[] | undefined,
+  siteInputs: Record<string, string | number | boolean> | undefined,
+  hf: string,
+  model: string,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!siteInputs) return out;
+  for (const input of inputs ?? []) {
+    const v = siteInputs[input.key];
+    if (v == null) continue;
+    const text = typeof v === "string" ? fillTemplate(v, hf, model) : String(v);
+    if (text) out[input.key] = text;
+  }
+  return out;
+}
+
+export function inputAnnotations(records: InputRecord[], opts?: { replace?: boolean }): Record<string, string> | undefined {
+  if (!records.length && !opts?.replace) return undefined;
+  const json = JSON.stringify(records.map(({ key, value }) => ({ key, keyType: INPUT_KEY_TYPE, value })));
+  if (new TextEncoder().encode(json).length > MAX_INPUT_ANNOTATION_BYTES) return undefined;
+  return { [INPUTS_ANNOTATION]: json };
+}
+
+export interface InputWriteOpts {
+  values?: Record<string, unknown>;
+  release?: Record<string, string>;
+  site?: Record<string, string>;
+}
+
+// A field-only key sends a typed answer, or on an upgrade the release's; the
+// site and the default stay with swissd. A key swissd cannot write sends the
+// effective answer: typed, else release, else site, else the input's default.
+export function setInputOverrides(
+  overrides: Record<string, unknown>,
+  inputs: Input[] | undefined,
+  answers: Record<string, string>,
+  opts?: InputWriteOpts,
+): InputRecord[] {
+  const written: InputRecord[] = [];
+  for (const input of inputs ?? []) {
+    const typedText = answers[input.key]?.trim() ?? "";
+    let raw = typedText;
+    if (!raw) {
+      const release = opts?.release?.[input.key] ?? "";
+      raw = isFieldKey(input.key) ? release : release || opts?.site?.[input.key] || (input.default != null ? String(input.default) : "");
+    }
+    if (!raw) continue;
+    const value = typed(input, raw);
+    const patcher = !input.type || input.type === "string" ? input.patcher : undefined;
+    if (!writeAt(overrides, opts?.values, input.key, value, patcher)) continue;
+    written.push({ key: input.key, keyType: INPUT_KEY_TYPE, value });
+  }
+  return written;
 }
 
 type Answer = string | number | boolean;
