@@ -213,29 +213,6 @@ function setPath(root: Tree, path: string, value: unknown): void {
   cur[parts[parts.length - 1]] = value;
 }
 
-// Removes repository and tag from a map slot (any other key, such as pullPolicy,
-// stays) or deletes a string slot. An emptied map is removed. Parents are left
-// as they are, even when that leaves an empty object.
-function dropImage(root: Tree, path: string): void {
-  const parts = path.split(".").filter(Boolean);
-  if (!parts.length) return;
-  let cur: Tree = root;
-  for (const key of parts.slice(0, -1)) {
-    const next = cur[key];
-    if (!isMap(next)) return;
-    cur = next;
-  }
-  const leafKey = parts[parts.length - 1];
-  const value = cur[leafKey];
-  if (isMap(value)) {
-    delete value.repository;
-    delete value.tag;
-    if (Object.keys(value).length === 0) delete cur[leafKey];
-    return;
-  }
-  if (leafKey in cur) delete cur[leafKey];
-}
-
 // Image edits the dry run left out, merged onto its overrides. Defaults stay as dumped.
 export function withImageEdits(values: HelmValues, images?: Record<string, ImageEdit>): HelmValues {
   const patch: Tree = {};
@@ -267,13 +244,4 @@ export function imageRows(slots: ImageSlot[] | undefined, image?: { catalog: str
   }
   if (!extra.length) return base;
   return base.concat(extra).sort((a, b) => (a.path === "image" ? -1 : b.path === "image" ? 1 : 0));
-}
-
-// An empty edit drops that path's form-layer override. formFromPlan seeds every
-// slot the release's form layer set, so a path that layer has and the form does
-// not (missing or blank) is a clear. "" and a missing key are the same.
-export function dropClearedImages(layer: Tree, images: Record<string, ImageEdit> | undefined): void {
-  for (const slot of discoverImageSlots(layer)) {
-    if (imagePayload(images?.[slot.path]) === undefined) dropImage(layer, slot.path);
-  }
 }

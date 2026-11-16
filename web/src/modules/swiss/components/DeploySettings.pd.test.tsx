@@ -190,9 +190,6 @@ describe("DeploySettings PD roles", () => {
       },
       { model: "m", formLayer: existingLayer, gpuSpecs, gpuVendor: "nvidia" },
     );
-    expect(upgraded.overrides?.pd).toEqual({
-      prefill: { schedulerName: "volcano" },
-      decode: pdOut.decode,
-    });
+    expect(upgraded.overrides?.pd).toEqual({ decode: pdOut.decode });
   });
 });

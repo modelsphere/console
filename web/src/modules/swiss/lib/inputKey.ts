@@ -141,34 +141,3 @@ export function writeAt(layer: Record<string, unknown>, variantValues: unknown, 
   if (!Array.isArray(existing)) parent[listKey] = target;
   return true;
 }
-
-function dropLeaf(layer: Record<string, unknown>, segs: string[]) {
-  let node: unknown = layer;
-  for (let i = 0; i < segs.length - 1; i++) {
-    if (!isMap(node)) return;
-    node = node[segs[i]];
-  }
-  if (isMap(node)) delete node[segs[segs.length - 1]];
-}
-
-// Undoes one answer a previous form wrote: the leaf, or the list it copied.
-export function dropWritten(layer: Record<string, unknown>, key: string) {
-  const segs = splitKey(key);
-  if (!segs.length) return;
-  if (isFieldKey(key)) {
-    dropLeaf(layer, segs);
-    return;
-  }
-  let node: unknown = layer;
-  for (const seg of segs) {
-    if (seg.startsWith("[")) return;
-    if (!isMap(node) || !Object.hasOwn(node, seg)) return;
-    const next = node[seg];
-    if (Array.isArray(next)) {
-      delete node[seg];
-      return;
-    }
-    node = next;
-  }
-  dropLeaf(layer, segs);
-}

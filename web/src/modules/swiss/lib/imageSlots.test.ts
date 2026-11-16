@@ -5,7 +5,6 @@ import type { Plan } from "@swiss/lib/api";
 import {
   applyImageEdits,
   discoverImageSlots,
-  dropClearedImages,
   helmImageSlots,
   imageEditsFromLayer,
   imagePatch,
@@ -17,7 +16,6 @@ import {
   slotImageChoices,
   splitImage,
   withImageEdits,
-  type ImageEdit,
 } from "./imageSlots";
 
 const plan = (form: Record<string, unknown>) => ({ release: { name: "r", namespace: "n" }, layers: { form } }) as unknown as Plan;
@@ -143,7 +141,7 @@ describe("image edits on the form layer", () => {
     expect(typed).toEqual({ image: { repository: "repo" } });
   });
 
-  it("seeds upgrades from the form layer and drops a cleared override without touching other keys", () => {
+  it("seeds upgrades from the form layer and sends only what the form holds", () => {
     const layer = {
       image: { repository: "example.com/engine", tag: "custom", pullPolicy: "Always" },
       extraArgs: ["--x"],
@@ -159,33 +157,21 @@ describe("image edits on the form layer", () => {
     expect(imageEditsFromLayer(layer).image).toEqual({ repository: "example.com/engine", tag: "custom" });
 
     const kept = planRequest(form, { model: "m", formLayer: layer }).overrides!;
-    expect(kept.image).toEqual({ repository: "example.com/engine", tag: "custom", pullPolicy: "Always" });
+    expect(kept.image).toEqual({ repository: "example.com/engine", tag: "custom" });
     expect(kept.hangWatcher).toEqual({ image: { repository: "example.com/hang", tag: "1" } });
     expect(kept.sidecar).toEqual({ image: "example.com/echo:1" });
-    expect(kept.extraArgs).toEqual(["--x"]);
+    expect(kept).not.toHaveProperty("extraArgs");
 
     const blank = { image: "", "hangWatcher.image": "", "sidecar.image": "" };
     for (const images of [blank, {}]) {
       const cleared = planRequest({ ...form, images }, { model: "m", formLayer: layer }).overrides!;
-      expect(cleared.image).toEqual({ pullPolicy: "Always" });
-      expect(cleared.hangWatcher).toEqual({});
-      expect(cleared.sidecar).toEqual({});
-      expect(cleared.extraArgs).toEqual(["--x"]);
+      expect(cleared).not.toHaveProperty("image");
+      expect(cleared).not.toHaveProperty("hangWatcher");
+      expect(cleared).not.toHaveProperty("sidecar");
+      expect(cleared).not.toHaveProperty("extraArgs");
     }
   });
 
-  it("drops a form-layer image the form left empty, and keeps one it still holds", () => {
-    const layer = { image: { repository: "example.com/engine", tag: "custom", pullPolicy: "Always" }, note: true };
-    const kept = structuredClone(layer);
-    dropClearedImages(kept, imageEditsFromLayer(layer));
-    expect(kept).toEqual(layer);
-    const clearedBy: Record<string, ImageEdit>[] = [{}, { image: "" }];
-    for (const images of clearedBy) {
-      const cleared = structuredClone(layer);
-      dropClearedImages(cleared, images);
-      expect(cleared).toEqual({ image: { pullPolicy: "Always" }, note: true });
-    }
-  });
 });
 
 describe("mirrorImage and slotImageChoices", () => {

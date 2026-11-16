@@ -152,9 +152,6 @@ describe("resources form round-trip", () => {
       },
       { model: "m", formLayer: plan.layers.form },
     );
-    expect(cleared.overrides?.resources).toEqual({
-      requests: { memory: "32Gi" },
-      limits: { "ephemeral-storage": null },
-    });
+    expect(cleared.overrides?.resources).toEqual({ requests: { memory: "32Gi" } });
   });
 });

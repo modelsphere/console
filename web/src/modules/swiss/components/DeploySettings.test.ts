@@ -117,7 +117,7 @@ describe("catalog input answers", () => {
     { key: arg.key, value: "yes" },
   ]);
 
-  it("records what the form writes and rebuilds the release form layer from the new variant", () => {
+  it("records what the form writes and builds the form layer from the form alone", () => {
     const formLayer = {
       storageKVOffload: { mooncake: { master: "mine:1", protocol: "rdma" } },
       old: { flag: "gone", keep: 1 },
@@ -138,13 +138,11 @@ describe("catalog input answers", () => {
     expect(seeded.inputs).toEqual({ [master.key]: "mine:1", [arg.key]: "yes" });
     // The upgrade form prefills the release answers; master was retyped.
     const req = planRequest({ ...seeded, localPath: "", inputs: { ...seeded.inputs, [master.key]: " new:1 " } }, opts);
-    expect(req.overrides).toMatchObject({
-      storageKVOffload: { mooncake: { master: "new:1", protocol: "rdma" } },
-      old: { keep: 1 },
-      extraArgs: ["yes", "--bar"],
-      untouched: 1,
-    });
-    expect(req.overrides).not.toHaveProperty("old.flag");
+    // The release's form layer only reads the form back; none of it is carried.
+    expect(req.overrides).toMatchObject({ storageKVOffload: { mooncake: { master: "new:1" } }, extraArgs: ["yes", "--bar"] });
+    expect(req.overrides).not.toHaveProperty("storageKVOffload.mooncake.protocol");
+    expect(req.overrides).not.toHaveProperty("old");
+    expect(req.overrides).not.toHaveProperty("untouched");
     expect(JSON.parse(req.additionalAnnotations?.[INPUTS_ANNOTATION] ?? "")).toEqual([
       { key: master.key, value: "new:1" },
       { key: arg.key, value: "yes" },
@@ -160,9 +158,8 @@ describe("catalog input answers", () => {
   it("does not carry a cleared answer from a release with no annotation", () => {
     const formLayer = { storageKVOffload: { mooncake: { master: "old:1", protocol: "rdma" } }, extraArgs: ["--foo=OLD", "--bar"] };
     const req = planRequest({ ...EMPTY, inputs: { [master.key]: "" } }, { model: "m", inputs: [master, arg], values, formLayer, hf: "" });
-    // Unanswered, the copied list goes and the catalog's applies again.
-    expect(req.overrides).toMatchObject({ storageKVOffload: { mooncake: { protocol: "rdma" } } });
-    expect(req.overrides).not.toHaveProperty("storageKVOffload.mooncake.master");
+    // Unanswered, nothing is written and the catalog's applies.
+    expect(req.overrides).not.toHaveProperty("storageKVOffload");
     expect(req.overrides).not.toHaveProperty("extraArgs");
     expect(req.additionalAnnotations).toEqual({ [INPUTS_ANNOTATION]: "[]" });
   });

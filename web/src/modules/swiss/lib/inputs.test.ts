@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Input, SiteProfile } from "./api";
-import { overlay } from "./formLayer";
-import { dropInputWrites, fillTemplate, inputAnnotations, inputError, inputProblem, inputRows, inputsAnswered, INPUTS_ANNOTATION, parseAnswer, parseInputRecords, releaseInputState, rememberable, setInputOverrides, siteSaves, answerText } from "./inputs";
+import { fillTemplate, inputAnnotations, inputError, inputProblem, inputRows, inputsAnswered, INPUTS_ANNOTATION, parseAnswer, parseInputRecords, releaseInputState, rememberable, setInputOverrides, siteSaves, answerText } from "./inputs";
 
 const master: Input = {
   key: "storageKVOffload.mooncake.master",
@@ -228,26 +227,6 @@ describe("upgrade recheck", () => {
     expect(releaseInputState([arg], values, { extraArgs: ["--foo=1"] }, undefined).answers).toEqual({});
   });
 
-  it("drops the old leaf and the copied list, then rewrites against the new variant", () => {
-    const state = releaseInputState(inputs, values, undefined, annotation);
-    const base: Record<string, unknown> = {
-      storageKVOffload: { enabled: true, mooncake: { master: "mine:1", protocol: "rdma" } },
-      old: { flag: "gone", keep: 1 },
-      extraArgs: ["--foo=OLD", "--bar"],
-      volumes: [{ name: "nope", path: "/old" }],
-      untouched: 1,
-    };
-    dropInputWrites(base, state.dropKeys);
-    const overrides: Record<string, unknown> = {};
-    // The upgrade form prefills the release answers; one was retyped.
-    setInputOverrides(overrides, inputs, { ...state.answers, [master.key]: " new:1 " }, { values });
-    expect(overlay(base, overrides)).toEqual({
-      storageKVOffload: { enabled: true, mooncake: { master: "new:1", protocol: "rdma" } },
-      old: { keep: 1 },
-      extraArgs: ["yes", "--bar"],
-      untouched: 1,
-    });
-  });
 
   it("shows a recorded answer over the form layer, and not a broken one", () => {
     const rows = inputRows(inputs, site({}), "a/b", "m", values, { storageKVOffload: { mooncake: { master: "form:1" } }, extraArgs: ["yes"] }, annotation);

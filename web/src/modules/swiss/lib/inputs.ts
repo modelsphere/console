@@ -1,5 +1,5 @@
 import type { Input, SiteProfile } from "./api";
-import { dropWritten, findAt, isFieldKey, readAt, splitKey, writeAt } from "./inputKey";
+import { findAt, isFieldKey, readAt, splitKey, writeAt } from "./inputKey";
 
 export interface InputChoice {
   answer: string;
@@ -210,10 +210,6 @@ export function releaseInputState(
     answers[rec.key] = value;
   }
   return { present: true, answers, dropped, dropKeys };
-}
-
-export function dropInputWrites(layer: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) dropWritten(layer, key);
 }
 
 export function filledSiteAnswers(

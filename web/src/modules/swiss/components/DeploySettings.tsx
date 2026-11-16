@@ -4,11 +4,11 @@ import type { ApplyFlags, ClusterInfo, GPUSpec, Input as CatalogInput, Node, Pla
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { pickableProducts, productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
-import { CHECK_MS, INPUTS_ANNOTATION, dropInputWrites, filledSiteAnswers, inputAnnotations, inputError, inputProblem, releaseInputState, rememberable, setInputOverrides, type DroppedInput, type InputChoice, type InputRow } from "@swiss/lib/inputs";
+import { CHECK_MS, INPUTS_ANNOTATION, filledSiteAnswers, inputAnnotations, inputError, inputProblem, releaseInputState, rememberable, setInputOverrides, type DroppedInput, type InputChoice, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
-import { envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
-import { applyImageEdits, dropClearedImages, imageEditsFromLayer, imagePatch, imageRows, imageText, joinImage, slotImageChoices, type ImageEdit, type ImageSlot, type SlotImageChoice } from "@swiss/lib/imageSlots";
+import { envBase, withEnv, withPreset } from "@swiss/lib/formLayer";
+import { applyImageEdits, imageEditsFromLayer, imagePatch, imageRows, imageText, joinImage, slotImageChoices, type ImageEdit, type ImageSlot, type SlotImageChoice } from "@swiss/lib/imageSlots";
 import {
   affinityRulesForForm,
   applyPdOverrides,
@@ -26,7 +26,6 @@ import {
 import {
   applyResourceEdits,
   deriveResourceEdits,
-  dropClearedResources,
   emptyResourceEdits,
   gpuRequestSummary,
   seedFormResources,
@@ -2257,8 +2256,8 @@ export function planRequest(
     hf?: string;
     // The values of the preset f picks.
     preset?: Record<string, unknown>;
-    // The release's form layer, on an upgrade: the form's values are put over
-    // it, so the request carries the whole layer rebuilt.
+    // The release's form layer, on an upgrade: read for the release's input
+    // answers and a PD role's GPU label key; nothing in it is carried over.
     formLayer?: Record<string, unknown>;
     values?: Record<string, unknown>;
     siteEnv?: Record<string, unknown>;
@@ -2349,7 +2348,7 @@ export function planRequest(
   }
 
   const tolerations = f.tolerations.flatMap((t) => tolerationValue(t) ?? []);
-  if (tolerations.length || opts.formLayer?.tolerations !== undefined) overrides.tolerations = tolerations;
+  if (tolerations.length) overrides.tolerations = tolerations;
 
   // A typed ref is this deploy's form layer. An empty row is not an override;
   // on an upgrade it is a clear, so the release's copy of that path is dropped
@@ -2371,15 +2370,9 @@ export function planRequest(
   });
   const siteEnv = envBase(opts.siteEnv);
   const preset = Object.keys(siteEnv).length ? (opts.preset ? withPreset(opts.preset, siteEnv) : siteEnv) : opts.preset;
-  const base = opts.formLayer ? structuredClone(opts.formLayer) : undefined;
-  if (base) {
-    dropClearedImages(base, f.images);
-    dropClearedResources(base, resourceEdits);
-    // swissd takes this layer as is, so every declared input is rebuilt from
-    // its current answer below, and a recorded key the variant dropped goes.
-    if (opts.inputs) dropInputWrites(base, [...opts.inputs.map((i) => i.key), ...(inputState?.dropKeys ?? [])]);
-  }
-  const layer = withEnv(opts.values, withPreset(base ? overlay(base, overrides) : overrides, preset));
+  // The release's form layer only reads the form back (formFromPlan); the new
+  // layer is the form alone, and swissd takes it as is.
+  const layer = withEnv(opts.values, withPreset(overrides, preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
   applyPdOverrides(layer, f.pd, {
     gpuSpecs: opts.gpuSpecs,
