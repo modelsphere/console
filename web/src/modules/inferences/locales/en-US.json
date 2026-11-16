@@ -1070,6 +1070,10 @@
         "required": "Required",
         "duplicate": "Listed twice",
         "conflict": "Already names another product under this resource"
+      },
+      "input": {
+        "required": "Key is required",
+        "duplicate": "Listed twice"
       }
     }
   },

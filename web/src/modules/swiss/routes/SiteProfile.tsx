@@ -11,7 +11,7 @@ import { ErrorState, Loading } from "@swiss/components/States";
 import { Code } from "@swiss/components/ui/code";
 import { toYaml } from "@swiss/lib/yaml";
 import { GpuTable } from "@swiss/components/GpuResources";
-import { answerText } from "@swiss/lib/inputs";
+import { answerText, siteInputList } from "@swiss/lib/inputs";
 
 export function SiteProfile() {
   const [editing, setEditing] = useState(false);
@@ -30,6 +30,7 @@ export function SiteProfile() {
 
   const p = data.profile;
   const auth = p.route?.auth;
+  const inputs = siteInputList(p.inputs);
   // A profile from before the list names one catalog, which is the one row it means.
   const catalogs = p.catalogs ?? (p.catalog ? [{ name: "default", url: p.catalog }] : []);
 
@@ -155,8 +156,16 @@ export function SiteProfile() {
             title="Variant inputs"
             hint="Answers to the inputs catalog variants declare, by chart key. Only a variant that declares a key takes its answer, and a deploy can still override it."
           >
-            {p.inputs?.length ? (
-              p.inputs.map((s) => <Row key={s.key} label={s.key} value={answerText(s.value)} mono />)
+            {inputs.length ? (
+              inputs.map((s, i) => (
+                <Row
+                  key={`${s.key}-${i}`}
+                  label={s.key}
+                  value={s.value == null ? undefined : answerText(s.value)}
+                  fallback={s.value == null ? "(unset)" : '""'}
+                  mono
+                />
+              ))
             ) : (
               <Row label="Answers" value={undefined} fallback="none: an input takes its default, or the deploy's answer" />
             )}

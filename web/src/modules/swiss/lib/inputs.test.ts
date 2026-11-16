@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Input, SiteProfile } from "./api";
-import { fillTemplate, inputAnnotations, inputError, inputProblem, inputRows, inputsAnswered, INPUTS_ANNOTATION, parseAnswer, parseInputRecords, releaseInputState, rememberable, setInputOverrides, siteSaves, answerText } from "./inputs";
+import { fillTemplate, inputAnnotations, inputError, inputProblem, inputRows, inputsAnswered, INPUTS_ANNOTATION, parseAnswer, parseInputRecords, releaseInputState, rememberable, sameSiteInputs, setInputOverrides, siteInputErrors, siteInputList, siteInputRowErrors, siteInputRows, siteInputsFromRows, siteSaves, answerText } from "./inputs";
 
 const master: Input = {
   key: "storageKVOffload.mooncake.master",
@@ -269,5 +269,24 @@ describe("input answers", () => {
   it("shows an answer so it reads back the same", () => {
     for (const v of ["mc-{{model}}.svc:50051", 8000, true, "8000", "false", '"quoted"', ""]) expect(parseAnswer(answerText(v))).toBe(v);
     expect(answerText("8000")).toBe('"8000"');
+    expect(answerText(null)).toBe("");
+    expect(answerText(undefined)).toBe("");
+  });
+  it("edits site inputs as a list of {key, value}, keeping order, duplicates and half-filled rows", () => {
+    const inputs = [{ key: "0", value: "first" }, { key: "volumes.[name=x].path", value: true }, { key: "a.port", value: 8000 }, { key: "a.tag", value: "8000" }];
+    const rows = siteInputRows(inputs);
+    expect(siteInputsFromRows(rows)).toEqual(inputs);
+    expect(siteInputsFromRows([...rows, { key: "", value: "" }])).toEqual(inputs);
+    expect(siteInputsFromRows([{ key: " ", value: "8000" }, { key: "a.b", value: "1" }, { key: "a.b", value: "2" }])).toEqual([
+      { key: "", value: 8000 },
+      { key: "a.b", value: 1 },
+      { key: "a.b", value: 2 },
+    ]);
+    expect(siteInputsFromRows([{ key: "", value: "" }])).toBeUndefined();
+    expect(siteInputErrors([{ key: "", value: 1 }, { key: "a.b", value: 1 }, { key: "a.b", value: 2 }])).toEqual(["required", undefined, "duplicate"]);
+    expect(siteInputRowErrors([{ key: "", value: "" }, { key: "", value: "1" }, { key: "a.b", value: "1" }, { key: "a.b", value: "2" }])).toEqual([undefined, "required", undefined, "duplicate"]);
+    expect(sameSiteInputs(inputs, [...inputs])).toBe(true);
+    expect(sameSiteInputs(inputs, [{ key: "0", value: "first" }])).toBe(false);
+    expect(siteInputList({ "a.b": "old" } as unknown as SiteProfile["inputs"])).toEqual([{ key: "a.b", value: "old" }]);
   });
 });

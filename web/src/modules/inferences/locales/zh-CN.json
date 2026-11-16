@@ -1059,6 +1059,10 @@
         "required": "必填",
         "duplicate": "重复填写",
         "conflict": "该值已表示此资源下的另一个型号"
+      },
+      "input": {
+        "required": "键必填",
+        "duplicate": "重复填写"
       }
     }
   },

@@ -46,8 +46,9 @@ export function inputRows(
   annotation?: string,
 ): InputRow[] {
   const recorded = releaseInputState(inputs, variantValues, release, annotation).answers;
+  const siteInputs = siteInputList(profile?.inputs);
   return (inputs ?? []).map((input) => {
-    const v = profile?.inputs?.find((s) => s.key === input.key)?.value;
+    const v = siteInputs.find((s) => s.key === input.key)?.value;
     const site = v === undefined || v === null ? undefined : { answer: typeof v === "string" ? fillTemplate(v, hf, model) : String(v), written: String(v) };
     const release = recorded[input.key];
     const found: [string | undefined, InputChoice["from"]][] = [
@@ -217,9 +218,10 @@ export function filledSiteAnswers(
   model: string,
 ): Record<string, string> {
   const out: Record<string, string> = {};
-  if (!siteInputs) return out;
+  const list = siteInputList(siteInputs);
+  if (!list.length) return out;
   for (const input of inputs ?? []) {
-    const v = siteInputs.find((s) => s.key === input.key)?.value;
+    const v = list.find((s) => s.key === input.key)?.value;
     if (v == null) continue;
     const text = typeof v === "string" ? fillTemplate(v, hf, model) : String(v);
     if (text) out[input.key] = text;
@@ -263,9 +265,17 @@ export function setInputOverrides(
 type Answer = string | number | boolean;
 const SCALAR = /^(-?\d+|true|false)$/;
 
+// Tolerates a map from an older swissd while preferring the current list shape.
+export function siteInputList(inputs: SiteInput[] | Record<string, Answer> | undefined): SiteInput[] {
+  if (Array.isArray(inputs)) return inputs;
+  if (inputs && typeof inputs === "object") return Object.entries(inputs).map(([key, value]) => ({ key, value }));
+  return [];
+}
+
 // An input answer as the YAML tab reads it: 8000 is a number, true a boolean, and
 // quotes keep either a string. swissd checks the answer's type against the input's.
-export const answerText = (v: Answer) => (typeof v === "string" && SCALAR.test(v) ? JSON.stringify(v) : String(v));
+export const answerText = (v: Answer | null | undefined) =>
+  v === null || v === undefined ? "" : typeof v === "string" && SCALAR.test(v) ? JSON.stringify(v) : String(v);
 
 export function parseAnswer(text: string): Answer {
   if (/^-?\d+$/.test(text)) return Number(text);
@@ -273,5 +283,48 @@ export function parseAnswer(text: string): Answer {
   return /^"(-?\d+|true|false)"$/.test(text) ? text.slice(1, -1) : text;
 }
 
-export const answersText = (a?: SiteInput[]) => a && Object.fromEntries(a.map((s) => [s.key, answerText(s.value)]));
-export const parseAnswers = (r?: Record<string, string>): SiteInput[] | undefined => r && Object.entries(r).map(([key, v]) => ({ key, value: parseAnswer(v) }));
+export interface SiteInputRow {
+  key: string;
+  value: string;
+}
+
+export type SiteInputError = "required" | "duplicate";
+
+const blankInputRow = (r: SiteInputRow) => !r.key.trim() && !r.value;
+
+export function siteInputRows(inputs?: SiteInput[]): SiteInputRow[] {
+  return siteInputList(inputs).map((s) => ({ key: s.key, value: answerText(s.value) }));
+}
+
+// Completely blank rows are ones just added; half-filled rows stay so validation flags them.
+export function siteInputsFromRows(rows: SiteInputRow[]): SiteInput[] | undefined {
+  const kept = rows.filter((r) => !blankInputRow(r));
+  return kept.length ? kept.map((r) => ({ key: r.key.trim(), value: parseAnswer(r.value) })) : undefined;
+}
+
+function checkInputKeys(keys: string[], skip?: (i: number) => boolean): (SiteInputError | undefined)[] {
+  const seen = new Set<string>();
+  return keys.map((raw, i) => {
+    if (skip?.(i)) return undefined;
+    const key = raw.trim();
+    if (!key) return "required";
+    if (seen.has(key)) return "duplicate";
+    seen.add(key);
+    return undefined;
+  });
+}
+
+export function siteInputErrors(inputs?: SiteInput[]): (SiteInputError | undefined)[] {
+  return checkInputKeys(siteInputList(inputs).map((s) => s.key));
+}
+
+export function siteInputRowErrors(rows: SiteInputRow[]): (SiteInputError | undefined)[] {
+  return checkInputKeys(rows.map((r) => r.key), (i) => blankInputRow(rows[i]));
+}
+
+export function sameSiteInputs(a?: SiteInput[], b?: SiteInput[]): boolean {
+  const la = siteInputList(a);
+  const lb = siteInputList(b);
+  if (la.length !== lb.length) return false;
+  return la.every((x, i) => x.key === lb[i].key && x.value === lb[i].value);
+}

@@ -10,7 +10,7 @@ import { Switch } from "@swiss/components/ui/switch";
 import { catalogErrors, FEATURES, featureOn, withFeature, type FeatureKey } from "@swiss/lib/profile";
 import { GpuTable } from "@swiss/components/GpuResources";
 import { PresetTable } from "@swiss/components/PresetTable";
-import { answersText, parseAnswers } from "@swiss/lib/inputs";
+import { useSiteInputRows } from "@swiss/lib/useSiteInputRows";
 import { cn } from "@swiss/lib/utils";
 
 const FEATURE_LABELS: Record<FeatureKey, { label: string; hint: string }> = {
@@ -133,7 +133,7 @@ export function ProfileForm({
         hint="Answers to the inputs catalog variants declare, by chart key. Only a variant that declares a key takes its answer, and a deploy can still override it. A string takes the model path's {{hf}}, {{org}}, {{name}} and {{model}}."
       >
         <Row top label="Answers" hint="8000 reads as a number and true as a boolean; quote one to keep it a string.">
-          <Pairs keyLabel="chart key" valueLabel="answer" value={answersText(value.inputs)} onChange={(inputs) => set("inputs", parseAnswers(inputs))} />
+          <SiteInputs value={value.inputs} onChange={(inputs) => set("inputs", inputs)} />
         </Row>
       </Section>
 
@@ -394,6 +394,44 @@ function Sites({ value, onChange }: { value: Site[]; onChange: (v: Site[]) => vo
             aria-label="site url"
           />
           <Remove label={`remove ${s.name || "site"}`} onClick={() => onChange(value.filter((_, j) => j !== i))} />
+        </div>
+      ))}
+    </List>
+  );
+}
+
+function SiteInputs({
+  value,
+  onChange,
+}: {
+  value?: SiteProfile["inputs"];
+  onChange: (v: SiteProfile["inputs"] | undefined) => void;
+}) {
+  const { rows, errors, add, edit, remove } = useSiteInputRows(value, onChange);
+  return (
+    <List
+      onAdd={add}
+      addLabel="Add chart key"
+      problem={errors.some(Boolean) && "Every input needs a unique key; swissd will refuse the profile otherwise."}
+    >
+      {rows.map((r, i) => (
+        <div key={i} className="grid items-center gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto]">
+          <Input
+            value={r.key}
+            placeholder="chart key"
+            aria-label="chart key"
+            aria-invalid={!!errors[i]}
+            className={cn("font-mono text-xs", errors[i] && BAD)}
+            onChange={(e) => edit(i, { key: e.target.value })}
+          />
+          <Input
+            value={r.value}
+            placeholder="answer"
+            aria-label="answer"
+            className="font-mono text-xs"
+            onChange={(e) => edit(i, { value: e.target.value })}
+          />
+          <Remove label={`remove ${r.key || "chart key"}`} onClick={() => remove(i)} />
         </div>
       ))}
     </List>

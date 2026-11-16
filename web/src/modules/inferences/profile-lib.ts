@@ -1,4 +1,5 @@
 import type { SiteProfile } from "@swiss/lib/api";
+import { siteInputErrors } from "@swiss/lib/inputs";
 import { catalogErrors, gpuErrors, gpuRows, hasGPUErrors } from "@swiss/lib/profile";
 
 export interface Row {
@@ -17,12 +18,13 @@ export function fromRows(rows: Row[]): Record<string, string> | undefined {
   return kept.length ? Object.fromEntries(kept.map((r) => [r.key.trim(), r.value])) : undefined;
 }
 
-export function profileErrors(p: SiteProfile): ("name" | "pathTemplate" | "catalogs" | "gpus")[] {
-  const errs: ("name" | "pathTemplate" | "catalogs" | "gpus")[] = [];
+export function profileErrors(p: SiteProfile): ("name" | "pathTemplate" | "catalogs" | "gpus" | "inputs")[] {
+  const errs: ("name" | "pathTemplate" | "catalogs" | "gpus" | "inputs")[] = [];
   if (!p.name?.trim()) errs.push("name");
   if (!p.model?.pathTemplate?.trim()) errs.push("pathTemplate");
   if (catalogErrors(p.catalogs).some((e) => e.name || e.url)) errs.push("catalogs");
   if (hasGPUErrors(gpuErrors(gpuRows(p.nodes?.gpus)))) errs.push("gpus");
+  if (siteInputErrors(p.inputs).some(Boolean)) errs.push("inputs");
   return errs;
 }
 
