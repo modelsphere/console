@@ -433,7 +433,7 @@ export function DeploySettings({
                 key={input.key}
                 label={input.title}
                 note={
-                  from === "release"
+                  row.release !== undefined && value.trim() === row.release
                     ? "the release's answer, kept unless you change it"
                     : from === "site"
                       ? "the site profile's answer, unless you change it"
@@ -1259,7 +1259,7 @@ function TabHint() {
   );
 }
 
-const FROM: Record<InputChoice["from"], string> = { release: "Release", site: "Site profile", variant: "Variant default" };
+const FROM: Record<InputChoice["from"], string> = { site: "Site profile", variant: "Variant default" };
 
 // choices list under the field when the empty field is clicked; typing closes the list.
 function Suggest({
@@ -2367,7 +2367,6 @@ export function planRequest(
     : undefined;
   const written = setInputOverrides(overrides, opts.inputs, f.inputs, {
     values: opts.values,
-    release: inputState?.answers,
     site: filledSiteAnswers(opts.inputs, opts.siteInputs, opts.hf ?? "", opts.model),
   });
   const siteEnv = envBase(opts.siteEnv);

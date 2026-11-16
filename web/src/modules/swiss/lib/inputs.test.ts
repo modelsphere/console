@@ -44,9 +44,14 @@ describe("inputRows", () => {
     expect(inputRows([tuned], site({}), "a/b", "m", { storageKVOffload: { mooncake: { master: "base:1" } } })[0].answer).toBe("tuned:1");
     expect(inputRows([master], undefined, "a/b", "m")).toEqual([{ input: master }]);
   });
-  it("shows an upgrade the release's own answer over the site's", () => {
+  it("carries an upgrade's release answer for prefill, falling back only to the site's", () => {
     const release = { storageKVOffload: { mooncake: { master: "mine:1" } } };
-    expect(inputRows([master], site({ [master.key]: "site:1" }), "a/b", "m", undefined, release)[0]).toMatchObject({ input: master, answer: "mine:1", from: "release" });
+    expect(inputRows([master], site({ [master.key]: "site:1" }), "a/b", "m", undefined, release)[0]).toMatchObject({ input: master, release: "mine:1", answer: "site:1", from: "site" });
+  });
+  it("does not offer the prefilled release answer to the site profile", () => {
+    const row = inputRows([master], site({}), "a/b", "m", undefined, { storageKVOffload: { mooncake: { master: "mine:1" } } })[0];
+    expect(rememberable(row, "mine:1")).toBe(false);
+    expect(rememberable(row, "other:1")).toBe(true);
   });
   it("lists the answers to pick between when there is more than one", () => {
     const tuned = { ...master, default: "tuned:1" };
@@ -55,7 +60,7 @@ describe("inputRows", () => {
       { answer: "tuned:1", from: "variant" },
     ]);
     const release = { storageKVOffload: { mooncake: { master: "mine:1" } } };
-    expect(inputRows([tuned], site({ [master.key]: "site:1" }), "a/b", "m", undefined, release)[0].choices?.map((c) => c.from)).toEqual(["release", "site", "variant"]);
+    expect(inputRows([tuned], site({ [master.key]: "site:1" }), "a/b", "m", undefined, release)[0].choices?.map((c) => c.from)).toEqual(["site", "variant"]);
     expect(inputRows([tuned], site({ [master.key]: "tuned:1" }), "a/b", "m")[0]).toEqual({ input: tuned, answer: "tuned:1", from: "site", site: { answer: "tuned:1", written: "tuned:1" } });
     expect(inputRows([master], site({ [master.key]: "site:1" }), "a/b", "m", { storageKVOffload: { mooncake: { master: "" } } })[0].choices).toBeUndefined();
   });
@@ -131,14 +136,9 @@ describe("setInputOverrides", () => {
       { key: port.key, value: 8050 },
     ]);
   });
-  it("writes a field key's site answer and default, and records only typed and release", () => {
-    const layer: Record<string, unknown> = {};
-    expect(setInputOverrides(layer, [master], {}, { release: { [master.key]: "mine:1" }, site: { [master.key]: "site:1" } })).toEqual([
-      { key: master.key, value: "mine:1" },
-    ]);
-    expect(layer).toEqual({ storageKVOffload: { mooncake: { master: "mine:1" } } });
+  it("writes a field key's site answer and default, and records only typed", () => {
     const typedWins: Record<string, unknown> = {};
-    expect(setInputOverrides(typedWins, [master], { [master.key]: " typed:1 " }, { release: { [master.key]: "mine:1" } })).toEqual([
+    expect(setInputOverrides(typedWins, [master], { [master.key]: " typed:1 " }, { site: { [master.key]: "site:1" } })).toEqual([
       { key: master.key, value: "typed:1" },
     ]);
     expect(typedWins).toEqual({ storageKVOffload: { mooncake: { master: "typed:1" } } });
@@ -162,11 +162,8 @@ describe("setInputOverrides", () => {
     expect(setInputOverrides(def, [{ ...arg, patcher: undefined, default: "--foo=def" }], {}, { values })).toEqual([]);
     expect(def).toEqual({ extraArgs: ["--foo=def", "--bar"] });
     const typedList: Record<string, unknown> = {};
-    expect(setInputOverrides(typedList, [arg], { [arg.key]: " mine " }, { values, release: { [arg.key]: "rel" } })).toEqual([{ key: arg.key, value: "mine" }]);
+    expect(setInputOverrides(typedList, [arg], { [arg.key]: " mine " }, { values })).toEqual([{ key: arg.key, value: "mine" }]);
     expect(typedList).toEqual({ extraArgs: ["pre-mine", "--bar"] });
-    const releaseList: Record<string, unknown> = {};
-    expect(setInputOverrides(releaseList, [arg], {}, { values, release: { [arg.key]: "rel" }, site: { [arg.key]: "site" } })).toEqual([{ key: arg.key, value: "rel" }]);
-    expect(releaseList).toEqual({ extraArgs: ["pre-rel", "--bar"] });
     const none: Record<string, unknown> = {};
     expect(setInputOverrides(none, [{ ...arg, patcher: undefined }], {}, { values })).toEqual([]);
     expect(none).toEqual({});
@@ -242,7 +239,8 @@ describe("upgrade recheck", () => {
     };
     dropInputWrites(base, state.dropKeys);
     const overrides: Record<string, unknown> = {};
-    setInputOverrides(overrides, inputs, { [master.key]: " new:1 " }, { values, release: state.answers });
+    // The upgrade form prefills the release answers; one was retyped.
+    setInputOverrides(overrides, inputs, { ...state.answers, [master.key]: " new:1 " }, { values });
     expect(overlay(base, overrides)).toEqual({
       storageKVOffload: { enabled: true, mooncake: { master: "new:1", protocol: "rdma" } },
       old: { keep: 1 },
@@ -253,9 +251,21 @@ describe("upgrade recheck", () => {
 
   it("shows a recorded answer over the form layer, and not a broken one", () => {
     const rows = inputRows(inputs, site({}), "a/b", "m", values, { storageKVOffload: { mooncake: { master: "form:1" } }, extraArgs: ["yes"] }, annotation);
-    expect(rows[0]).toMatchObject({ answer: "mine:1", from: "release" });
-    expect(rows[1]).toMatchObject({ answer: "yes", from: "release" });
-    expect(rows[2].from).not.toBe("release");
+    expect(rows[0].release).toBe("mine:1");
+    expect(rows[1].release).toBe("yes");
+    expect(rows[2].release).toBeUndefined();
+  });
+
+  it("a cleared prefilled answer falls back to the site's and leaves the annotation", () => {
+    const layer: Record<string, unknown> = {};
+    expect(setInputOverrides(layer, [master], { [master.key]: "  " }, { site: { [master.key]: "site:1" } })).toEqual([]);
+    expect(layer).toEqual({ storageKVOffload: { mooncake: { master: "site:1" } } });
+  });
+
+  it("neither writes nor records an answer the variant no longer declares", () => {
+    const layer: Record<string, unknown> = {};
+    expect(setInputOverrides(layer, [master], { [master.key]: "mine:1", "gone.key": "old" })).toEqual([{ key: master.key, value: "mine:1" }]);
+    expect(layer).toEqual({ storageKVOffload: { mooncake: { master: "mine:1" } } });
   });
 
   it("reads a patcher back to the answer", () => {

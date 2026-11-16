@@ -3,14 +3,16 @@ import { dropWritten, findAt, isFieldKey, readAt, splitKey, writeAt } from "./in
 
 export interface InputChoice {
   answer: string;
-  from: "release" | "site" | "variant";
+  from: "site" | "variant";
 }
 
 // answer applies when the field is left empty; none means the deployer must fill it.
 // choices, when more than one answer is found, are the ones to pick between, answer first.
 // site is the site profile's answer: as it is written, and filled for this model.
+// release is the release's recorded answer, which an upgrade prefills into the field.
 export interface InputRow {
   input: Input;
+  release?: string;
   answer?: string;
   from?: InputChoice["from"];
   choices?: InputChoice[];
@@ -31,8 +33,9 @@ export function answerAt(tree: Record<string, unknown> | undefined, key: string,
   return readAt(tree, key, patcher);
 }
 
-// The order swissd answers in: the release's form layer (carried forward on upgrade),
-// the site profile, the input's default, then the variant's own values.
+// What an empty field falls back to: the site profile, the input's default, then the
+// variant's own values. The release's answer is not a fallback: an upgrade prefills it
+// into the field, so clearing the field drops it.
 export function inputRows(
   inputs: Input[] | undefined,
   profile: SiteProfile | undefined,
@@ -46,16 +49,17 @@ export function inputRows(
   return (inputs ?? []).map((input) => {
     const v = profile?.inputs?.[input.key];
     const site = v === undefined || v === null ? undefined : { answer: typeof v === "string" ? fillTemplate(v, hf, model) : String(v), written: String(v) };
+    const release = recorded[input.key];
     const found: [string | undefined, InputChoice["from"]][] = [
-      [recorded[input.key], "release"],
       [site?.answer, "site"],
       [input.default !== undefined && input.default !== null ? String(input.default) : answerAt(variantValues, input.key, input.patcher), "variant"],
     ];
     const answers = found.flatMap(([answer, from]) => (answer === undefined ? [] : [{ answer, from }]));
-    if (!answers.length) return site ? { input, site } : { input };
+    const base = { input, ...(release !== undefined && { release }), ...(site && { site }) };
+    if (!answers.length) return base;
     // The form sends no empty answer, so "" is no choice; one answer is listed once, under its first source.
     const choices = answers.filter((c, i) => c.answer && answers.findIndex((d) => d.answer === c.answer) === i);
-    return { input, ...answers[0], ...(choices.length > 1 && { choices }), ...(site && { site }) };
+    return { ...base, ...answers[0], ...(choices.length > 1 && { choices }) };
   });
 }
 
@@ -91,10 +95,11 @@ export function inputError(row: InputRow, text = ""): "required" | "invalid" | u
   return inputProblem(row.input, answer) ? "invalid" : undefined;
 }
 
-// A typed answer the site profile can take: one the input takes, and not the site's own.
+// A typed answer the site profile can take: one the input takes, not the site's own,
+// and not the release's answer prefilled on an upgrade.
 export function rememberable(row: InputRow, text = ""): boolean {
   const t = text.trim();
-  return !!t && !inputError(row, t) && t !== row.site?.answer;
+  return !!t && !inputError(row, t) && t !== row.site?.answer && t !== row.release;
 }
 
 export interface SiteSave {
@@ -235,14 +240,13 @@ export function inputAnnotations(records: InputRecord[], opts?: { replace?: bool
 
 export interface InputWriteOpts {
   values?: Record<string, unknown>;
-  release?: Record<string, string>;
   site?: Record<string, string>;
 }
 
 // Every key, a field-only dotted one included, writes the effective answer:
-// typed, else the release's, else the site's, else the input's default.
-// Only a typed answer or one carried from the release is returned, so a site
-// or default answer is in the form layer and not the annotation.
+// typed (an upgrade prefills the release's), else the site's, else the input's default.
+// Only a typed answer is returned, so a site or default answer is in the form
+// layer and not the annotation.
 export function setInputOverrides(
   overrides: Record<string, unknown>,
   inputs: Input[] | undefined,
@@ -252,13 +256,12 @@ export function setInputOverrides(
   const written: InputRecord[] = [];
   for (const input of inputs ?? []) {
     const typedText = answers[input.key]?.trim() ?? "";
-    const release = opts?.release?.[input.key] ?? "";
-    const raw = typedText || release || opts?.site?.[input.key] || (input.default != null ? String(input.default) : "");
+    const raw = typedText || opts?.site?.[input.key] || (input.default != null ? String(input.default) : "");
     if (!raw) continue;
     const value = typed(input, raw);
     const patcher = !input.type || input.type === "string" ? input.patcher : undefined;
     if (!writeAt(overrides, opts?.values, input.key, value, patcher)) continue;
-    if (typedText || release) written.push({ key: input.key, value });
+    if (typedText) written.push({ key: input.key, value });
   }
   return written;
 }

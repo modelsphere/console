@@ -124,10 +124,9 @@ describe("catalog input answers", () => {
       extraArgs: ["--foo=OLD", "--bar"],
       untouched: 1,
     };
-    const req = planRequest(
-      { ...EMPTY, inputs: { [master.key]: " new:1 " } },
-      { model: "m", inputs: [master, arg], values, formLayer, inputsAnnotation: annotation, siteInputs: { [arg.key]: "site-{{model}}" }, hf: "" },
-    );
+    const opts = { model: "m", inputs: [master, arg], values, formLayer, inputsAnnotation: annotation, siteInputs: { [arg.key]: "site-{{model}}" }, hf: "" };
+    // The upgrade form prefills the release answers; master was retyped.
+    const req = planRequest({ ...EMPTY, inputs: { [master.key]: " new:1 ", [arg.key]: "yes" } }, opts);
     expect(req.overrides).toMatchObject({
       storageKVOffload: { mooncake: { master: "new:1", protocol: "rdma" } },
       old: { keep: 1 },
@@ -139,6 +138,10 @@ describe("catalog input answers", () => {
       { key: master.key, value: "new:1" },
       { key: arg.key, value: "yes" },
     ]);
+    // Clearing a prefilled answer falls back to the site's and drops it from the annotation.
+    const cleared = planRequest({ ...EMPTY, inputs: { [master.key]: "new:1", [arg.key]: "" } }, opts);
+    expect(cleared.overrides).toMatchObject({ extraArgs: ["site-m", "--bar"] });
+    expect(JSON.parse(cleared.additionalAnnotations?.[INPUTS_ANNOTATION] ?? "")).toEqual([{ key: master.key, value: "new:1" }]);
     expect(formLayer.extraArgs).toEqual(["--foo=OLD", "--bar"]);
     expect(values.extraArgs).toEqual(["--foo=1", "--bar"]);
   });

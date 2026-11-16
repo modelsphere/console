@@ -175,8 +175,17 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     setForm(initial);
     if (upgrade && seedPlan) setUpgradeSeeded(true);
   }, [initial, upgrade, seedPlan]);
+  // The release's recorded answers fill the input fields once the variant is known,
+  // so they show as values that can be changed or cleared; none is a fallback after.
+  const [inputsSeed, setInputsSeed] = useState<Record<string, string>>();
+  useEffect(() => {
+    if (!upgrade || !seedPlan || !v || inputsSeed) return;
+    const seeded = releaseInputState(v.inputs ?? [], v.values, seedPlan.layers?.form, seedPlan.additionalAnnotations?.[INPUTS_ANNOTATION]).answers;
+    setInputsSeed(seeded);
+    setForm((f) => ({ ...f, inputs: { ...seeded, ...f.inputs } }));
+  }, [upgrade, seedPlan, v, inputsSeed]);
   const [seed, setSeed] = useState<SwitchDefaults | null>(null);
-  const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: seed ? reseed(initial, {}, seed) : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
+  const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: seed ? reseed(initial, {}, seed) : inputsSeed ? { ...initial, inputs: inputsSeed } : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
 
   const [step, setStep] = useState<"form" | "review">("form");
   const [submitted, setSubmitted] = useState(false);
