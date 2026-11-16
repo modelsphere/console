@@ -36,6 +36,25 @@ func TestInspectHelmArchiveWithTopLevelDirectory(t *testing.T) {
 	}
 }
 
+func TestInspectReadsV1HostRequirements(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "Chart.yaml"), []byte("apiVersion: v2\nname: canaryd\nversion: 0.3.0\ntype: application\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := "apiVersion: v1\ngroup: modelsphere.dev\nname: canary\nversion: 0.4.0\ndisplayName: Canary\ndescription: Persistent model inference experiments.\nrequires:\n  imagePullSecrets: true\n  swiss: true\n  inferenceNamespaces: true\nfrontend:\n  type: component\n  runtime: remote\n  entry: index.umd.js\nactivation:\n  policy: auto\n"
+	if err := os.WriteFile(filepath.Join(directory, "plugin.yaml"), []byte(manifest), 0600); err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := Inspect(directory)
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+	want := Requirements{ImagePullSecrets: true, Swiss: true, InferenceNamespaces: true}
+	if artifact.Manifest.Requires != want {
+		t.Fatalf("Requires = %+v, want %+v", artifact.Manifest.Requires, want)
+	}
+}
+
 func TestInspectRejectsUnsafeArchivePath(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "unsafe.tgz")
 	createArchive(t, archivePath, map[string]string{

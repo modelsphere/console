@@ -35,12 +35,9 @@ type Manifest struct {
 	Menus       []Menu       `yaml:"menus"`
 }
 
-// Requirements declares platform services and scopes supplied by the Console host.
-type Requirements struct {
-	ImagePullSecrets    bool `yaml:"imagePullSecrets,omitempty"`
-	Swiss               bool `yaml:"swiss,omitempty"`
-	InferenceNamespaces bool `yaml:"inferenceNamespaces,omitempty"`
-}
+// Requirements is the host capability declaration shared with the Plugin CR
+// metadata, so the package and Console read the same field names.
+type Requirements = pluginapi.PluginRequirements
 
 // Frontend describes the static resource service consumed by Console.
 type Frontend struct {

@@ -183,6 +183,12 @@ type PluginMeta struct {
 	// Frontend holds frontend integration configuration.
 	Frontend FrontendConfig `json:"frontend"`
 
+	// Requires declares host capabilities the installer must supply. The
+	// installer reads it from the package; Console does not grant capabilities
+	// from it.
+	// +optional
+	Requires PluginRequirements `json:"requires,omitempty"`
+
 	// APIAccess lists API paths the plugin needs access to.
 	// +optional
 	APIAccess []string `json:"apiAccess,omitempty"`
@@ -205,6 +211,22 @@ type PluginMeta struct {
 type PluginDependency struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
+}
+
+// PluginRequirements names host capabilities a plugin package asks the installer
+// to supply. The CLI maps each one to Console host configuration.
+type PluginRequirements struct {
+	// ImagePullSecrets asks for the Console release imagePullSecrets.
+	// +optional
+	ImagePullSecrets bool `json:"imagePullSecrets,omitempty" yaml:"imagePullSecrets,omitempty"`
+
+	// Swiss asks for the host's externalSwiss endpoint and proxy key reference.
+	// +optional
+	Swiss bool `json:"swiss,omitempty" yaml:"swiss,omitempty"`
+
+	// InferenceNamespaces asks for the host's production inference scope.
+	// +optional
+	InferenceNamespaces bool `json:"inferenceNamespaces,omitempty" yaml:"inferenceNamespaces,omitempty"`
 }
 
 // UninstallPrecheck declares a plugin backend endpoint that decides whether the
