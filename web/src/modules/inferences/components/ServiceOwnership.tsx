@@ -24,8 +24,9 @@ export function ServiceRelationshipBadge({ service, compact }: { service: Servic
  const t = useT();
  const { state } = serviceRelationship(service);
  const owner = state === "owned" ? service.managedBy : state === "referenced" ? service.assignedTo : undefined;
+ if (compact && state === "standalone") return null;
  return <div className="space-y-1">
-  <Badge variant="outline">{t(`serviceRelationship.${state}`)}</Badge>
+  {(!compact || !owner) && <Badge variant="outline">{t(`serviceRelationship.${state}`)}</Badge>}
   {owner && <ServiceOwnership owner={owner} compact={compact} assigned={state === "referenced"} />}
  </div>;
 }
