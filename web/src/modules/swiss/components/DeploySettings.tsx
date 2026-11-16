@@ -2378,7 +2378,7 @@ export function planRequest(
   // A variant with inputs always sends the annotation, `[]` when nothing was
   // typed or carried, so the next upgrade does not read site or default
   // writes back from the form layer as release answers.
-  const annotations = inputAnnotations(written, { replace: !!opts.inputs?.length || parseInputRecords(opts.inputsAnnotation).present });
+  const annotations = inputAnnotations(written, { replace: !!opts.inputs && (opts.inputs.length > 0 || parseInputRecords(opts.inputsAnnotation).present) });
 
   return {
     catalog: opts.catalog || undefined,
