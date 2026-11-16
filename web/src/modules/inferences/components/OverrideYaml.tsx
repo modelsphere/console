@@ -20,13 +20,41 @@ import {
   TabsTrigger,
 } from "@modelsphere/ui";
 import { Lock, Pencil, TriangleAlert } from "lucide-react";
-import type { HelmValues } from "@swiss/lib/api";
+import { deployApi, type HelmValues, type PlanRequest } from "@swiss/lib/api";
 import { useT } from "@/modules/inferences/i18n";
 import { KeySearch } from "./KeySearch";
 import { YamlTextarea, type YamlTextareaHandle } from "./YamlTextarea";
 import { computedYaml, keyLines, mergeValues, overrideEdit, overridePaths, parseValues, readYaml, valuesYaml, type KeyLine, type Values } from "../override-yaml";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+export interface HelmValuesInflight {
+  key: string;
+  promise: Promise<HelmValues | undefined>;
+}
+
+export function helmValuesMutationOptions(getRequest: () => PlanRequest | undefined) {
+  return {
+    mutationFn: async (_key: string): Promise<HelmValues> => deployApi.helmValues(getRequest()!),
+  };
+}
+
+export function loadHelmValues(
+  request: PlanRequest | undefined,
+  key: string,
+  mutate: (key: string) => Promise<HelmValues>,
+  inflight: { current: HelmValuesInflight | null },
+): Promise<HelmValues | undefined> {
+  if (!request) return Promise.resolve(undefined);
+  if (inflight.current?.key === key) return inflight.current.promise;
+  const promise = mutate(key)
+    .catch(() => undefined)
+    .finally(() => {
+      if (inflight.current?.promise === promise) inflight.current = null;
+    });
+  inflight.current = { key, promise };
+  return promise;
+}
 
 // The Advanced section's Override YAML: a summary in the form, its editor in a dialog.
 // The chart's values and swissd's layers for the form as it stands, without

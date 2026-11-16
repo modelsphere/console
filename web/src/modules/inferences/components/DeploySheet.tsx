@@ -26,7 +26,7 @@ import {
 } from "@modelsphere/ui";
 import { ArrowRight, FlaskConical, RefreshCw, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
-import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type HelmValues, type Plan } from "@swiss/lib/api";
+import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
 import { applyFlags, imageOf, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
 import { EMPTY, formFromPlan, planRequest } from "../deployment-settings";
 import { useImageSlots } from "@swiss/lib/useImageSlots";
@@ -46,7 +46,7 @@ import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, clusterTaints, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
-import { OverrideYamlButton, type HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
+import { OverrideYamlButton, helmValuesMutationOptions, loadHelmValues, type HelmValuesInflight, type HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
 import { AdaptivePlanChangedError, composeAdaptivePlan, withAdaptiveConcurrency } from "../adaptive-concurrency";
 import { composeRecoveryPlan, RecoveryPlanChangedError } from "../recovery-compose";
@@ -264,27 +264,14 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     ? withAdaptiveConcurrency(withRecovery(requestFor({ ...form, edits: "" }), recovery), form, routeOptions.data)
     : undefined;
   const valuesKey = JSON.stringify(valuesRequest ?? null);
-  const valuesM = useMutation({
-    mutationFn: async (_key: string) => deployApi.helmValues(valuesRequest!),
-  });
-  const valuesInflight = useRef<{ key: string; promise: Promise<HelmValues | undefined> } | null>(null);
+  const valuesM = useMutation(helmValuesMutationOptions(() => valuesRequest));
+  const valuesInflight = useRef<HelmValuesInflight | null>(null);
   const valuesFresh = valuesM.variables === valuesKey;
   const valuesSource: HelmValuesSource = {
     data: valuesFresh && !valuesM.isError ? valuesM.data : undefined,
     loading: valuesM.isPending,
     error: valuesFresh && valuesM.error ? (valuesM.error instanceof Error ? valuesM.error : new Error(String(valuesM.error))) : null,
-    load: () => {
-      if (!canDiscover) return Promise.resolve(undefined);
-      if (valuesInflight.current?.key === valuesKey) return valuesInflight.current.promise;
-      const promise = valuesM
-        .mutateAsync(valuesKey)
-        .catch(() => undefined)
-        .finally(() => {
-          if (valuesInflight.current?.promise === promise) valuesInflight.current = null;
-        });
-      valuesInflight.current = { key: valuesKey, promise };
-      return promise;
-    },
+    load: () => loadHelmValues(valuesRequest, valuesKey, valuesM.mutateAsync, valuesInflight),
   };
   const compose = useMutation({
     mutationFn: async () => {
