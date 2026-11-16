@@ -76,5 +76,12 @@
         "hint": "侧边一列通高到顶；顶栏与内容合成一块圆角板，层次靠圆角和间隙而非边框"
       }
     }
+  },
+  "capability": {
+    "loading": "正在加载功能配置…",
+    "failed": "无法加载功能配置。",
+    "unconfigured": "此 Console 尚未配置 Canary。",
+    "forbidden": "你没有访问此页面的权限。",
+    "retry": "重试"
   }
 }

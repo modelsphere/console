@@ -42,3 +42,5 @@ The services this console federates to (swiss, the inference gateway) are
 separate projects under their own licenses.
 The Helm chart pulls the swiss chart as a dependency; nothing here
 redistributes their code.
+
+Canary frontend source migrated from modelsphere/console-canary-plugin (Apache-2.0), retaining its existing UI/API tests.
