@@ -42,6 +42,7 @@ import { messageOf, useToast } from "@swiss/components/ui/toast";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { cacheCard } from "@swiss/lib/cache";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
+import { usePausePolling } from "@swiss/lib/polling";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, clusterTaints, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
@@ -68,6 +69,7 @@ export function DeploySheet({ target, onClose }: { target: DeployTarget | null; 
 }
 
 function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: () => void }) {
+  usePausePolling();
   const t = useT();
   const p = useModulePath();
   const navigate = useNavigate();

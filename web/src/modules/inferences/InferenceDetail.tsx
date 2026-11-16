@@ -6,6 +6,7 @@ import { ArrowLeft, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api } from "@swiss/lib/api";
 import { isUninstalling } from "@swiss/lib/phase";
+import { pollOptions, usePollingPaused } from "@swiss/lib/polling";
 import { useReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { ReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { Endpoint } from "@swiss/components/Endpoint";
@@ -36,13 +37,15 @@ export function InferenceDetail() {
   const [editingSLO, setEditingSLO] = useState(false);
   // Set by the deploy sheet after a first install with SLO on.
   const [sloSetup, setSloSetup] = useState(() => (location.state as { sloSetup?: boolean } | null)?.sloSetup === true);
+  const paused = usePollingPaused();
+  const poll = !upgrading && !paused;
 
   // Query keys match swiss's pages, so the two views share one cache.
   // Polling pauses while the upgrade sheet covers the page.
   const status = useQuery({
     queryKey: ["status", namespace, release],
     queryFn: () => api.status(namespace, release),
-    refetchInterval: upgrading ? false : 15_000,
+    ...pollOptions(poll, 15_000),
     enabled: !!namespace,
   });
   // A release swiss did not deploy has no plan beside it: untracked, not an error.
@@ -53,7 +56,7 @@ export function InferenceDetail() {
     enabled: !!namespace,
   });
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
-  const objects = useReleaseObjects(namespace, release, !upgrading);
+  const objects = useReleaseObjects(namespace, release, poll);
   const revisions = useQuery({
     queryKey: ["revisions", namespace, release],
     queryFn: () => api.revisions(namespace, release),

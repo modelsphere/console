@@ -16,6 +16,7 @@ import { Bot, Plus } from "lucide-react";
 import { formatDateTime, useModulePath } from "@/shell";
 import { api, type Deployment } from "@swiss/lib/api";
 import { isUninstalling } from "@swiss/lib/phase";
+import { pollOptions, usePollingPaused } from "@swiss/lib/polling";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, modelLine, rowState } from "@/modules/inferences/lib";
 import { StatusDot } from "@/modules/inferences/components/StatusDot";
@@ -36,12 +37,13 @@ export function InferenceList() {
   const [pageSize, setPageSize] = useState(25);
   const [uninstalling, setUninstalling] = useState<UninstallTarget | null>(null);
   const [upgrading, setUpgrading] = useState<DeployTarget | null>(null);
+  const paused = usePollingPaused();
 
   // swiss's key prefix, so an uninstall from either side refreshes both.
   const list = useQuery({
     queryKey: ["deployments", "inferences", page, pageSize],
     queryFn: () => api.deployments(page, pageSize),
-    refetchInterval: upgrading ? false : 15_000,
+    ...pollOptions(!upgrading && !paused, 15_000),
     placeholderData: (prev) => prev,
   });
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });

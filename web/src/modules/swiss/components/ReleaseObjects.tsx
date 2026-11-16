@@ -19,30 +19,34 @@ import { Button } from "@swiss/components/ui/button";
 import { Card } from "@swiss/components/ui/card";
 import { ErrorState } from "@swiss/components/States";
 import { engines, enginesMove, scalerFailing, scalerHold, scalerNeutral } from "@swiss/lib/scaler";
+import { pollOptions, usePollingPaused } from "@swiss/lib/polling";
 import { cn, timeAgo } from "@swiss/lib/utils";
 
 // Unpolled, it loads once per visit and then moves only when the page's own
 // loop or an SLO write refetches it. The staleTime keeps a second reader
 // mounting moments later from fetching it again.
 export function useReleaseObjects(namespace: string, release: string, poll = true) {
+  const paused = usePollingPaused();
+  const active = poll && !paused;
   return useQuery({
     queryKey: ["objects", namespace, release],
     queryFn: () => api.objects(namespace, release),
     retry: false,
-    ...(poll
-      ? { refetchInterval: 15_000 }
-      : { staleTime: 10_000, refetchOnWindowFocus: false, refetchOnReconnect: false }),
+    ...(active ? pollOptions(true, 15_000) : { staleTime: 10_000, ...pollOptions(false, false) }),
   });
 }
 
 // Polled only while the release is autoscaling: for any other the answer is a
 // plan read on every call.
 export function useAutoscaling(namespace: string, release: string) {
+  const paused = usePollingPaused();
   return useQuery({
     queryKey: ["autoscaling", namespace, release],
     queryFn: () => api.autoscaling(namespace, release),
     retry: false,
-    refetchInterval: (q) => (q.state.data?.enabled ? 15_000 : false),
+    refetchInterval: (q) => (!paused && q.state.data?.enabled ? 15_000 : false),
+    refetchOnWindowFocus: !paused,
+    refetchOnReconnect: !paused,
   });
 }
 
