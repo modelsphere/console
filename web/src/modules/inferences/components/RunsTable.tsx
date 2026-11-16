@@ -24,6 +24,7 @@ export function RunsTable({
   filters,
   activeFilters,
   onRemoveFilter,
+  poll = true,
 }: {
   namespace?: string;
   release?: string;
@@ -35,13 +36,14 @@ export function RunsTable({
   filters?: ReactNode;
   activeFilters?: { key: string; label: string; display: string }[];
   onRemoveFilter?: (key: string) => void;
+  poll?: boolean;
 }) {
   const t = useT();
   const p = useModulePath();
   const runs = useQuery({
     queryKey: ["runs", namespace ?? "", release ?? "", action ?? ""],
     queryFn: () => api.runs({ namespace, release, action, limit: 200 }),
-    refetchInterval: 20_000,
+    refetchInterval: poll ? 20_000 : false,
   });
 
   const columns: ResourceColumn<Run>[] = [

@@ -139,6 +139,7 @@ function OverrideDialog({ value, source, onClose, onSave }: {
   // Values read earlier for this form open the tabs straight away; otherwise load them on open.
   const [loaded, setLoaded] = useState(() => (source?.data ? loadedFor(source.data, value) : undefined));
   const [final, setFinal] = useState(() => loaded?.computed ?? "");
+  const loadingRef = useRef(false);
   useEffect(() => {
     if (loaded || !source) return;
     if (source.data) {
@@ -148,12 +149,15 @@ function OverrideDialog({ value, source, onClose, onSave }: {
       setFinal(l.computed);
       return;
     }
-    if (!source.loading && !source.error) {
+    if (!source.loading && !source.error && !loadingRef.current) {
+      loadingRef.current = true;
       void source.load().then((values) => {
         const l = values && loadedFor(values, draft);
         if (!l) return;
         setLoaded(l);
         setFinal(l.computed);
+      }).finally(() => {
+        loadingRef.current = false;
       });
     }
   }, [source?.data]);

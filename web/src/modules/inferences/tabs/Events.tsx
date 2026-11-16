@@ -9,19 +9,19 @@ import { workloadApi, type K8sEvent } from "@/modules/inferences/workload-api";
 
 const ALL = "__all";
 
-export function useReleaseEvents(namespace: string, release: string, pods: readonly string[]) {
+export function useReleaseEvents(namespace: string, release: string, pods: readonly string[], poll = true) {
   const q = useQuery({
     queryKey: ["k8s-events", namespace, release],
     queryFn: () => workloadApi.events(namespace, release),
-    refetchInterval: 15_000,
+    refetchInterval: poll ? 15_000 : false,
     retry: false,
   });
   return { ...q, events: (q.data?.items ?? []).filter((e) => ofRelease(e.name, release, pods)) };
 }
 
-export function Events({ namespace, release, pods }: { namespace: string; release: string; pods: readonly string[] }) {
+export function Events({ namespace, release, pods, poll = true }: { namespace: string; release: string; pods: readonly string[]; poll?: boolean }) {
   const t = useT();
-  const q = useReleaseEvents(namespace, release, pods);
+  const q = useReleaseEvents(namespace, release, pods, poll);
   const [object, setObject] = useState(ALL);
   const [onlyWarnings, setOnlyWarnings] = useState(false);
   const objects = [...new Set(q.events.map((e) => `${e.kind}/${e.name}`))].sort();

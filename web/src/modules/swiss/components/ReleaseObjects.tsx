@@ -37,12 +37,12 @@ export function useReleaseObjects(namespace: string, release: string, poll = tru
 
 // Polled only while the release is autoscaling: for any other the answer is a
 // plan read on every call.
-export function useAutoscaling(namespace: string, release: string) {
+export function useAutoscaling(namespace: string, release: string, poll = true) {
   return useQuery({
     queryKey: ["autoscaling", namespace, release],
     queryFn: () => api.autoscaling(namespace, release),
     retry: false,
-    refetchInterval: (q) => (q.state.data?.enabled ? 15_000 : false),
+    refetchInterval: (q) => (poll && q.state.data?.enabled ? 15_000 : false),
   });
 }
 

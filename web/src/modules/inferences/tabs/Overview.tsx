@@ -32,6 +32,7 @@ export function Overview({
   plan,
   objects,
   objectsUnreadable,
+  poll = true,
   onAllRuns,
   onAllEvents,
   onViewInstances,
@@ -42,6 +43,7 @@ export function Overview({
   plan?: Plan;
   objects?: ObjectResult[];
   objectsUnreadable: boolean;
+  poll?: boolean;
   onAllRuns: () => void;
   onAllEvents: () => void;
   onViewInstances: () => void;
@@ -49,12 +51,12 @@ export function Overview({
   const t = useT();
   const p = s.planStatus;
   const source = plan?.source;
-  const events = useReleaseEvents(namespace, release, s.pods.map((p) => p.name));
+  const events = useReleaseEvents(namespace, release, s.pods.map((p) => p.name), poll);
   const runs = useQuery({
     queryKey: ["runs", namespace, release],
     queryFn: () => api.runs({ namespace, release, limit: 200 }),
   });
-  const autoscale = useAutoscaling(namespace, release).data;
+  const autoscale = useAutoscaling(namespace, release, poll).data;
 
   if (!s.exists && !p && !isUninstalling(s)) {
     return <p className="rounded-lg border border-dashed p-6 text-muted-foreground">{t("detail.notFound")}</p>;
