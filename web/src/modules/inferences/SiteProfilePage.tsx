@@ -166,7 +166,7 @@ function ProfileView({ p }: { p: SiteProfile }) {
         { label: f("overrides"), value: kv(p.model?.overrides) },
       ])}
       <SectionCard title={t("profile.groups.inputs")}>
-        {p.inputs && Object.keys(p.inputs).length ? (
+        {p.inputs?.length ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -175,10 +175,10 @@ function ProfileView({ p }: { p: SiteProfile }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {Object.entries(p.inputs).map(([k, x]) => (
-                <TableRow key={k}>
-                  <TableCell className="font-mono text-xs break-all">{k}</TableCell>
-                  <TableCell className="font-mono text-xs break-all">{answerText(x)}</TableCell>
+              {p.inputs.map((s) => (
+                <TableRow key={s.key}>
+                  <TableCell className="font-mono text-xs break-all">{s.key}</TableCell>
+                  <TableCell className="font-mono text-xs break-all">{answerText(s.value)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

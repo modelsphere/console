@@ -124,7 +124,7 @@ describe("catalog input answers", () => {
       extraArgs: ["--foo=OLD", "--bar"],
       untouched: 1,
     };
-    const opts = { model: "m", inputs: [master, arg], values, formLayer, inputsAnnotation: annotation, siteInputs: { [arg.key]: "site-{{model}}" }, hf: "" };
+    const opts = { model: "m", inputs: [master, arg], values, formLayer, inputsAnnotation: annotation, siteInputs: [{ key: arg.key, value: "site-{{model}}" }], hf: "" };
     const seeded = formFromPlan(
       {
         release: { name: "r", namespace: "n" },
@@ -176,7 +176,7 @@ describe("catalog input answers", () => {
   });
 
   it("fills a list key from the site when nothing is typed", () => {
-    const req = planRequest(EMPTY, { model: "glm", inputs: [arg], values, siteInputs: { [arg.key]: "mc-{{model}}" }, hf: "org/name" });
+    const req = planRequest(EMPTY, { model: "glm", inputs: [arg], values, siteInputs: [{ key: arg.key, value: "mc-{{model}}" }], hf: "org/name" });
     expect(req.overrides?.extraArgs).toEqual(["mc-glm", "--bar"]);
     expect(req.additionalAnnotations).toEqual({ [INPUTS_ANNOTATION]: "[]" });
   });

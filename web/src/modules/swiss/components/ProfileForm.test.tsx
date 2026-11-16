@@ -7,7 +7,7 @@ describe("variant inputs", () => {
   it("lists the profile's answers as rows, a string that reads as a number quoted", () => {
     const html = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
-        <ProfileForm value={{ name: "prod", model: { pathTemplate: "/m/{{name}}" }, inputs: { "a.master": "mc:1", "a.port": 8000, "a.tag": "8000" } }} onChange={() => {}} />
+        <ProfileForm value={{ name: "prod", model: { pathTemplate: "/m/{{name}}" }, inputs: [{ key: "a.master", value: "mc:1" }, { key: "a.port", value: 8000 }, { key: "a.tag", value: "8000" }] }} onChange={() => {}} />
       </QueryClientProvider>,
     );
     expect(html).toContain("Variant inputs");

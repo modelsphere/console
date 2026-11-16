@@ -16,16 +16,23 @@ describe("withSiteAnswers", () => {
     expect(parse(out)).toEqual({
       name: "lab",
       model: { pathTemplate: "/models/{{name}}" },
-      inputs: { "storageKVOffload.mooncake.master": "mc:1", "service.port": 8050 },
+      inputs: [
+        { key: "storageKVOffload.mooncake.master", value: "mc:1" },
+        { key: "service.port", value: 8050 },
+      ],
     });
   });
   it("replaces an answer and keeps the others", () => {
-    const out = withSiteAnswers(`${profile}inputs:\n  a.b: old # site-wide\n  c.d: kept\n`, [{ key: "a.b", value: "new" }]);
-    expect(parse(out).inputs).toEqual({ "a.b": "new", "c.d": "kept" });
+    const out = withSiteAnswers(`${profile}inputs:\n  - key: a.b\n    value: old # site-wide\n  - key: c.d\n    value: kept\n`, [{ key: "a.b", value: "new" }]);
+    expect(parse(out).inputs).toEqual([{ key: "a.b", value: "new" }, { key: "c.d", value: "kept" }]);
     expect(out).toContain("# site-wide");
   });
   it("fills an empty inputs section", () => {
-    expect(parse(withSiteAnswers(`${profile}inputs:\n`, [{ key: "a.b", value: true }])).inputs).toEqual({ "a.b": true });
+    expect(parse(withSiteAnswers(`${profile}inputs:\n`, [{ key: "a.b", value: true }])).inputs).toEqual([{ key: "a.b", value: true }]);
+  });
+  it("adds a key with brackets as a plain string", () => {
+    const key = "volumes.[name=draft-model].hostPath.path";
+    expect(parse(withSiteAnswers(profile, [{ key, value: "/data/x" }])).inputs).toEqual([{ key, value: "/data/x" }]);
   });
   it("refuses a document that does not parse", () => {
     expect(() => withSiteAnswers("name: [", [{ key: "a.b", value: 1 }])).toThrow();

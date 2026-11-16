@@ -1,4 +1,4 @@
-import type { Input, SiteProfile } from "./api";
+import type { Input, SiteInput, SiteProfile } from "./api";
 import { findAt, isFieldKey, readAt, splitKey, writeAt } from "./inputKey";
 
 export interface InputChoice {
@@ -47,7 +47,7 @@ export function inputRows(
 ): InputRow[] {
   const recorded = releaseInputState(inputs, variantValues, release, annotation).answers;
   return (inputs ?? []).map((input) => {
-    const v = profile?.inputs?.[input.key];
+    const v = profile?.inputs?.find((s) => s.key === input.key)?.value;
     const site = v === undefined || v === null ? undefined : { answer: typeof v === "string" ? fillTemplate(v, hf, model) : String(v), written: String(v) };
     const release = recorded[input.key];
     const found: [string | undefined, InputChoice["from"]][] = [
@@ -212,14 +212,14 @@ export function releaseInputState(
 
 export function filledSiteAnswers(
   inputs: Input[] | undefined,
-  siteInputs: Record<string, string | number | boolean> | undefined,
+  siteInputs: SiteInput[] | undefined,
   hf: string,
   model: string,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   if (!siteInputs) return out;
   for (const input of inputs ?? []) {
-    const v = siteInputs[input.key];
+    const v = siteInputs.find((s) => s.key === input.key)?.value;
     if (v == null) continue;
     const text = typeof v === "string" ? fillTemplate(v, hf, model) : String(v);
     if (text) out[input.key] = text;
@@ -273,5 +273,5 @@ export function parseAnswer(text: string): Answer {
   return /^"(-?\d+|true|false)"$/.test(text) ? text.slice(1, -1) : text;
 }
 
-export const answersText = (a?: Record<string, Answer>) => a && Object.fromEntries(Object.entries(a).map(([k, v]) => [k, answerText(v)]));
-export const parseAnswers = (r?: Record<string, string>) => r && Object.fromEntries(Object.entries(r).map(([k, v]) => [k, parseAnswer(v)]));
+export const answersText = (a?: SiteInput[]) => a && Object.fromEntries(a.map((s) => [s.key, answerText(s.value)]));
+export const parseAnswers = (r?: Record<string, string>): SiteInput[] | undefined => r && Object.entries(r).map(([key, v]) => ({ key, value: parseAnswer(v) }));

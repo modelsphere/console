@@ -55,7 +55,7 @@ describe("nodes", () => {
 
 describe("input answers", () => {
   it("maps a profile's answers to rows and back", () => {
-    const inputs = { "a.master": "mc:1", "a.port": 8000, "a.on": true };
+    const inputs = [{ key: "a.master", value: "mc:1" }, { key: "a.port", value: 8000 }, { key: "v.[name=x].path", value: true }];
     expect(parseAnswers(answersText(inputs))).toEqual(inputs);
     expect(parseAnswers(fromRows(toRows(answersText(inputs))))).toEqual(inputs);
     expect(parseAnswers(fromRows([]))).toBeUndefined();
