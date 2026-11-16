@@ -139,24 +139,6 @@ export function applyResourceEdits(overrides: Tree, edits: ResourceEdits | undef
   if (Object.keys(out).length) overrides.resources = out;
 }
 
-// Removes form-layer scalar resource overrides that the form cleared back to default,
-// while leaving null deletions or unknown sibling keys on base intact.
-export function dropClearedResources(layer: Tree, edits: ResourceEdits | undefined): void {
-  if (!isMap(layer.resources)) return;
-  const res = layer.resources as Tree;
-  for (const scope of ["requests", "limits"] as const) {
-    const raw = res[scope];
-    if (!isMap(raw)) continue;
-    const section = raw as Tree;
-    for (const [key, val] of Object.entries(section)) {
-      if (scalar(val) === undefined) continue;
-      if (scalar(edits?.[scope]?.[key]) === undefined) delete section[key];
-    }
-    if (Object.keys(section).length === 0) delete res[scope];
-  }
-  if (Object.keys(res).length === 0) delete layer.resources;
-}
-
 export function baseResourceRows(base?: HelmResources): ResourceDefaultRow[] {
   if (!base) return [];
   const keys = [...new Set([...Object.keys(base.requests), ...Object.keys(base.limits)])].sort(compareResourceKeys);

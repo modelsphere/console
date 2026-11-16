@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Plan } from "@swiss/lib/api";
+import type { Input, Plan } from "@swiss/lib/api";
+import { INPUTS_ANNOTATION } from "@swiss/lib/inputs";
 import { applyFlags, EMPTY, formFromPlan, planRequest, reseed, siteSwitchDefaults, switchDefaults } from "./DeploySettings";
 
 const site = { modelRoute: false, cart: true, serviceMonitor: false, sloRequirement: true, scaler: false };
@@ -103,6 +104,81 @@ describe("applyFlags", () => {
   it("starts off on an upgrade, whatever the plan says", () => {
     const plan = { release: { name: "r", namespace: "n" }, layers: {}, skipSchemaValidation: true, createNamespace: true } as unknown as Plan;
     expect(formFromPlan(plan)).toMatchObject({ skipSchemaValidation: false, createNamespace: false });
+  });
+});
+
+describe("catalog input answers", () => {
+  const master: Input = { key: "storageKVOffload.mooncake.master", title: "t", example: "e" };
+  const arg: Input = { key: "extraArgs.[=--foo=1]", title: "t", example: "e" };
+  const values = { extraArgs: ["--foo=1", "--bar"] };
+  const annotation = JSON.stringify([
+    { key: master.key, value: "mine:1" },
+    { key: "old.flag", value: "gone" },
+    { key: arg.key, value: "yes" },
+  ]);
+
+  it("records what the form writes and builds the form layer from the form alone", () => {
+    const formLayer = {
+      storageKVOffload: { mooncake: { master: "mine:1", protocol: "rdma" } },
+      old: { flag: "gone", keep: 1 },
+      extraArgs: ["--foo=OLD", "--bar"],
+      untouched: 1,
+    };
+    const opts = { model: "m", inputs: [master, arg], values, formLayer, inputsAnnotation: annotation, siteInputs: { [arg.key]: "site-{{model}}" }, hf: "" };
+    const seeded = formFromPlan(
+      {
+        release: { name: "r", namespace: "n" },
+        layers: { form: { ...formLayer, model: { localPath: "/models/m" } } },
+        additionalAnnotations: { [INPUTS_ANNOTATION]: annotation },
+      } as unknown as Plan,
+      undefined,
+      { inputs: [master, arg], values },
+    );
+    expect(seeded.localPath).toBe("/models/m");
+    expect(seeded.inputs).toEqual({ [master.key]: "mine:1", [arg.key]: "yes" });
+    // The upgrade form prefills the release answers; master was retyped.
+    const req = planRequest({ ...seeded, localPath: "", inputs: { ...seeded.inputs, [master.key]: " new:1 " } }, opts);
+    // The release's form layer only reads the form back; none of it is carried.
+    expect(req.overrides).toMatchObject({ storageKVOffload: { mooncake: { master: "new:1" } }, extraArgs: ["yes", "--bar"] });
+    expect(req.overrides).not.toHaveProperty("storageKVOffload.mooncake.protocol");
+    expect(req.overrides).not.toHaveProperty("old");
+    expect(req.overrides).not.toHaveProperty("untouched");
+    expect(JSON.parse(req.additionalAnnotations?.[INPUTS_ANNOTATION] ?? "")).toEqual([
+      { key: master.key, value: "new:1" },
+      { key: arg.key, value: "yes" },
+    ]);
+    // Clearing a prefilled answer falls back to the site's and drops it from the annotation.
+    const cleared = planRequest({ ...EMPTY, inputs: { [master.key]: "new:1", [arg.key]: "" } }, opts);
+    expect(cleared.overrides).toMatchObject({ extraArgs: ["site-m", "--bar"] });
+    expect(JSON.parse(cleared.additionalAnnotations?.[INPUTS_ANNOTATION] ?? "")).toEqual([{ key: master.key, value: "new:1" }]);
+    expect(formLayer.extraArgs).toEqual(["--foo=OLD", "--bar"]);
+    expect(values.extraArgs).toEqual(["--foo=1", "--bar"]);
+  });
+
+  it("does not carry a cleared answer from a release with no annotation", () => {
+    const formLayer = { storageKVOffload: { mooncake: { master: "old:1", protocol: "rdma" } }, extraArgs: ["--foo=OLD", "--bar"] };
+    const req = planRequest({ ...EMPTY, inputs: { [master.key]: "" } }, { model: "m", inputs: [master, arg], values, formLayer, hf: "" });
+    // Unanswered, nothing is written and the catalog's applies.
+    expect(req.overrides).not.toHaveProperty("storageKVOffload");
+    expect(req.overrides).not.toHaveProperty("extraArgs");
+    expect(req.additionalAnnotations).toEqual({ [INPUTS_ANNOTATION]: "[]" });
+  });
+
+  it("does not carry a site or default write that no longer applies", () => {
+    const withDefault: Input = { ...master, default: "def:1" };
+    const formLayer = { storageKVOffload: { mooncake: { master: "def:1" } }, extraArgs: ["site-old", "--bar"] };
+    const opts = { model: "m", inputs: [withDefault, arg], values, formLayer, inputsAnnotation: "[]", hf: "" };
+    const req = planRequest(EMPTY, opts);
+    expect(req.overrides).not.toHaveProperty("extraArgs");
+    expect(req.overrides).toMatchObject({ storageKVOffload: { mooncake: { master: "def:1" } } });
+    const noDefault = planRequest(EMPTY, { ...opts, inputs: [master, arg] });
+    expect(noDefault.overrides).not.toHaveProperty("storageKVOffload.mooncake.master");
+  });
+
+  it("fills a list key from the site when nothing is typed", () => {
+    const req = planRequest(EMPTY, { model: "glm", inputs: [arg], values, siteInputs: { [arg.key]: "mc-{{model}}" }, hf: "org/name" });
+    expect(req.overrides?.extraArgs).toEqual(["mc-glm", "--bar"]);
+    expect(req.additionalAnnotations).toEqual({ [INPUTS_ANNOTATION]: "[]" });
   });
 });
 

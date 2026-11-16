@@ -98,10 +98,10 @@ describe("affinity rules", () => {
 });
 
 describe("an upgrade rebuilds the form layer", () => {
-  it("carries every key the form has no field for", () => {
+  it("does not carry a key the form has no field for", () => {
     const got = upgrade({ extraArgs: ["--x"], pd: { prefill: { replicas: 2 } } });
-    expect(got.extraArgs).toEqual(["--x"]);
-    expect(got.pd).toEqual({ prefill: { replicas: 2 } });
+    expect(got).not.toHaveProperty("extraArgs");
+    expect(got).not.toHaveProperty("pd");
   });
 
   it("sends an edited affinity rule in its list", () => {
@@ -125,8 +125,8 @@ describe("tolerations on an upgrade", () => {
     expect((got.tolerations as unknown[])[1]).toEqual({ key: "ebof-test", operator: "Exists", effect: "NoSchedule", tolerationSeconds: 300 });
   });
 
-  it("sends an empty list once every row is removed", () => {
-    expect(upgrade({ tolerations: deployed }, (f) => ({ ...f, tolerations: [] })).tolerations).toEqual([]);
+  it("sends no list once every row is removed", () => {
+    expect(upgrade({ tolerations: deployed }, (f) => ({ ...f, tolerations: [] }))).not.toHaveProperty("tolerations");
     expect(planRequest(EMPTY, { model: "m" }).overrides!).not.toHaveProperty("tolerations");
   });
 
@@ -264,7 +264,7 @@ describe("env and pd.<role>.env merging", () => {
     expect(f.edits).toContain('value: "false"');
   });
 
-  it("preserves pd.<role>.schedulerName and splits standalone role GPU term cleanly without breaking custom affinity rules", () => {
+  it("drops pd.<role>.schedulerName and splits standalone role GPU term cleanly without breaking custom affinity rules", () => {
     const layer = {
       pd: {
         prefill: {
@@ -288,7 +288,6 @@ describe("env and pd.<role>.env merging", () => {
     }));
     expect(cleared.pd).toEqual({
       prefill: {
-        schedulerName: "volcano",
         affinityReplace: {
           nodeAffinity: {
             requiredDuringSchedulingIgnoredDuringExecution: {

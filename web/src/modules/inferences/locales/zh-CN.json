@@ -617,10 +617,11 @@
       "inputRememberHint": "任何模型中声明了该键的变体都会采用它",
       "inputReplaces": "替换站点现有答案 {answer}",
       "inputFrom": {
-        "release": "当前发布",
         "site": "站点配置",
         "variant": "变体默认值"
       },
+      "inputDroppedDeprecated": "不再是输入项：{key}（{value}）",
+      "inputDroppedBroken": "与此变体不匹配：{key}（{value}）",
       "inputProblem": {
         "string": "需匹配 {pattern}",
         "integer": "请输入整数",

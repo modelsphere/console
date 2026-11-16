@@ -4,11 +4,11 @@ import type { ApplyFlags, ClusterInfo, GPUSpec, Input as CatalogInput, Node, Pla
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { pickableProducts, productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
-import { CHECK_MS, inputError, inputProblem, rememberable, setInputOverrides, type InputChoice, type InputRow } from "@swiss/lib/inputs";
+import { CHECK_MS, INPUTS_ANNOTATION, filledSiteAnswers, inputAnnotations, inputError, inputProblem, parseInputRecords, releaseInputState, rememberable, setInputOverrides, type DroppedInput, type InputChoice, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
-import { envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
-import { applyImageEdits, dropClearedImages, imageEditsFromLayer, imagePatch, imageRows, imageText, joinImage, slotImageChoices, type ImageEdit, type ImageSlot, type SlotImageChoice } from "@swiss/lib/imageSlots";
+import { envBase, withEnv, withPreset } from "@swiss/lib/formLayer";
+import { applyImageEdits, imageEditsFromLayer, imagePatch, imageRows, imageText, joinImage, slotImageChoices, type ImageEdit, type ImageSlot, type SlotImageChoice } from "@swiss/lib/imageSlots";
 import {
   affinityRulesForForm,
   applyPdOverrides,
@@ -26,7 +26,6 @@ import {
 import {
   applyResourceEdits,
   deriveResourceEdits,
-  dropClearedResources,
   emptyResourceEdits,
   gpuRequestSummary,
   seedFormResources,
@@ -239,6 +238,7 @@ export function DeploySettings({
   localPathDefault,
   localPathPlaceholder,
   inputs,
+  droppedInputs,
   image,
   imageMirror,
   slots,
@@ -274,6 +274,8 @@ export function DeploySettings({
   localPathDefault?: string;
   localPathPlaceholder?: string;
   inputs?: InputRow[];
+  // Old answers the new variant no longer accepts, shown above the input rows.
+  droppedInputs?: DroppedInput[];
   // The engine image the catalog pins, and what the site's mirror rewrites it
   // to. Equal when this site mirrors nothing, which is when there is no rewrite
   // to offer a choice about.
@@ -405,6 +407,20 @@ export function DeploySettings({
             />
           </Row>
 
+          {!!droppedInputs?.length && (
+            <div className="flex items-start gap-2 py-2.5 text-sm text-warning">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+              <div className="min-w-0 space-y-1">
+                {droppedInputs.map((d) => (
+                  <p key={d.key} className="break-all">
+                    {d.reason === "deprecated" ? "No longer an input" : "Does not match this variant"}: {d.key}
+                    {d.value ? ` (${d.value})` : ""}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
           {inputs?.map((row) => {
             const { input, answer, from, choices, site } = row;
             const value = form.inputs[input.key] ?? "";
@@ -416,7 +432,7 @@ export function DeploySettings({
                 key={input.key}
                 label={input.title}
                 note={
-                  from === "release"
+                  row.release !== undefined && value.trim() === row.release
                     ? "the release's answer, kept unless you change it"
                     : from === "site"
                       ? "the site profile's answer, unless you change it"
@@ -1242,7 +1258,7 @@ function TabHint() {
   );
 }
 
-const FROM: Record<InputChoice["from"], string> = { release: "Release", site: "Site profile", variant: "Variant default" };
+const FROM: Record<InputChoice["from"], string> = { site: "Site profile", variant: "Variant default" };
 
 // choices list under the field when the empty field is clicked; typing closes the list.
 function Suggest({
@@ -2229,12 +2245,19 @@ export function planRequest(
     forceGpuProducts?: boolean;
     // The chart has no cache section (CHART_FEATURES): the switch is forced off.
     cacheUnsupported?: boolean;
-    // To send the form's answers typed.
+    // To send the form's answers typed. Absent until the variant has loaded;
+    // an empty list is a variant that declares none.
     inputs?: CatalogInput[];
+    // The release plan's swiss.modelsphere.dev/inputs value. Absent on a release
+    // deployed before answers were recorded.
+    inputsAnnotation?: string;
+    // Site profile answers. A list key writes one; a field key leaves it to swissd.
+    siteInputs?: Record<string, string | number | boolean>;
+    hf?: string;
     // The values of the preset f picks.
     preset?: Record<string, unknown>;
-    // The release's form layer, on an upgrade: the form's values are put over
-    // it, so the request carries the whole layer rebuilt.
+    // The release's form layer, on an upgrade: read for the release's input
+    // answers and a PD role's GPU label key; nothing in it is carried over.
     formLayer?: Record<string, unknown>;
     values?: Record<string, unknown>;
     siteEnv?: Record<string, unknown>;
@@ -2325,7 +2348,7 @@ export function planRequest(
   }
 
   const tolerations = f.tolerations.flatMap((t) => tolerationValue(t) ?? []);
-  if (tolerations.length || opts.formLayer?.tolerations !== undefined) overrides.tolerations = tolerations;
+  if (tolerations.length) overrides.tolerations = tolerations;
 
   // A typed ref is this deploy's form layer. An empty row is not an override;
   // on an upgrade it is a clear, so the release's copy of that path is dropped
@@ -2336,15 +2359,15 @@ export function planRequest(
   if (f.priorityClassName.trim()) overrides.priorityClassName = f.priorityClassName.trim();
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
 
-  setInputOverrides(overrides, opts.inputs, f.inputs);
+  const written = setInputOverrides(overrides, opts.inputs, f.inputs, {
+    values: opts.values,
+    site: filledSiteAnswers(opts.inputs, opts.siteInputs, opts.hf ?? "", opts.model),
+  });
   const siteEnv = envBase(opts.siteEnv);
   const preset = Object.keys(siteEnv).length ? (opts.preset ? withPreset(opts.preset, siteEnv) : siteEnv) : opts.preset;
-  const base = opts.formLayer ? structuredClone(opts.formLayer) : undefined;
-  if (base) {
-    dropClearedImages(base, f.images);
-    dropClearedResources(base, resourceEdits);
-  }
-  const layer = withEnv(opts.values, withPreset(base ? overlay(base, overrides) : overrides, preset));
+  // The release's form layer only reads the form back (formFromPlan); the new
+  // layer is the form alone, and swissd takes it as is.
+  const layer = withEnv(opts.values, withPreset(overrides, preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);
   applyPdOverrides(layer, f.pd, {
     gpuSpecs: opts.gpuSpecs,
@@ -2352,6 +2375,10 @@ export function planRequest(
     gpuVendor: opts.gpuVendor,
     formLayer: opts.formLayer,
   });
+  // A variant with inputs always sends the annotation, `[]` when nothing was
+  // typed or carried, so the next upgrade does not read site or default
+  // writes back from the form layer as release answers.
+  const annotations = inputAnnotations(written, { replace: !!opts.inputs && (opts.inputs.length > 0 || parseInputRecords(opts.inputsAnnotation).present) });
 
   return {
     catalog: opts.catalog || undefined,
@@ -2371,6 +2398,7 @@ export function planRequest(
     serviceId: f.serviceId.trim() || undefined,
     localPath: f.localPath.trim() || undefined,
     overrides: layer,
+    ...(annotations && { additionalAnnotations: annotations }),
   };
 }
 
@@ -2387,7 +2415,11 @@ export function applyFlags(f: Form): ApplyFlags | undefined {
 // The plan stores the composed overrides tree, not the form fields, so this is
 // the inverse of planRequest -- and the pair is why an upgrade can show the
 // settings rather than only promise it carried them forward.
-export function formFromPlan(plan: Plan, gpuSpecs?: GPUSpec[]): Form {
+export function formFromPlan(
+  plan: Plan,
+  gpuSpecs?: GPUSpec[],
+  variant?: Pick<Variant, "inputs" | "values">,
+): Form {
   // The form's own document, not the composed result: an upgrade seeds from
   // what the operator set, so recomposing against a newer catalog keeps it.
   const o = (plan.layers?.form ?? {}) as Record<string, unknown>;
@@ -2415,6 +2447,9 @@ export function formFromPlan(plan: Plan, gpuSpecs?: GPUSpec[]): Form {
     namespace: plan.release.namespace,
     serviceId: str("serviceId"),
     localPath: str("model.localPath"),
+    inputs: variant
+      ? releaseInputState(variant.inputs ?? [], variant.values, o, plan.additionalAnnotations?.[INPUTS_ANNOTATION]).answers
+      : {},
     scaler: bool("scaler.enabled"),
     scalerMin: str("scaler.minReplicas"),
     scalerMax: str("scaler.maxReplicas"),

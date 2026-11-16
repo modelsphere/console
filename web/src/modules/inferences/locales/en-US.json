@@ -628,10 +628,11 @@
       "inputRememberHint": "Every variant that declares this key, for any model, will take it",
       "inputReplaces": "replaces the site's answer {answer}",
       "inputFrom": {
-        "release": "Release",
         "site": "Site profile",
         "variant": "Variant default"
       },
+      "inputDroppedDeprecated": "No longer an input: {key} ({value})",
+      "inputDroppedBroken": "Does not match this variant: {key} ({value})",
       "inputProblem": {
         "string": "Must match {pattern}",
         "integer": "Enter a whole number",

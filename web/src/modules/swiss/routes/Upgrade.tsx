@@ -33,7 +33,7 @@ import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, SchemaBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
 import { movableCatalogs } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
-import { CHECK_MS, inputRows, inputsAnswered, siteSaves } from "@swiss/lib/inputs";
+import { CHECK_MS, INPUTS_ANNOTATION, inputRows, inputsAnswered, releaseInputState, siteSaves } from "@swiss/lib/inputs";
 import { affinityInvalid } from "@swiss/lib/affinity";
 import { SiteSaves, useSiteSaver } from "@swiss/components/SiteSaves";
 import { useDebounced } from "@swiss/lib/useDebounced";
@@ -143,14 +143,18 @@ export function Upgrade() {
   // rollback, from the revision being restored, which is what would come back.
   // An upgrade whose form starts empty would silently propose dropping every
   // setting.
+  const from = rollbackTo ? archived.data : current.data;
+  const seedReady =
+    !!from &&
+    !cluster.isPending &&
+    !profile.isPending &&
+    (!!rollbackTo || !catalogName || variantMissing || !entry.isPending);
   const [seededFromPlan, setSeededFromPlan] = useState(false);
   useEffect(() => {
-    const from = rollbackTo ? archived.data : current.data;
-    if (from) {
-      setForm(formFromPlan(from, profile.data?.profile?.nodes?.gpus));
-      setSeededFromPlan(true);
-    }
-  }, [current.data, archived.data, rollbackTo]);
+    if (!seedReady || seededFromPlan) return;
+    setForm(formFromPlan(from, profile.data?.profile?.nodes?.gpus, rollbackTo ? undefined : entry.data?.variant));
+    setSeededFromPlan(true);
+  }, [seedReady, seededFromPlan, from, profile.data, rollbackTo, entry.data]);
 
   const reset = () => {
     setPlan(null);
@@ -195,7 +199,11 @@ export function Upgrade() {
           // dropped by a form that never knew about it.
           fromRelease: release,
           cacheUnsupported: !!cache.unsupported,
-          inputs: entry.data?.variant.inputs,
+          // Until the target variant has loaded, leave the release's input writes as they are.
+          inputs: rollbackTo || !entry.data ? undefined : (entry.data.variant.inputs ?? []),
+          inputsAnnotation: rollbackTo ? undefined : current.data.additionalAnnotations?.[INPUTS_ANNOTATION],
+          siteInputs: profile.data?.profile?.inputs,
+          hf: entry.data?.model.source?.hf,
           formLayer: current.data.layers?.form,
           values: entry.data?.variant.values ?? current.data.layers?.catalog,
           siteEnv: profile.data?.profile?.extra,
@@ -272,7 +280,9 @@ export function Upgrade() {
   // What the pipeline acts on: a composed plan on an upgrade, the archive on a
   // rollback. Nothing else about the page differs.
   const target = rollbackTo ? (archived.data ?? null) : plan;
-  const inputs = inputRows(pin?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", current.data?.source.model ?? "", pin?.values, current.data?.layers?.form);
+  const inputsAnnotation = rollbackTo ? undefined : cur.additionalAnnotations?.[INPUTS_ANNOTATION];
+  const inputs = inputRows(pin?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", cur.source.model, pin?.values, cur.layers?.form, inputsAnnotation);
+  const droppedInputs = !rollbackTo && entry.data ? releaseInputState(pin?.inputs ?? [], pin?.values, cur.layers?.form, inputsAnnotation).dropped : [];
   // A rollback re-applies an archived plan: nothing typed, nothing to save.
   const remember = rollbackTo ? undefined : siteSaver.remember;
   const saves = remember ? siteSaves(inputs, form.inputs, remember) : [];
@@ -526,6 +536,7 @@ export function Upgrade() {
         localPathDefault={entry.data?.localPath}
         localPathPlaceholder={entry.data?.pathTemplate}
         inputs={inputs}
+        droppedInputs={droppedInputs}
         remember={remember}
         onRemember={siteSaver.onRemember}
         image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
@@ -553,7 +564,7 @@ export function Upgrade() {
         onTab={setTab}
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
-        composeDisabled={!rollbackTo && (!inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity))}
+        composeDisabled={!rollbackTo && (!seededFromPlan || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity))}
         composeLabel={planM.isPending ? "Composing…" : plan ? "Recompose upgrade" : "Compose upgrade"}
         applyFlags={applyFlags(form)}
         onDiff={setDiff}

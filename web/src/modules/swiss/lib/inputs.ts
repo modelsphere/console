@@ -1,15 +1,18 @@
 import type { Input, SiteProfile } from "./api";
+import { findAt, isFieldKey, readAt, splitKey, writeAt } from "./inputKey";
 
 export interface InputChoice {
   answer: string;
-  from: "release" | "site" | "variant";
+  from: "site" | "variant";
 }
 
 // answer applies when the field is left empty; none means the deployer must fill it.
 // choices, when more than one answer is found, are the ones to pick between, answer first.
 // site is the site profile's answer: as it is written, and filled for this model.
+// release is the release's recorded answer, which an upgrade prefills into the field.
 export interface InputRow {
   input: Input;
+  release?: string;
   answer?: string;
   from?: InputChoice["from"];
   choices?: InputChoice[];
@@ -26,18 +29,13 @@ export function fillTemplate(tmpl: string, hf: string, model: string): string | 
   return out.includes("{{") ? undefined : out;
 }
 
-export function answerAt(tree: Record<string, unknown> | undefined, key: string): string | undefined {
-  let node: unknown = tree;
-  for (const k of key.split(".")) {
-    if (!node || typeof node !== "object" || Array.isArray(node)) return undefined;
-    node = (node as Record<string, unknown>)[k];
-  }
-  if (node === undefined || node === null || typeof node === "object") return undefined;
-  return String(node);
+export function answerAt(tree: Record<string, unknown> | undefined, key: string, patcher?: string): string | undefined {
+  return readAt(tree, key, patcher);
 }
 
-// The order swissd answers in: the release's form layer (carried forward on upgrade),
-// the site profile, the input's default, then the variant's own values.
+// What an empty field falls back to: the site profile, the input's default, then the
+// variant's own values. The release's answer is not a fallback: an upgrade prefills it
+// into the field, so clearing the field drops it.
 export function inputRows(
   inputs: Input[] | undefined,
   profile: SiteProfile | undefined,
@@ -45,20 +43,23 @@ export function inputRows(
   model: string,
   variantValues?: Record<string, unknown>,
   release?: Record<string, unknown>,
+  annotation?: string,
 ): InputRow[] {
+  const recorded = releaseInputState(inputs, variantValues, release, annotation).answers;
   return (inputs ?? []).map((input) => {
     const v = profile?.inputs?.[input.key];
     const site = v === undefined || v === null ? undefined : { answer: typeof v === "string" ? fillTemplate(v, hf, model) : String(v), written: String(v) };
+    const release = recorded[input.key];
     const found: [string | undefined, InputChoice["from"]][] = [
-      [answerAt(release, input.key), "release"],
       [site?.answer, "site"],
-      [input.default !== undefined && input.default !== null ? String(input.default) : answerAt(variantValues, input.key), "variant"],
+      [input.default !== undefined && input.default !== null ? String(input.default) : answerAt(variantValues, input.key, input.patcher), "variant"],
     ];
     const answers = found.flatMap(([answer, from]) => (answer === undefined ? [] : [{ answer, from }]));
-    if (!answers.length) return site ? { input, site } : { input };
+    const base = { input, ...(release !== undefined && { release }), ...(site && { site }) };
+    if (!answers.length) return base;
     // The form sends no empty answer, so "" is no choice; one answer is listed once, under its first source.
     const choices = answers.filter((c, i) => c.answer && answers.findIndex((d) => d.answer === c.answer) === i);
-    return { input, ...answers[0], ...(choices.length > 1 && { choices }), ...(site && { site }) };
+    return { ...base, ...answers[0], ...(choices.length > 1 && { choices }) };
   });
 }
 
@@ -94,10 +95,11 @@ export function inputError(row: InputRow, text = ""): "required" | "invalid" | u
   return inputProblem(row.input, answer) ? "invalid" : undefined;
 }
 
-// A typed answer the site profile can take: one the input takes, and not the site's own.
+// A typed answer the site profile can take: one the input takes, not the site's own,
+// and not the release's answer prefilled on an upgrade.
 export function rememberable(row: InputRow, text = ""): boolean {
   const t = text.trim();
-  return !!t && !inputError(row, t) && t !== row.site?.answer;
+  return !!t && !inputError(row, t) && t !== row.site?.answer && t !== row.release;
 }
 
 export interface SiteSave {
@@ -129,20 +131,133 @@ export function typed(input: Input, text: string): unknown {
   }
 }
 
-// An empty field sends nothing, so its answer stays the site's and follows the profile.
-export function setInputOverrides(overrides: Record<string, unknown>, inputs: Input[] | undefined, answers: Record<string, string>) {
-  for (const input of inputs ?? []) {
-    const text = answers[input.key]?.trim();
-    if (!text) continue;
-    const keys = input.key.split(".");
-    let node = overrides;
-    for (const key of keys.slice(0, -1)) {
-      const next = node[key];
-      if (!next || typeof next !== "object" || Array.isArray(next)) node[key] = {};
-      node = node[key] as Record<string, unknown>;
-    }
-    node[keys[keys.length - 1]] = typed(input, text);
+export const INPUTS_ANNOTATION = "swiss.modelsphere.dev/inputs";
+
+export interface InputRecord {
+  key: string;
+  value: unknown;
+}
+
+export interface DroppedInput {
+  key: string;
+  value: string;
+  reason: "deprecated" | "broken";
+}
+
+type Recorded = { key: string; value: string | number | boolean };
+
+function onePrimitive(root: unknown, key: string): boolean {
+  const found = findAt(root, splitKey(key));
+  return found.length === 1 && ["string", "number", "boolean"].includes(typeof found[0].value);
+}
+
+export function parseInputRecords(raw: string | undefined): { present: boolean; records: Recorded[] } {
+  if (raw === undefined) return { present: false, records: [] };
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return { present: true, records: [] };
   }
+  if (!Array.isArray(data)) return { present: true, records: [] };
+  const records: Recorded[] = [];
+  for (const item of data) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    if (typeof rec.key !== "string") continue;
+    if (typeof rec.value !== "string" && typeof rec.value !== "number" && typeof rec.value !== "boolean") continue;
+    records.push({ key: rec.key, value: rec.value });
+  }
+  return { present: true, records };
+}
+
+// Annotation present: recheck every recorded answer against the new variant.
+// None: field-only keys still read from the release form layer, as they did before.
+export function releaseInputState(
+  inputs: Input[] | undefined,
+  values: Record<string, unknown> | undefined,
+  formLayer: Record<string, unknown> | undefined,
+  annotation: string | undefined,
+): { present: boolean; answers: Record<string, string>; dropped: DroppedInput[] } {
+  const parsed = parseInputRecords(annotation);
+  if (!parsed.present) {
+    const answers: Record<string, string> = {};
+    for (const input of inputs ?? []) {
+      if (!isFieldKey(input.key)) continue;
+      const text = answerAt(formLayer, input.key, input.patcher);
+      if (text !== undefined) answers[input.key] = text;
+    }
+    return { present: false, answers, dropped: [] };
+  }
+  const byKey = new Map((inputs ?? []).map((input) => [input.key, input]));
+  const answers: Record<string, string> = {};
+  const dropped: DroppedInput[] = [];
+  const seen = new Set<string>();
+  for (const rec of parsed.records) {
+    if (seen.has(rec.key)) continue;
+    seen.add(rec.key);
+    const value = String(rec.value);
+    if (!byKey.has(rec.key)) {
+      dropped.push({ key: rec.key, value, reason: "deprecated" });
+      continue;
+    }
+    if (!isFieldKey(rec.key) && !onePrimitive(values, rec.key)) {
+      dropped.push({ key: rec.key, value, reason: "broken" });
+      continue;
+    }
+    answers[rec.key] = value;
+  }
+  return { present: true, answers, dropped };
+}
+
+export function filledSiteAnswers(
+  inputs: Input[] | undefined,
+  siteInputs: Record<string, string | number | boolean> | undefined,
+  hf: string,
+  model: string,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!siteInputs) return out;
+  for (const input of inputs ?? []) {
+    const v = siteInputs[input.key];
+    if (v == null) continue;
+    const text = typeof v === "string" ? fillTemplate(v, hf, model) : String(v);
+    if (text) out[input.key] = text;
+  }
+  return out;
+}
+
+export function inputAnnotations(records: InputRecord[], opts?: { replace?: boolean }): Record<string, string> | undefined {
+  if (!records.length && !opts?.replace) return undefined;
+  return { [INPUTS_ANNOTATION]: JSON.stringify(records) };
+}
+
+export interface InputWriteOpts {
+  values?: Record<string, unknown>;
+  site?: Record<string, string>;
+}
+
+// Every key, a field-only dotted one included, writes the effective answer:
+// typed (an upgrade prefills the release's), else the site's, else the input's default.
+// Only a typed answer is returned, so a site or default answer is in the form
+// layer and not the annotation.
+export function setInputOverrides(
+  overrides: Record<string, unknown>,
+  inputs: Input[] | undefined,
+  answers: Record<string, string>,
+  opts?: InputWriteOpts,
+): InputRecord[] {
+  const written: InputRecord[] = [];
+  for (const input of inputs ?? []) {
+    const typedText = answers[input.key]?.trim() ?? "";
+    const raw = typedText || opts?.site?.[input.key] || (input.default != null ? String(input.default) : "");
+    if (!raw) continue;
+    const value = typed(input, raw);
+    const patcher = !input.type || input.type === "string" ? input.patcher : undefined;
+    if (!writeAt(overrides, opts?.values, input.key, value, patcher)) continue;
+    if (typedText) written.push({ key: input.key, value });
+  }
+  return written;
 }
 
 type Answer = string | number | boolean;
