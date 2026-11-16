@@ -484,4 +484,12 @@ describe("PD role scheduling", () => {
     );
     expect([en, zh].some((l) => noKeyHtml.includes(l.deploy.fields.pdGpuMissingLabelKey.replace("{role}", "prefill")))).toBe(true);
   });
+
+  it("freezes the form fieldset while prefilling", () => {
+    const frozen = renderToStaticMarkup(<DeployForm {...baseProps} disabled />);
+    expect(frozen).toMatch(/^<fieldset[^>]*disabled=""[^>]*inert=""[^>]*aria-busy="true"/);
+    expect(frozen).toContain("pointer-events-none");
+    const active = renderToStaticMarkup(<DeployForm {...baseProps} />);
+    expect(active).toMatch(/^<fieldset(?![^>]*disabled)/);
+  });
 });

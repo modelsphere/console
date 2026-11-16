@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   AlertDescription,
@@ -101,7 +101,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const catalogName = moveTo || ownCatalog;
 
   const indexes = useQueries({
-    queries: catalogs.map((c) => ({ queryKey: ["catalog", c.name], queryFn: () => api.catalog(c.name), enabled: upgrade || c.name === ownCatalog })),
+    queries: catalogs.map((c) => ({ queryKey: ["catalog", c.name], queryFn: () => api.catalog(c.name), enabled: upgrade || c.name === ownCatalog, retry: false })),
   });
   const modelIn = (name?: string): CatalogModel | undefined =>
     indexes[catalogs.findIndex((c) => c.name === name)]?.data?.models.find((m) => m.name === modelName);
@@ -124,6 +124,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     queryKey: ["model", catalogName, modelName, keptVariant, version],
     queryFn: () => api.model(modelName!, { catalog: catalogName, variant: keptVariant || undefined, version: version || undefined }),
     enabled: !!modelName && !!catalogName,
+    placeholderData: keepPreviousData,
   });
   const v = entry.data?.variant;
   const chartRange = !!v && isChartRange(v.chart.version);
@@ -169,11 +170,15 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     setUpgradeSeed(seeded);
     setForm(seeded);
   }, [upgrade, seedPlan, v, profile.isPending, gpuSpecs, upgradeSeed]);
-  const catalogRoute = upgrade && upgradeSeed ? upgradeSeed.route || upgradeSeed.serviceId || target.release : undefined;
+  const catalogRoute = useMemo(() => {
+    if (!upgrade || !seedPlan) return undefined;
+    const base = upgradeSeed ?? formFromPlan(seedPlan);
+    return base.route || base.serviceId || target.release;
+  }, [upgrade, seedPlan, upgradeSeed, target]);
   const routeOptions = useQuery({
     queryKey: ["route-options", catalogRoute ?? ""],
     queryFn: ({ signal }) => readRouteOptions(catalogRoute, signal),
-    enabled: !upgrade || !!upgradeSeed,
+    enabled: !upgrade || !!seedPlan,
     staleTime: 30_000,
     retry: false,
   });
@@ -194,7 +199,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // The form shows only once the entry and profile have loaded, so the first
   // seed lands before any plan; a later one is another variant or version, and
   // a plan composed from the old switches goes with it.
-  const seedReady = !upgrade && !!entry.data && !profile.isPending;
+  const seedReady = !upgrade && !!entry.data && !entry.isPlaceholderData && !profile.isPending;
   const siteDefaults = useMemo(() => siteSwitchDefaults(profile.data), [profile.data]);
   const variantValues = entry.data?.variant.values;
   useEffect(() => {
@@ -232,14 +237,15 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     profile.data?.profile,
   );
   // An upgrade waits for the profile too: it decides Monitor (planRequest).
-  const loading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
+  const baseLoading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
   const error = cluster.error ?? current.error ?? entry.error;
   const nextSeed = useMemo(() => (seedReady ? switchDefaults(siteDefaults, variantValues) : null), [seedReady, siteDefaults, variantValues]);
   const formSeeded = upgrade ? !!upgradeSeed : !!seed && !!nextSeed && JSON.stringify(seed) === JSON.stringify(nextSeed);
+  const loading = baseLoading || (!error && !formSeeded);
   // Chart discovery (images and per-role chart defaults) runs once on open after
   // the form is seeded, on target changes, and on manual refresh.
   // Override YAML runs its own standalone dry-run when opened so form edits stay quiet.
-  const canDiscover = !loading && !error && formSeeded && (!upgrade || !!recorded) && cluster.data?.allowDeploy !== false;
+  const canDiscover = !loading && !error && !entry.isPlaceholderData && (!upgrade || !!recorded) && cluster.data?.allowDeploy !== false;
   const compositionError = (error: unknown) => {
     if (error instanceof RecoveryPlanChangedError) return new Error(t("deploy.recovery.errors.changedPlan"));
     if (error instanceof AdaptivePlanChangedError) return new Error(t("deploy.fields.adaptiveChanged"));
@@ -251,6 +257,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     canDiscover,
     gpuSpecs,
   );
+  // Freeze the form and actions while prefill (initial seed, target variant
+  // fetch, or chart dry-run discovery for resources/PD/images) is in flight.
+  const prefilling = loading || entry.isFetching || preview.fetching;
   const valuesKey = JSON.stringify(
     canDiscover
       ? withAdaptiveConcurrency(withRecovery(requestFor({ ...form, edits: "" }), recovery), form, routeOptions.data)
@@ -495,11 +504,11 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               variant="outline"
               size="sm"
               className="shrink-0"
-              disabled={preview.fetching}
+              disabled={prefilling}
               onClick={() => void preview.reload()}
               title={t("deploy.refreshPreviewHint")}
             >
-              <RefreshCw className={cn("size-3.5", preview.fetching && "animate-spin")} />
+              <RefreshCw className={cn("size-3.5", prefilling && "animate-spin")} />
               {t("common:actions.refresh")}
             </Button>
           )}
@@ -509,14 +518,14 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
       {step === "form" && !loading && !error && (
         <div className={cn("flex gap-1 border-b px-5 py-2", nav.scrolled && "shadow-sm")}>
           {SECTIONS.map((s) => (
-            <Button key={s} variant="ghost" size="sm" className={cn("text-muted-foreground", nav.active === s && "bg-muted text-foreground")} onClick={() => nav.go(s)}>
+            <Button key={s} variant="ghost" size="sm" disabled={prefilling} className={cn("text-muted-foreground", nav.active === s && "bg-muted text-foreground")} onClick={() => nav.go(s)}>
               {t(`deploy.sections.${upgrade && s === "basic" ? "target" : s}`)}
             </Button>
           ))}
         </div>
       )}
 
-      <SheetBody ref={step === "form" ? nav.ref : undefined} className="relative min-h-0 flex-1 space-y-4 overflow-auto bg-surface-page px-5 py-4">
+      <SheetBody ref={step === "form" ? nav.ref : undefined} className={cn("relative min-h-0 flex-1 space-y-4 overflow-auto bg-surface-page px-5 py-4", step === "form" && prefilling && !loading && "cursor-wait")}>
         {readOnly && (
           <Alert variant="warning">
             <TriangleAlert />
@@ -542,6 +551,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               form={form}
               onChange={change}
               upgrade={upgrade}
+              disabled={prefilling}
               submitted={submitted}
               recovery={<RecoveryFields settings={recovery} onChange={(patch) => setRecoveryPatch((previous) => ({ ...previous, ...patch }))} />}
               target={targetFields}
@@ -603,8 +613,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         {step === "form" ? (
           <>
             <SheetCancelButton />
-            <OverrideYamlButton value={form.edits} onChange={(edits) => change({ edits })} source={readOnly ? undefined : valuesSource} disabled={!!readOnly || loading} />
-            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)}>
+            <OverrideYamlButton value={form.edits} onChange={(edits) => change({ edits })} source={readOnly ? undefined : valuesSource} disabled={!!readOnly || prefilling} />
+            <Button onClick={submit} disabled={!!readOnly || prefilling || compose.isPending || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)}>
               {compose.isPending ? t("deploy.review.composing") : t("deploy.review.compose")}
             </Button>
           </>

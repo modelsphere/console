@@ -55,6 +55,7 @@ export interface DeployFormProps {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
   upgrade?: boolean;
+  disabled?: boolean;
   submitted: boolean;
   target: ReactNode;
   cluster?: ClusterInfo;
@@ -99,7 +100,7 @@ export interface DeployFormProps {
   taints?: ClusterTaint[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, resources, pd, nodes, gpuSpecs, gpuVendor, recovery, inputs, droppedInputs, remember, onRemember, presets, taints }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, disabled, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, resources, pd, nodes, gpuSpecs, gpuVendor, recovery, inputs, droppedInputs, remember, onRemember, presets, taints }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -129,7 +130,12 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <fieldset
+      disabled={disabled}
+      inert={disabled || undefined}
+      aria-busy={disabled || undefined}
+      className={cn("flex min-w-0 flex-col gap-4", disabled && "pointer-events-none select-none opacity-60")}
+    >
       {section(
         "basic",
         <>
@@ -332,7 +338,7 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           <OverrideYaml value={form.edits} onChange={(edits) => onChange({ edits })} source={helmValues} />
         </>,
       )}
-    </div>
+    </fieldset>
   );
 }
 
