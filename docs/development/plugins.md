@@ -43,7 +43,7 @@ import { definePluginConfig } from "@modelsphere/plugin-sdk/build";
 export default definePluginConfig({ name: "example", entry: "src/runtime.tsx", outDir: "dist" });
 ```
 
-Run `pnpm exec tsup --config tsup.config.mjs`. It emits `index.umd.js` and Tailwind `candidates.json`. The build must compile CSS using those candidates and the pinned Console theme. Current stylesheet integration supports one optional frontend; multi-plugin runtime CSS merging is outside its scope.
+Run `pnpm exec tsup --config tsup.config.mjs`. It emits `index.umd.js` and Tailwind `candidates.json`. The build must compile CSS from those candidates and the pinned Console theme. Console loads every `.css` file under the release's `frontend/` before the entry; Tailwind's ordering guarantee does not extend across plugins' stylesheets.
 
 Console serves the built files from the installed release's `frontend/` directory. Put `frontend/<entry>` in the Chart; the Plugin CR makes the release addressable at `/plugins/<group--name>/<entry>`. Deployment loads the classic bundle.
 

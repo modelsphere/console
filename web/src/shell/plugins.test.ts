@@ -54,7 +54,7 @@ describe("configured SDK plugins", () => {
     browser([], () => {});
     expect(await loadPlugins([builtin])).toEqual({ modules: [builtin], errors: [] });
   });
-  it("shares SDK host aliases and registers the configured menu and dynamic routes", async () => {
+  it("shares SDK host aliases and registers the SDK menu and dynamic routes", async () => {
     browser([example()], asset => { register(); asset.onload?.(); });
     const result = await loadPlugins([builtin]);
     expect(result.errors).toEqual([]);
