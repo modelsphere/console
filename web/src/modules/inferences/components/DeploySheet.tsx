@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -46,7 +46,7 @@ import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, clusterTaints, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
-import { OverrideYamlButton, helmValuesMutationOptions, loadHelmValues, type HelmValuesInflight, type HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
+import { OverrideYamlButton, helmValuesQueryOptions, type HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
 import { AdaptivePlanChangedError, composeAdaptivePlan, withAdaptiveConcurrency } from "../adaptive-concurrency";
 import { composeRecoveryPlan, RecoveryPlanChangedError } from "../recovery-compose";
@@ -187,6 +187,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
 
   const [step, setStep] = useState<"form" | "review">("form");
+  const [yamlOpen, setYamlOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [expanded, setExpanded] = useState(OPEN);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -263,15 +264,16 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const valuesRequest = canDiscover
     ? withAdaptiveConcurrency(withRecovery(requestFor({ ...form, edits: "" }), recovery), form, routeOptions.data)
     : undefined;
-  const valuesKey = JSON.stringify(valuesRequest ?? null);
-  const valuesM = useMutation(helmValuesMutationOptions(() => valuesRequest));
-  const valuesInflight = useRef<HelmValuesInflight | null>(null);
-  const valuesFresh = valuesM.variables === valuesKey;
+  const helmValues = useQuery(helmValuesQueryOptions(valuesRequest, yamlOpen && step === "form" && canDiscover));
   const valuesSource: HelmValuesSource = {
-    data: valuesFresh && !valuesM.isError ? valuesM.data : undefined,
-    loading: valuesM.isPending,
-    error: valuesFresh && valuesM.error ? (valuesM.error instanceof Error ? valuesM.error : new Error(String(valuesM.error))) : null,
-    load: () => loadHelmValues(valuesRequest, valuesKey, valuesM.mutateAsync, valuesInflight),
+    data: helmValues.data,
+    loading: helmValues.isFetching,
+    error: helmValues.error instanceof Error ? helmValues.error : helmValues.error ? new Error(String(helmValues.error)) : null,
+    load: async () => {
+      if (!valuesRequest) return undefined;
+      const res = await helmValues.refetch({ cancelRefetch: false });
+      return res.error ? undefined : res.data;
+    },
   };
   const compose = useMutation({
     mutationFn: async () => {
@@ -557,6 +559,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               catalogRoute={catalogRoute}
               idPrefix={ID_PREFIX}
               helmValues={readOnly ? undefined : valuesSource}
+              onHelmValuesOpenChange={setYamlOpen}
               inputs={inputs}
               droppedInputs={droppedInputs}
               remember={canRemember ? remember : undefined}
@@ -592,7 +595,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         {step === "form" ? (
           <>
             <SheetCancelButton />
-            <OverrideYamlButton value={form.edits} onChange={(edits) => change({ edits })} source={readOnly ? undefined : valuesSource} disabled={!!readOnly || prefilling} />
+            <OverrideYamlButton value={form.edits} onChange={(edits) => change({ edits })} source={readOnly ? undefined : valuesSource} disabled={!!readOnly || prefilling} onOpenChange={setYamlOpen} />
             <Button onClick={submit} disabled={!!readOnly || prefilling || compose.isPending || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)}>
               {compose.isPending ? t("deploy.review.composing") : t("deploy.review.compose")}
             </Button>

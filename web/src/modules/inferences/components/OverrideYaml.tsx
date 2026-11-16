@@ -28,32 +28,26 @@ import { computedYaml, keyLines, mergeValues, overrideEdit, overridePaths, parse
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-export interface HelmValuesInflight {
-  key: string;
-  promise: Promise<HelmValues | undefined>;
-}
-
-export function helmValuesMutationOptions(getRequest: () => PlanRequest | undefined) {
+export function helmValuesQueryOptions(request: PlanRequest | undefined, opened: boolean) {
+  const valuesKey = JSON.stringify(request ?? null);
   return {
-    mutationFn: async (_key: string): Promise<HelmValues> => deployApi.helmValues(getRequest()!),
+    queryKey: ["helm-values", valuesKey] as const,
+    queryFn: (): Promise<HelmValues> => deployApi.helmValues(request!),
+    enabled: opened && !!request,
+    retry: false as const,
+    staleTime: Infinity,
+    // Dropped when the sheet closes: they last one install or upgrade.
+    gcTime: 0,
   };
 }
 
-export function loadHelmValues(
-  request: PlanRequest | undefined,
-  key: string,
-  mutate: (key: string) => Promise<HelmValues>,
-  inflight: { current: HelmValuesInflight | null },
-): Promise<HelmValues | undefined> {
-  if (!request) return Promise.resolve(undefined);
-  if (inflight.current?.key === key) return inflight.current.promise;
-  const promise = mutate(key)
-    .catch(() => undefined)
-    .finally(() => {
-      if (inflight.current?.promise === promise) inflight.current = null;
-    });
-  inflight.current = { key, promise };
-  return promise;
+function useDialogOpen(onOpenChange?: (open: boolean) => void) {
+  const [open, setOpen] = useState(false);
+  const set = (next: boolean) => {
+    setOpen(next);
+    onOpenChange?.(next);
+  };
+  return [open, () => set(true), () => set(false)] as const;
 }
 
 // The Advanced section's Override YAML: a summary in the form, its editor in a dialog.
@@ -67,17 +61,16 @@ export interface HelmValuesSource {
   load: () => Promise<HelmValues | undefined>;
 }
 
-export function OverrideYaml({ value, onChange, source }: {
+export function OverrideYaml({ value, onChange, source, onOpenChange }: {
   value: string;
   onChange: (edits: string) => void;
   source?: HelmValuesSource;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
-  const [open, setOpen] = useState(false);
+  const [open, edit, close] = useDialogOpen(onOpenChange);
   const paths = overridePaths(value);
-  const close = () => setOpen(false);
-  const edit = () => setOpen(true);
   return (
     <>
       <FloatingField
@@ -110,19 +103,19 @@ export function OverrideYaml({ value, onChange, source }: {
   );
 }
 
-export function OverrideYamlButton({ value, onChange, source, disabled }: {
+export function OverrideYamlButton({ value, onChange, source, disabled, onOpenChange }: {
   value: string;
   onChange: (edits: string) => void;
   source?: HelmValuesSource;
   disabled?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const t = useT();
-  const [open, setOpen] = useState(false);
+  const [open, edit, close] = useDialogOpen(onOpenChange);
   const paths = overridePaths(value);
-  const close = () => setOpen(false);
   return (
     <>
-      <Button variant="outline" disabled={disabled} onClick={() => setOpen(true)}>
+      <Button variant="outline" disabled={disabled} onClick={edit}>
         <Pencil className="size-3.5" />
         {t("deploy.fields.edits")}
         {!!paths?.length && <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{paths.length}</Badge>}
@@ -167,28 +160,13 @@ function OverrideDialog({ value, source, onClose, onSave }: {
   // Values read earlier for this form open the tabs straight away; otherwise load them on open.
   const [loaded, setLoaded] = useState(() => (source?.data ? loadedFor(source.data, value) : undefined));
   const [final, setFinal] = useState(() => loaded?.computed ?? "");
-  const loadingRef = useRef(false);
   useEffect(() => {
-    if (loaded || !source) return;
-    if (source.data) {
-      const l = loadedFor(source.data, draft);
-      if (!l) return;
-      setLoaded(l);
-      setFinal(l.computed);
-      return;
-    }
-    if (!source.loading && !source.error && !loadingRef.current) {
-      loadingRef.current = true;
-      void source.load().then((values) => {
-        const l = values && loadedFor(values, draft);
-        if (!l) return;
-        setLoaded(l);
-        setFinal(l.computed);
-      }).finally(() => {
-        loadingRef.current = false;
-      });
-    }
-  }, [source?.data]);
+    if (loaded || !source?.data) return;
+    const l = loadedFor(source.data, draft);
+    if (!l) return;
+    setLoaded(l);
+    setFinal(l.computed);
+  }, [loaded, source?.data, draft]);
   const [tab, setTab] = useState<Tab>(source ? "final" : "edit");
   // Two editors: edit.yaml is the overrides as stored, Final values the merged
   // values once the chart's are loaded. Switching tabs carries one into the other.

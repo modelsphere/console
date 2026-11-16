@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MutationObserver, QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver, environmentManager } from "@tanstack/react-query";
 import { deployApi, type PlanRequest } from "@swiss/lib/api";
-import { OverrideYaml, helmValuesMutationOptions, loadHelmValues, type HelmValuesInflight } from "./OverrideYaml";
+import { OverrideYaml, helmValuesQueryOptions } from "./OverrideYaml";
 import en from "@/modules/inferences/locales/en-US.json";
 import zh from "@/modules/inferences/locales/zh-CN.json";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  environmentManager.setIsServer(() => typeof window === "undefined");
 });
 
 const render = (value: string) => renderToStaticMarkup(<OverrideYaml value={value} onChange={() => {}} />);
@@ -45,28 +46,60 @@ describe("key search", () => {
   });
 });
 
-describe("Override YAML dry-run loader", () => {
-  it("calls /api/v2/compose dry-run once on open (even under concurrent StrictMode loads) and never calls /api/plans", async () => {
+describe("Override YAML dry-run query", () => {
+  it("stays idle while closed, calls /api/v2/compose dry-run once across concurrent/reopen loads, and never calls /api/plans", async () => {
+    environmentManager.setIsServer(() => false);
     const helm = { defaults: "replicaCount: 1\n", overrides: "{}\n" };
     const helmSpy = vi.spyOn(deployApi, "helmValues").mockResolvedValue(helm);
     const planSpy = vi.spyOn(deployApi, "plan");
-    let req: PlanRequest | undefined = { model: "m", catalog: "c", overrides: { replicaCount: 2 } };
-    const client = new QueryClient();
-    const observer = new MutationObserver(client, helmValuesMutationOptions(() => req));
-    const inflight: { current: HelmValuesInflight | null } = { current: null };
-    const load = () => loadHelmValues(req, JSON.stringify(req ?? null), (k) => observer.mutate(k), inflight);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const req1: PlanRequest = { model: "m", catalog: "c", overrides: { replicaCount: 2 } };
+    const req2: PlanRequest = { model: "m", catalog: "c", overrides: { replicaCount: 4 } };
 
-    const [first, second] = await Promise.all([load(), load()]);
-    expect(first).toEqual(helm);
-    expect(second).toEqual(helm);
+    const observerA = new QueryObserver(client, helmValuesQueryOptions(req1, false));
+    const observerB = new QueryObserver(client, helmValuesQueryOptions(req1, false));
+    const unsubA = observerA.subscribe(() => {});
+    const unsubB = observerB.subscribe(() => {});
+
+    // Closed dialog + form edits while closed stay quiet.
+    await Promise.resolve();
+    observerA.setOptions(helmValuesQueryOptions(req2, false));
+    observerB.setOptions(helmValuesQueryOptions(req2, false));
+    await Promise.resolve();
+    expect(helmSpy).not.toHaveBeenCalled();
+
+    // Opening with two concurrent observers (e.g. StrictMode) triggers a single dry-run call.
+    observerA.setOptions(helmValuesQueryOptions(req1, true));
+    observerB.setOptions(helmValuesQueryOptions(req1, true));
+    await vi.waitFor(() => expect(observerA.getCurrentResult().data).toEqual(helm));
+    expect(observerB.getCurrentResult().data).toEqual(helm);
     expect(helmSpy).toHaveBeenCalledTimes(1);
-    expect(helmSpy).toHaveBeenCalledWith(req);
+    expect(helmSpy).toHaveBeenCalledWith(req1);
     expect(planSpy).not.toHaveBeenCalled();
 
-    req = { model: "m", catalog: "c", overrides: { replicaCount: 4 } };
-    expect(await load()).toEqual(helm);
+    // Close and reopen without changing the request: uses cache, 0 extra calls.
+    observerA.setOptions(helmValuesQueryOptions(req1, false));
+    await Promise.resolve();
+    observerA.setOptions(helmValuesQueryOptions(req1, true));
+    await Promise.resolve();
+    expect(helmSpy).toHaveBeenCalledTimes(1);
+
+    // Concurrent manual reloads dedupe to one new dry-run call; form change while open fetches once.
+    const [r1, r2] = await Promise.all([
+      observerA.refetch({ cancelRefetch: false }),
+      observerB.refetch({ cancelRefetch: false }),
+    ]);
+    expect(r1.data).toEqual(helm);
+    expect(r2.data).toEqual(helm);
     expect(helmSpy).toHaveBeenCalledTimes(2);
-    expect(helmSpy).toHaveBeenLastCalledWith(req);
+
+    observerA.setOptions(helmValuesQueryOptions(req2, true));
+    observerB.setOptions(helmValuesQueryOptions(req2, true));
+    await vi.waitFor(() => expect(helmSpy).toHaveBeenCalledTimes(3));
+    expect(helmSpy).toHaveBeenLastCalledWith(req2);
     expect(planSpy).not.toHaveBeenCalled();
+
+    unsubA();
+    unsubB();
   });
 });
