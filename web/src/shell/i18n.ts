@@ -79,15 +79,29 @@ export function setLocale(locale: Locale): void {
   document.documentElement.lang = locale;
 }
 
-function subscribe(cb: () => void): () => void {
+// subscribeLocale fires on a language switch and whenever a bundle arrives.
+// Plugins load after the shell's first render and register their strings then;
+// a label computed before that would otherwise keep the fallback literal.
+// Bundles land on the resource store, which emits its own "added": i18next does
+// not forward it to the instance, so `i18n.on("added")` never fires.
+export function subscribeLocale(cb: () => void): () => void {
   i18n.on("languageChanged", cb);
+  i18n.store.on("added", cb);
+  return () => {
+    i18n.off("languageChanged", cb);
+    i18n.store.off("added", cb);
+  };
+}
+
+function subscribe(cb: () => void): () => void {
+  const stop = subscribeLocale(cb);
   // Another tab switched: follow.
   const onStorage = (e: StorageEvent) => {
     if (e.key === LOCALE_STORAGE_KEY && isLocale(e.newValue)) setLocale(e.newValue);
   };
   if (browser) window.addEventListener("storage", onStorage);
   return () => {
-    i18n.off("languageChanged", cb);
+    stop();
     if (browser) window.removeEventListener("storage", onStorage);
   };
 }

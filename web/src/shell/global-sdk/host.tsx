@@ -7,7 +7,7 @@ import * as ui from "@modelsphere/ui";
 import { apiFetch, type Me } from "@/shell/api";
 import { useAuth } from "@/shell/auth";
 import { usePermissions } from "@/shell/permissions";
-import { i18n, registerI18n, getLocale, getT, setLocale, useLocale, formatNumber, type Locale } from "@/shell/i18n";
+import { i18n, registerI18n, getLocale, getT, setLocale, useLocale, subscribeLocale as subscribeHostLocale, formatNumber, type Locale } from "@/shell/i18n";
 import { apiClient } from "./api";
 import { createRegistration } from "./runtime";
 
@@ -52,7 +52,7 @@ export function createGlobalHost() {
       if (locale !== "zh-CN" && locale !== "en-US") throw new Error(`Unsupported locale "${locale}"`);
       setLocale(locale as Locale);
     },
-    subscribeLocale(callback: () => void) { i18n.on("languageChanged", callback); return () => i18n.off("languageChanged", callback); },
+    subscribeLocale(callback: () => void) { return subscribeHostLocale(callback); },
     useLocale: () => useLocale().locale,
     formatDate: (value: string | number | Date, options?: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(getLocale(), options).format(new Date(value)),
     formatNumber,
