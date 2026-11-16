@@ -18,23 +18,12 @@ type Settings struct {
 
 // ConsoleSettings identifies the existing Console Helm release.
 type ConsoleSettings struct {
-	Release      string `yaml:"release,omitempty"`
-	Namespace    string `yaml:"namespace,omitempty"`
-	Chart        string `yaml:"chart,omitempty"`
-	ChartVersion string `yaml:"chartVersion,omitempty"`
-	URL          string `yaml:"url,omitempty"`
+	Release   string `yaml:"release,omitempty"`
+	Namespace string `yaml:"namespace,omitempty"`
 }
 
 func loadSettings(path string) (Settings, error) {
-	if path == "" {
-		path = os.Getenv("MODELSPHERE_CONFIG")
-	}
-	if path == "" {
-		configDir, err := os.UserConfigDir()
-		if err == nil {
-			path = filepath.Join(configDir, "modelsphere", "config.yaml")
-		}
-	}
+	path = settingsPath(path)
 	if path == "" {
 		return Settings{}, nil
 	}
@@ -50,4 +39,17 @@ func loadSettings(path string) (Settings, error) {
 		return Settings{}, fmt.Errorf("parse ModelSphere config %s: %w", path, err)
 	}
 	return settings, nil
+}
+
+func settingsPath(path string) string {
+	if path == "" {
+		path = os.Getenv("MODELSPHERE_CONFIG")
+	}
+	if path == "" {
+		configDir, err := os.UserConfigDir()
+		if err == nil {
+			path = filepath.Join(configDir, "modelsphere", "config.yaml")
+		}
+	}
+	return path
 }

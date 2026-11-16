@@ -27,14 +27,17 @@ export interface PluginMenu {
 
 export interface InstalledPlugin {
   id: string;
+  group?: string;
+  version?: string;
   entry: string;
   styles?: string[];
-  menu: PluginMenu;
+  menu?: PluginMenu | null;
+  backend?: { name: string; prefix: string; writePermission?: string };
   development?: boolean;
 }
 
-interface SDKMenu { name: string; path: string; authKey?: string }
-interface Definition { name: string; version: string; menus?: SDKMenu[] }
+interface SDKMenu { name: string; path: string; title?: string; icon?: string; authKey?: string; hidden?: boolean }
+interface Definition { name: string; version: string; displayName?: string; icon?: string; menus?: SDKMenu[] }
 type PluginComponent = React.ComponentType<any>;
 interface DataDefinition extends Omit<ResourceDataExtension, "plugin"> {}
 interface VisibilityDefinition extends Omit<ResourceVisibilityExtension, "plugin"> {}
@@ -68,15 +71,26 @@ function routePath(pattern: string): string {
 function buildModule(registration: Registration): ConsoleModule {
   const { plugin, definition, components, routes, error } = registration;
   if (error) throw error;
-  if (!definition || !plugin.menu) throw new Error("Entry did not register a ModelSphere SDK plugin");
-  const menu = plugin.menu;
-  const component = components[menu.component];
+  if (!definition) throw new Error("Entry did not register a ModelSphere SDK plugin");
+  const declared = definition.menus?.find((menu) => !menu.hidden);
+  const menu = plugin.menu ?? (declared ? {
+    title: definition.displayName ?? declared.title ?? declared.name,
+    label: declared.title ?? declared.name,
+    path: declared.path,
+    component: declared.name,
+    icon: declared.icon || definition.icon,
+    capability: plugin.backend?.name,
+    requiresWrite: false,
+  } : undefined);
+  if (!menu) throw new Error("Entry did not register a menu");
+  const component = plugin.menu ? components[menu.component] : routes[menu.path] ?? components[menu.component];
   if (!component) throw new Error(`Menu component "${menu.component}" was not registered`);
   const icons = { boxes: Boxes, "flask-conical": FlaskConical, puzzle: Puzzle };
   if (menu.icon && !(menu.icon in icons)) throw new Error(`Unsupported menu icon "${menu.icon}"`);
   const pages: ModulePage[] = [{ path: "", element: <RoutePage component={component} />, requiresWrite: menu.requiresWrite,
     menu: { label: menu.label, icon: icons[menu.icon as keyof typeof icons] ?? Puzzle } }];
   for (const [pattern, route] of Object.entries(routes)) {
+    if (!plugin.menu && pattern === menu.path) continue;
     const path = routePath(pattern);
     pages.push({ path, element: <RoutePage component={route} /> });
   }

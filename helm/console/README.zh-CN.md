@@ -110,6 +110,7 @@ cp /tmp/console-chart/console/values-existing-stack.example.yaml console-values.
 | `externalSwiss.url` | `http://<swiss-name>.<swiss-namespace>.svc:<port>/api`，必须以 `/api` 结尾 | — |
 | `externalSwiss.proxyKey.secretName` | 第 2 步的 `swiss-proxy-key`；Swiss 以 `auth.disabled=true` 运行时删除此行 | — |
 | `externalSwiss.profile` | Swiss 的 `cluster.profile.configMap` | 是 |
+| `platform.inferenceNamespaces` | 插件可读取的生产推理 namespace，例如 `[swiss-deploy]` | — |
 | `playground.gateway.service` | profile 的 `route.nginxService` | 是 |
 | `playground.gateway.secretRef` | profile 的 `route.auth.secretRef`；它只有 name 时，namespace 是 **Swiss 所在的 namespace**。profile 没有此字段时删除此行 | 是 |
 | `playground.gateway.configMap` | **不设置**：已有 profile 时 Console 拒绝启动 | — |
@@ -214,6 +215,7 @@ kubectl delete crd users.iam.theriseunion.io iamroles.iam.theriseunion.io \
 | values | 作用 |
 |---|---|
 | `externalSwiss.*` | 接入已有 Swiss，见上文 |
+| `platform.inferenceNamespaces` | 插件宿主提供的生产推理 namespace 范围；CLI 安装插件时自动映射为插件 Chart 所需的 `targetNamespaces` |
 | `playground.gateway.*` | 直接指定推理网关（没有 Swiss 时用 `configMap` + `service`） |
 | `service.type` | 暴露方式，默认 `NodePort` |
 | `admin.encryptedPassword` | 预先设定管理员密码的 bcrypt 哈希 |

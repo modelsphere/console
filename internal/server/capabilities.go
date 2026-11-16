@@ -14,7 +14,7 @@ type backendCapability struct {
 }
 
 func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
-	backends := s.cfg.ConfiguredBackends()
+	backends := s.registeredBackends()
 	capabilities := make(map[string]backendCapability, len(backends))
 	identity := identityFrom(r.Context())
 	permissions, err := s.authz.PermissionsFor(r.Context(), identity)
@@ -23,7 +23,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, backend := range backends {
-		capability := backendCapability{Configured: s.backendTargets()[backend.Name] != nil}
+		capability := backendCapability{Configured: backend.URL != "" || s.backendTargets()[backend.Name] != nil}
 		if capability.Configured {
 			capability.CanRead, err = s.authz.Authorize(r.Context(), identity, iam.Attributes{Verb: "get", APIGroup: iam.Group, Resource: backendResource, Name: backend.Name})
 			if err != nil {

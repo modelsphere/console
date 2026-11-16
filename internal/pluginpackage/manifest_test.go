@@ -15,6 +15,9 @@ func TestManifestConsolePlugin(t *testing.T) {
 	if plugin.ID != "canary" || plugin.URL != "http://canary-frontend.modelsphere.svc:8080/" {
 		t.Fatalf("unexpected frontend configuration: %+v", plugin)
 	}
+	if plugin.Group != "modelsphere.dev" || plugin.Version != "0.4.0" || plugin.Release != "canary" {
+		t.Fatalf("unexpected plugin identity metadata: %+v", plugin)
+	}
 	if plugin.Backend == nil || plugin.Backend.URL != "http://canary-backend.modelsphere.svc:8080/api/canary" {
 		t.Fatalf("unexpected backend configuration: %+v", plugin.Backend)
 	}
@@ -35,6 +38,7 @@ func testManifest() Manifest {
 	return Manifest{
 		APIVersion:  manifestVersion,
 		Kind:        "Plugin",
+		Group:       "modelsphere.dev",
 		Name:        "canary",
 		Version:     "0.4.0",
 		DisplayName: "Canary",

@@ -8,6 +8,8 @@ import (
 
 type pluginManifest struct {
 	ID          string                 `json:"id"`
+	Group       string                 `json:"group,omitempty"`
+	Version     string                 `json:"version,omitempty"`
 	Entry       string                 `json:"entry"`
 	Styles      []string               `json:"styles,omitempty"`
 	Menu        *config.PluginMenu     `json:"menu"`
@@ -29,6 +31,9 @@ func (s *Server) handlePluginIndex(writer http.ResponseWriter, _ *http.Request) 
 
 func (s *Server) handlePluginAsset(writer http.ResponseWriter, request *http.Request) {
 	id, asset := request.PathValue("id"), request.PathValue("asset")
+	if s.serveRegisteredPluginAsset(writer, request, id, asset) {
+		return
+	}
 	for _, plugin := range s.cfg.Plugins {
 		if plugin.ID == id {
 			s.servePluginService(writer, request, plugin, asset)

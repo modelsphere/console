@@ -11,12 +11,27 @@ import (
 // Plugin identifies a trusted frontend image service and its navigation entry.
 type Plugin struct {
 	Development bool           `yaml:"development,omitempty" json:"development,omitempty"`
+	Group       string         `yaml:"group,omitempty" json:"group,omitempty"`
 	ID          string         `yaml:"id" json:"id"`
+	Version     string         `yaml:"version,omitempty" json:"version,omitempty"`
+	Release     string         `yaml:"release,omitempty" json:"release,omitempty"`
 	URL         string         `yaml:"url" json:"-"`
 	Entry       string         `yaml:"entry" json:"entry"`
 	Styles      []string       `yaml:"styles,omitempty" json:"styles,omitempty"`
 	Menu        PluginMenu     `yaml:"menu" json:"menu"`
 	Backend     *PluginBackend `yaml:"backend,omitempty" json:"backend,omitempty"`
+}
+
+const DefaultPluginGroup = "modelsphere.dev"
+
+var pluginGroup = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$`)
+
+// PluginIdentity returns the stable group/name identity used by the CLI.
+func PluginIdentity(group, id string) string {
+	if group == "" {
+		group = DefaultPluginGroup
+	}
+	return group + "/" + id
 }
 
 type PluginBackend struct {
@@ -62,6 +77,9 @@ func validatePlugins(plugins []Plugin) error {
 func validatePlugin(plugin Plugin) error {
 	if !pluginName.MatchString(plugin.ID) {
 		return fmt.Errorf("id %q must be lowercase kebab-case", plugin.ID)
+	}
+	if plugin.Group != "" && !pluginGroup.MatchString(plugin.Group) {
+		return fmt.Errorf("group %q must be a DNS subdomain", plugin.Group)
 	}
 	upstream, err := url.Parse(plugin.URL)
 	if err != nil || (upstream.Scheme != "http" && upstream.Scheme != "https") || upstream.Host == "" || upstream.User != nil || upstream.RawQuery != "" || upstream.Fragment != "" {

@@ -1,13 +1,13 @@
 package plugincli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -18,7 +18,30 @@ type Runner struct {
 	KubectlPath    string
 	Kubeconfig     string
 	Context        string
+	LogWriter      io.Writer
+	Verbosity      int
 	CommandTimeout time.Duration
+}
+
+var sensitiveLogPattern = regexp.MustCompile(`(?i)((?:authorization|token|password|secret|api[-_]?key)[[:space:]]*[:=][[:space:]]*)([^[:space:],]+)`)
+
+// HelmRelease is the subset of Helm release metadata needed by lifecycle commands.
+type HelmRelease struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	Status    string `json:"status"`
+	Chart     string `json:"chart"`
+}
+
+type helmSecretList struct {
+	Items []helmSecret `json:"items"`
+}
+
+type helmSecret struct {
+	Metadata struct {
+		Namespace string            `json:"namespace"`
+		Labels    map[string]string `json:"labels"`
+	} `json:"metadata"`
 }
 
 func (r Runner) helm(ctx context.Context, args ...string) ([]byte, error) {
@@ -40,11 +63,21 @@ func (r Runner) run(ctx context.Context, binary string, globalArgs []string, arg
 	defer cancel()
 	commandArgs := append(append([]string(nil), globalArgs...), args...)
 	command := exec.CommandContext(commandContext, binary, commandArgs...)
-	output, err := command.CombinedOutput()
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = r.stderrWriter(&stderr)
+	started := time.Now()
+	r.log(1, "starting %s", binary)
+	r.log(2, "command: %s", formatCommand(binary, commandArgs))
+	err := r.waitCommand(commandContext, command, binary, started)
 	if err == nil {
-		return output, nil
+		r.log(2, "completed %s in %s", binary, time.Since(started).Round(time.Millisecond))
+		if r.Verbosity >= 6 {
+			r.log(6, "output: stdout=%d bytes stderr=%d bytes", stdout.Len(), stderr.Len())
+		}
+		return stdout.Bytes(), nil
 	}
-	detail := strings.TrimSpace(string(output))
+	detail := strings.TrimSpace(strings.TrimSpace(stderr.String()) + " " + strings.TrimSpace(stdout.String()))
 	if len(detail) > 4096 {
 		detail = detail[:4096] + "..."
 	}
@@ -55,6 +88,77 @@ func (r Runner) run(ctx context.Context, binary string, globalArgs []string, arg
 		return nil, fmt.Errorf("%s failed: %w", binary, err)
 	}
 	return nil, fmt.Errorf("%s failed: %w: %s", binary, err, detail)
+}
+
+func (r Runner) waitCommand(commandContext context.Context, command *exec.Cmd, binary string, started time.Time) error {
+	done := make(chan error, 1)
+	go func() { done <- command.Run() }()
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-ticker.C:
+			r.log(1, "%s still running after %s", binary, time.Since(started).Round(time.Second))
+		case <-commandContext.Done():
+			return <-done
+		}
+	}
+}
+
+func (r Runner) stderrWriter(buffer *bytes.Buffer) io.Writer {
+	if r.Verbosity < 4 || r.LogWriter == nil {
+		return buffer
+	}
+	return io.MultiWriter(buffer, redactingWriter{writer: r.LogWriter})
+}
+
+func (r Runner) log(level int, format string, args ...any) {
+	if r.Verbosity < level || r.LogWriter == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(r.LogWriter, "modelsphere[v=%d] %s\n", level, fmt.Sprintf(format, args...))
+}
+
+func formatCommand(binary string, args []string) string {
+	parts := append([]string{binary}, redactCommandArgs(args)...)
+	return strings.Join(parts, " ")
+}
+
+func redactCommandArgs(args []string) []string {
+	redacted := make([]string, len(args))
+	copy(redacted, args)
+	for index := range redacted {
+		if isSensitiveFlag(redacted[index]) && index+1 < len(redacted) {
+			redacted[index+1] = "<redacted>"
+		}
+		for _, flag := range []string{"--set=", "--set-string=", "--set-file="} {
+			if strings.HasPrefix(redacted[index], flag) {
+				redacted[index] = flag + "<redacted>"
+			}
+		}
+	}
+	return redacted
+}
+
+func isSensitiveFlag(value string) bool {
+	for _, flag := range []string{"--password", "--token", "--secret", "--api-key", "--apikey", "--authorization"} {
+		if value == flag {
+			return true
+		}
+	}
+	return false
+}
+
+type redactingWriter struct {
+	writer io.Writer
+}
+
+func (writer redactingWriter) Write(data []byte) (int, error) {
+	redacted := sensitiveLogPattern.ReplaceAllString(string(data), "$1<redacted>")
+	_, err := writer.writer.Write([]byte(redacted))
+	return len(data), err
 }
 
 func (r Runner) helmFlags() []string {
@@ -83,6 +187,57 @@ func (r Runner) GetValues(ctx context.Context, release, namespace string) ([]byt
 	return r.helm(ctx, "get", "values", release, "--namespace", namespace, "--all", "--output", "yaml")
 }
 
+// ListDeployedReleases returns deployed Helm releases using Kubernetes release
+// Secret labels, avoiding a slow Helm query across every release history.
+func (r Runner) ListDeployedReleases(ctx context.Context) ([]HelmRelease, error) {
+	data, err := r.kubectl(ctx, "get", "secrets", "--all-namespaces", "--selector", "owner=helm,status=deployed", "--output", "json")
+	if err != nil {
+		return nil, fmt.Errorf("list deployed Helm releases: %w", err)
+	}
+	var secrets helmSecretList
+	if err := json.Unmarshal(data, &secrets); err != nil {
+		return nil, fmt.Errorf("parse deployed Helm releases: %w", err)
+	}
+	releases := make([]HelmRelease, 0, len(secrets.Items))
+	for _, secret := range secrets.Items {
+		labels := secret.Metadata.Labels
+		name := labels["name"]
+		if labels["status"] != "deployed" || name == "" || secret.Metadata.Namespace == "" {
+			continue
+		}
+		releases = append(releases, HelmRelease{
+			Name:      name,
+			Namespace: secret.Metadata.Namespace,
+			Status:    labels["status"],
+			Chart:     labels["chart"],
+		})
+	}
+	return releases, nil
+}
+
+// ListReleasesInNamespace returns all Helm releases in one namespace.
+func (r Runner) ListReleasesInNamespace(ctx context.Context, namespace string) ([]HelmRelease, error) {
+	if namespace == "" {
+		return nil, fmt.Errorf("Helm release namespace is required")
+	}
+	return r.listReleases(ctx, "--namespace", namespace)
+}
+
+func (r Runner) listReleases(ctx context.Context, scope ...string) ([]HelmRelease, error) {
+	args := []string{"list"}
+	args = append(args, scope...)
+	args = append(args, "--all", "--output", "json")
+	data, err := r.helm(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list Helm releases: %w", err)
+	}
+	var releases []HelmRelease
+	if err := json.Unmarshal(data, &releases); err != nil {
+		return nil, fmt.Errorf("parse Helm release list: %w", err)
+	}
+	return releases, nil
+}
+
 func (r Runner) Lint(ctx context.Context, chart string) error {
 	_, err := r.helm(ctx, "lint", chart, "--strict")
 	return err
@@ -99,14 +254,6 @@ func (r Runner) UpgradePlugin(ctx context.Context, release, chart, namespace str
 	return r.runHelmWait(ctx, args, wait, timeout)
 }
 
-func (r Runner) UpgradeConsole(ctx context.Context, release, chart, namespace, chartVersion, patch string, wait bool, timeout time.Duration) error {
-	args := []string{"upgrade", release, chart, "--namespace", namespace, "--reuse-values", "--values", patch}
-	if chartVersion != "" {
-		args = append(args, "--version", chartVersion)
-	}
-	return r.runHelmWait(ctx, args, wait, timeout)
-}
-
 func (r Runner) Uninstall(ctx context.Context, release, namespace string, wait bool, timeout time.Duration) error {
 	args := []string{"uninstall", release, "--namespace", namespace}
 	if wait {
@@ -114,48 +261,6 @@ func (r Runner) Uninstall(ctx context.Context, release, namespace string, wait b
 	}
 	_, err := r.helm(ctx, args...)
 	return err
-}
-
-func (r Runner) ServiceExists(ctx context.Context, name, namespace string) error {
-	_, err := r.kubectl(ctx, "get", "service", name, "--namespace", namespace, "--output", "name")
-	return err
-}
-
-func (r Runner) PluginIndex(ctx context.Context, endpoint, pluginID string) (bool, error) {
-	base, err := url.Parse(strings.TrimRight(endpoint, "/"))
-	if err != nil || base.Scheme == "" || base.Host == "" || base.User != nil {
-		return false, fmt.Errorf("console URL must be an absolute URL without credentials")
-	}
-	indexURL, err := url.JoinPath(base.String(), "plugins/index.json")
-	if err != nil {
-		return false, fmt.Errorf("build Console plugin index URL: %w", err)
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, indexURL, nil)
-	if err != nil {
-		return false, fmt.Errorf("create Console plugin index request: %w", err)
-	}
-	client := &http.Client{Timeout: r.CommandTimeout}
-	response, err := client.Do(request)
-	if err != nil {
-		return false, fmt.Errorf("read Console plugin index: %w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("Console plugin index returned HTTP %d", response.StatusCode)
-	}
-	var plugins []struct {
-		ID string `json:"id"`
-	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
-	if err := decoder.Decode(&plugins); err != nil {
-		return false, fmt.Errorf("decode Console plugin index: %w", err)
-	}
-	for _, plugin := range plugins {
-		if plugin.ID == pluginID {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func (r Runner) runHelmWait(ctx context.Context, args []string, wait bool, timeout time.Duration) error {

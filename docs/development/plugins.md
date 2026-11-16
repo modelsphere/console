@@ -75,6 +75,9 @@ HTTP and WebSocket requests use `/plugins/<id>/` through both Console proxies. T
 
 ## Deploy a static-resource image
 
+This URL-based descriptor remains for development and existing deployments. Installed plugins
+publish their frontend files through the Plugin CR instead of a Console values entry.
+
 Production `tsup.config.mjs`:
 
 ```js
@@ -102,52 +105,73 @@ Configuration is read at backend startup. Open tabs retain their registry until 
 
 ## Package and install with ModelSphere CLI
 
-`cmd/modelsphere` provides the first local lifecycle adapter. It uses Helm for both the plugin
-release and the existing Console release; it does not create a Plugin CRD or store a second
-plugin registry.
+For a complete install/uninstall walkthrough using the CPU16 cluster, see
+[`plugin-cli.md`](plugin-cli.md).
 
-The packaged Chart must contain `Chart.yaml` and `plugin.yaml`. The latter declares the two
-Services that the Chart creates, so the CLI never guesses names from a Chart or scans arbitrary
-cluster Services:
+`cmd/modelsphere` provides the local lifecycle adapter:
+
+| Command | Scope |
+| --- | --- |
+| `validate` / `package` | Validate `Chart.yaml` and `plugin.yaml`; build a `.tgz` |
+| `install` | Install or upgrade the plugin Helm release, with a host-capability overlay |
+| `registration` | Print a `modelsphere.dev/v1alpha1` Plugin CR for a separate apply |
+| `list` | Read Plugin CRs and their phases |
+| `uninstall` | Delete the Plugin CR, then uninstall the plugin release |
+
+`install` never writes Console Helm values and never upgrades Console. Registration is a
+separate CR; Console watches it and reads the installed release's `plugin.yaml` and
+`frontend/` files. See [`plugin-cli.md`](plugin-cli.md) for the full walkthrough.
+
+The packaged Chart must contain `Chart.yaml`, `plugin.yaml`, and the frontend files under
+`frontend/`. The v1 manifest carries identity, product version, host requirements, and the
+frontend entry:
 
 ```yaml
+apiVersion: v1
+group: modelsphere.dev
+name: example
+version: 0.1.0
+requires:
+  imagePullSecrets: true
+  swiss: true
+  inferenceNamespaces: true
 frontend:
+  type: component
+  runtime: remote
   entry: index.umd.js
-  service: {name: ${RELEASE}-frontend, port: 8080}
-backend:
-  name: example
-  prefix: /api/example
-  path: /api/example
-  service: {name: ${RELEASE}-backend, port: 8080}
 ```
 
-Set non-secret defaults in the platform config directory reported by Go (`$XDG_CONFIG_HOME` on
-Linux, `~/Library/Application Support` on macOS) or pass flags explicitly:
+The API route is not declared in `plugin.yaml`. The Chart renders an
+`iam.theriseunion.io/v1alpha1` `ReverseProxy` whose `spec.matcher.path` starts with `/api/`
+and whose `spec.directives.authProxy` is `true`. Console authorizes each request against IAM
+resource `backends` using the plugin name.
+
+Non-secret defaults live in the platform config directory reported by Go
+(`$XDG_CONFIG_HOME` on Linux, `~/Library/Application Support` on macOS), or can be passed
+as flags:
 
 ```yaml
 kubeconfig: ~/.kube/config
 context: cpu16
 console:
-  release: console
-  namespace: console
-  chart: oci://ghcr.io/modelsphere/charts/console
-  chartVersion: 0.3.0
-  url: http://console.example.test
+  release: modelsphere-console
+  namespace: console-system
 ```
-
-Commands:
 
 ```sh
-go run ./cmd/modelsphere plugin validate ./helm/canaryd
-go run ./cmd/modelsphere plugin package ./helm/canaryd --destination ./dist
-go run ./cmd/modelsphere plugin install ./dist/canaryd-0.3.0.tgz --wait
-go run ./cmd/modelsphere plugin uninstall canary --wait
+modelsphere plugin validate ./helm/canaryd
+modelsphere plugin package ./helm/canaryd --destination ./dist
+modelsphere plugin install ./dist/canaryd-0.3.0.tgz --wait
+modelsphere plugin registration ./dist/canaryd-0.3.0.tgz | kubectl apply -f -
+modelsphere plugin list
+modelsphere plugin uninstall modelsphere.dev/canary --yes --wait
 ```
 
-Install reads the Console release values, merges one plugin entry, installs/upgrades the plugin
-Chart, verifies declared Services, then upgrades Console with `--reuse-values`. Uninstall removes
-the Console registration and verifies the plugin index before uninstalling the plugin release.
-Console registration failures do not delete the plugin release; uninstall verification failures do
-not continue with deletion.
+Install discovers the unique Console release when no Console flags are provided, reads its
+`externalSwiss`, `platform.inferenceNamespaces` and `imagePullSecrets`, and turns only the
+requirements declared by the package into a temporary overlay. A declared capability that the
+host cannot supply fails before Helm runs. Uninstall without an argument lists registrations
+and asks for a selection; automation can pass the full `group/name` with `--yes`. Uninstall
+deletes the CR first, then the release.
 
 `web/test/plugin-runtime.html` is a development browser test fixture using configured plugins and actual host providers. It is excluded from the production entry and does not disable application authentication.

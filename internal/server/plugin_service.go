@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -22,7 +23,7 @@ func (s *Server) pluginIndex() []pluginManifest {
 	plugins := make([]pluginManifest, 0, len(s.cfg.Plugins))
 	for _, plugin := range s.cfg.Plugins {
 		prefix := "/plugins/" + plugin.ID + "/"
-		manifest := pluginManifest{ID: plugin.ID, Entry: prefix + plugin.Entry, Menu: &plugin.Menu, Development: plugin.Development}
+		manifest := pluginManifest{ID: plugin.ID, Group: plugin.Group, Version: plugin.Version, Entry: prefix + plugin.Entry, Menu: &plugin.Menu, Development: plugin.Development}
 		if plugin.Backend != nil {
 			name := plugin.Backend.Name
 			if name == "" {
@@ -34,6 +35,22 @@ func (s *Server) pluginIndex() []pluginManifest {
 			manifest.Styles = append(manifest.Styles, prefix+style)
 		}
 		plugins = append(plugins, manifest)
+	}
+	if s.plugins != nil {
+		for _, entry := range s.plugins.Entries() {
+			meta := entry.Plugin.Status.PluginMeta
+			manifest := pluginManifest{ID: meta.Name, Group: meta.Group, Version: meta.Version, Entry: entry.Plugin.Status.FrontendStatus.EntryURL}
+			for asset := range entry.Files {
+				if strings.HasSuffix(asset, ".css") {
+					manifest.Styles = append(manifest.Styles, "/plugins/"+entry.Plugin.Name+"/"+asset)
+				}
+			}
+			sort.Strings(manifest.Styles)
+			if len(entry.Routes) > 0 {
+				manifest.Backend = &pluginBackendManifest{Name: meta.Name, Prefix: strings.TrimSuffix(entry.Routes[0].Spec.Matcher.Path, "/*"), WritePermission: meta.Name + ".write"}
+			}
+			plugins = append(plugins, manifest)
+		}
 	}
 	return plugins
 }

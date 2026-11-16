@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
 	"gopkg.in/yaml.v3"
+	sigyaml "sigs.k8s.io/yaml"
 )
 
 const (
@@ -203,6 +205,12 @@ func parseMetadata(input string, directory bool, chartData, manifestData []byte)
 	var manifest Manifest
 	if err := yaml.Unmarshal(manifestData, &manifest); err != nil {
 		return Artifact{}, fmt.Errorf("parse plugin.yaml: %w", err)
+	}
+	if manifest.APIVersion == "v1" {
+		var meta pluginapi.PluginMeta
+		if err := sigyaml.UnmarshalStrict(manifestData, &meta); err != nil {
+			return Artifact{}, fmt.Errorf("parse Global plugin.yaml: %w", err)
+		}
 	}
 	if err := manifest.Validate(); err != nil {
 		return Artifact{}, fmt.Errorf("validate plugin.yaml: %w", err)

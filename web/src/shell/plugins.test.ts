@@ -7,7 +7,7 @@ import { extensions } from "@/extensions/registry";
 vi.mock("./plugin-development", () => ({ importDevelopmentEntry: vi.fn() }));
 
 const builtin: ConsoleModule = { id: "core", title: "Core", basePath: "/core", pages: [] };
-const example = (id = "example"): InstalledPlugin => ({ id, entry: `/plugins/${id}/index.umd.js`, menu: { title: "Tools", label: "Example", path: `/${id}`, component: "Example" } });
+const example = (id = "example"): InstalledPlugin & {menu: NonNullable<InstalledPlugin["menu"]>} => ({ id, entry: `/plugins/${id}/index.umd.js`, menu: { title: "Tools", label: "Example", path: `/${id}`, component: "Example" } });
 
 class Asset {
   src = ""; href = ""; rel = ""; type = "";
@@ -40,6 +40,18 @@ afterEach(() => {
 });
 
 describe("configured SDK plugins", () => {
+  it("uses SDK navigation and routes when a CR supplies only identity and entry", async () => {
+    browser([{id:"example",group:"modelsphere.dev",entry:"/plugins/modelsphere.dev--example/index.js"}], asset => {
+      const sdk=window.__MODELSPHERE_SDK__;
+      sdk.registerPlugin({name:"example",version:"1.0.0",displayName:"Tools",menus:[{name:"home",title:"Example",path:"/example"}]});
+      sdk.registerPluginRoutes("example",{"/example":()=>null,"items/[id]":()=>null});
+      asset.onload?.();
+    });
+    const result=await loadPlugins([builtin]);
+    expect(result.errors).toEqual([]);
+    expect(result.modules[1].basePath).toBe("/example");
+    expect(result.modules[1].pages.map(page=>page.path)).toEqual(["","items/:id"]);
+  });
   it("keeps the shell unchanged with no configured plugins", async () => {
     browser([], () => {});
     expect(await loadPlugins([builtin])).toEqual({ modules: [builtin], errors: [] });

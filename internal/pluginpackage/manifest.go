@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
 	"github.com/modelsphere/console/internal/config"
 )
 
@@ -13,6 +14,7 @@ const manifestVersion = "modelsphere.io/v1alpha1"
 
 var (
 	identifierPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
+	groupPattern      = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$`)
 	semverPattern     = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
 	menuPathPattern   = regexp.MustCompile(`^/[a-z][a-z0-9-]*$`)
 	dnsLabelPattern   = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
@@ -20,19 +22,30 @@ var (
 
 // Manifest is the product metadata embedded in a ModelSphere plugin Chart.
 type Manifest struct {
-	APIVersion  string   `yaml:"apiVersion"`
-	Kind        string   `yaml:"kind"`
-	Name        string   `yaml:"name"`
-	Version     string   `yaml:"version"`
-	DisplayName string   `yaml:"displayName"`
-	Type        string   `yaml:"type"`
-	Frontend    Frontend `yaml:"frontend"`
-	Backend     *Backend `yaml:"backend,omitempty"`
-	Menus       []Menu   `yaml:"menus"`
+	APIVersion  string       `yaml:"apiVersion"`
+	Kind        string       `yaml:"kind"`
+	Group       string       `yaml:"group"`
+	Name        string       `yaml:"name"`
+	Version     string       `yaml:"version"`
+	DisplayName string       `yaml:"displayName"`
+	Type        string       `yaml:"type"`
+	Requires    Requirements `yaml:"requires,omitempty"`
+	Frontend    Frontend     `yaml:"frontend"`
+	Backend     *Backend     `yaml:"backend,omitempty"`
+	Menus       []Menu       `yaml:"menus"`
+}
+
+// Requirements declares platform services and scopes supplied by the Console host.
+type Requirements struct {
+	ImagePullSecrets    bool `yaml:"imagePullSecrets,omitempty"`
+	Swiss               bool `yaml:"swiss,omitempty"`
+	InferenceNamespaces bool `yaml:"inferenceNamespaces,omitempty"`
 }
 
 // Frontend describes the static resource service consumed by Console.
 type Frontend struct {
+	Type    string     `yaml:"type,omitempty"`
+	Runtime string     `yaml:"runtime,omitempty"`
 	Entry   string     `yaml:"entry"`
 	Styles  []string   `yaml:"styles,omitempty"`
 	Service ServiceRef `yaml:"service"`
@@ -69,11 +82,26 @@ type Menu struct {
 
 // Validate checks the package metadata before Helm or Kubernetes are invoked.
 func (m Manifest) Validate() error {
+	if m.APIVersion == "v1" {
+		if err := (pluginapi.PluginIdentity{Group: m.Group, Name: m.Name}).Validate(); err != nil {
+			return err
+		}
+		if !semverPattern.MatchString(m.Version) {
+			return fmt.Errorf("version must be strict SemVer")
+		}
+		if m.Frontend.Type != "component" || m.Frontend.Runtime != "remote" || !config.ValidPluginAsset(m.Frontend.Entry) {
+			return fmt.Errorf("frontend must describe a remote component entry")
+		}
+		return nil
+	}
 	if m.APIVersion != manifestVersion {
 		return fmt.Errorf("apiVersion must be %q", manifestVersion)
 	}
 	if m.Kind != "Plugin" {
 		return fmt.Errorf("kind must be Plugin")
+	}
+	if !groupPattern.MatchString(m.Group) {
+		return fmt.Errorf("group %q must be a DNS subdomain", m.Group)
 	}
 	if !identifierPattern.MatchString(m.Name) {
 		return fmt.Errorf("name %q must be lowercase kebab-case", m.Name)
@@ -198,10 +226,13 @@ func (m Manifest) ConsolePlugin(release, namespace string) (config.Plugin, error
 	frontendURL := serviceURL(frontendName, namespace, m.Frontend.Service.Port, "/")
 	menu := m.Menus[0]
 	plugin := config.Plugin{
-		ID:     m.Name,
-		URL:    frontendURL,
-		Entry:  m.Frontend.Entry,
-		Styles: append([]string(nil), m.Frontend.Styles...),
+		Group:   m.Group,
+		ID:      m.Name,
+		Release: release,
+		Version: m.Version,
+		URL:     frontendURL,
+		Entry:   m.Frontend.Entry,
+		Styles:  append([]string(nil), m.Frontend.Styles...),
 		Menu: config.PluginMenu{
 			Title:         menu.Title,
 			Label:         menu.Label,

@@ -73,7 +73,9 @@ backends: []
 
 # Trusted frontend image services. Each entry declares id, url, entry, optional
 # styles, and one menu (title, label, path, component, optional icon).
-# Empty means no external frontend menu. See docs/plans/2026-11-05-global-sdk-design.md.
+# Empty means no external frontend menu. This static path is for development and
+# existing deployments; installed plugins register through a Plugin CR instead.
+# See docs/development/plugin-cli.md.
 plugins: []
 
 # swissd, the model deployment backend. Pick one:
@@ -124,6 +126,12 @@ externalSwiss:
     secretName: ""
     key: proxyKey
   profile: ""
+
+# Platform defaults consumed by plugin packages that declare host requirements.
+# Swiss connection details remain in externalSwiss; inferenceNamespaces defines
+# the production inference scope granted to those plugins.
+platform:
+  inferenceNamespaces: [swiss-deploy]
 
 # An existing inference gateway, resolved from the cluster instead of named
 # here: console reads the entrypoint Service, the route to talk to and the key

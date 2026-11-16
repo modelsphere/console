@@ -1,65 +1,61 @@
 package plugincli
 
 import (
+	"bytes"
 	"context"
-	"net/http"
-	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
-
-	"github.com/modelsphere/console/internal/config"
 )
 
-func TestPluginIndexDistinguishesMissingPlugin(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/console/plugins/index.json" {
-			http.NotFound(writer, request)
-			return
-		}
-		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`[{"id":"other"}]`))
-	}))
-	defer server.Close()
-
-	runner := Runner{CommandTimeout: time.Second}
-	found, err := runner.PluginIndex(context.Background(), server.URL+"/console", "canary")
-	if err != nil {
-		t.Fatalf("PluginIndex() error = %v", err)
+func TestRunnerVerbosityLogsCommandAndStderr(t *testing.T) {
+	directory := t.TempDir()
+	script := filepath.Join(directory, "command.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf 'diagnostic token=secret\\n' >&2\nprintf 'result'\n"), 0755); err != nil {
+		t.Fatalf("write command: %v", err)
 	}
-	if found {
-		t.Fatal("PluginIndex() reported a missing plugin as present")
+	var logs bytes.Buffer
+	runner := Runner{CommandTimeout: 10 * time.Second, LogWriter: &logs, Verbosity: 4}
+	output, err := runner.run(context.Background(), script, nil, "--token", "secret")
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if string(output) != "result" {
+		t.Fatalf("run() output = %q", output)
+	}
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, "starting "+script) || !strings.Contains(logOutput, "completed "+script) {
+		t.Fatalf("lifecycle logs missing: %s", logOutput)
+	}
+	if strings.Contains(logOutput, "secret") || !strings.Contains(logOutput, "<redacted>") {
+		t.Fatalf("sensitive data was not redacted: %s", logOutput)
 	}
 }
 
-func TestMergeAndRemovePlugin(t *testing.T) {
-	first := testConsolePlugin("first")
-	second := testConsolePlugin("second")
-	merged, err := mergePlugin([]config.Plugin{first}, second)
-	if err != nil {
-		t.Fatalf("mergePlugin() error = %v", err)
+func TestListDeployedReleasesReadsHelmSecretLabels(t *testing.T) {
+	directory := t.TempDir()
+	script := filepath.Join(directory, "kubectl.sh")
+	fixture := `{"items":[
+  {"metadata":{"namespace":"console-system","labels":{"owner":"helm","name":"modelsphere-console","status":"deployed","version":"71"}}},
+  {"metadata":{"namespace":"other","labels":{"owner":"helm","name":"old-release","status":"superseded","version":"4"}}},
+  {"metadata":{"namespace":"broken","labels":{"owner":"helm","status":"deployed"}}}
+]}`
+	content := "#!/bin/sh\nprintf '%s' '" + strings.ReplaceAll(fixture, "'", "'\\''") + "'\n"
+	if err := os.WriteFile(script, []byte(content), 0755); err != nil {
+		t.Fatalf("write kubectl fixture: %v", err)
 	}
-	if len(merged) != 2 {
-		t.Fatalf("mergePlugin() returned %d plugins, want 2", len(merged))
-	}
-	filtered, err := removePlugin(merged, "first")
-	if err != nil {
-		t.Fatalf("removePlugin() error = %v", err)
-	}
-	if len(filtered) != 1 || filtered[0].ID != "second" {
-		t.Fatalf("removePlugin() returned %+v", filtered)
-	}
-}
 
-func testConsolePlugin(id string) config.Plugin {
-	return config.Plugin{
-		ID:    id,
-		URL:   "http://plugin.example/",
-		Entry: "index.js",
-		Menu: config.PluginMenu{
-			Title:     id,
-			Label:     id,
-			Path:      "/" + id,
-			Component: "Root",
-		},
+	runner := Runner{KubectlPath: script, CommandTimeout: 10 * time.Second}
+	releases, err := runner.ListDeployedReleases(context.Background())
+	if err != nil {
+		t.Fatalf("ListDeployedReleases() error = %v", err)
+	}
+	if len(releases) != 1 {
+		t.Fatalf("ListDeployedReleases() returned %d releases, want 1", len(releases))
+	}
+	if releases[0].Name != "modelsphere-console" || releases[0].Namespace != "console-system" {
+		t.Fatalf("first release = %+v", releases[0])
 	}
 }
