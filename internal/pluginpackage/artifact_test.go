@@ -81,7 +81,7 @@ func writeChartDirectory(t *testing.T) string {
 }
 
 func pluginYAML() string {
-	return "apiVersion: modelsphere.io/v1alpha1\nkind: Plugin\ngroup: modelsphere.dev\nname: canary\nversion: 0.4.0\ntype: native\nrequires:\n  swiss: true\n  inferenceNamespaces: true\nfrontend:\n  entry: index.umd.js\n  service:\n    name: ${RELEASE}-frontend\n    port: 8080\nbackend:\n  name: canary\n  prefix: /api/canary\n  path: /api/canary\n  service:\n    name: ${RELEASE}-backend\n    port: 8080\nmenus:\n  - name: canary\n    title: Canary\n    label: Canary\n    path: /canary\n    component: CanaryRoot\n"
+	return "apiVersion: v1\ngroup: modelsphere.dev\nname: canary\nversion: 0.4.0\ndisplayName: Canary\nrequires:\n  swiss: true\n  inferenceNamespaces: true\nfrontend:\n  type: component\n  runtime: remote\n  entry: index.umd.js\n"
 }
 
 func createArchive(t *testing.T, destination string, files map[string]string) {

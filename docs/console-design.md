@@ -132,9 +132,9 @@ Rules:
 - `validateModules` rejects duplicate ids/basePaths, shell-reserved paths and ids (`common`, `shell`: they are i18n namespaces) and pages declared twice at startup.
 - Text goes through `useT()` (see "i18n"); the declaration's `title` and menu labels stay Chinese.
 
-Runtime plugins use `@modelsphere/plugin-sdk`, maintained in `web/packages/plugin-sdk`. Configuration declares a trusted resource service and one menu; SDK registration supplies components and internal routes. `/plugins/index.json` returns descriptors, and `/plugins/<id>/*` proxies assets without Console credentials. Registration validates identity and collisions before adding a module. Empty configuration adds no external module.
+Runtime plugins use `@modelsphere/plugin-sdk`, maintained in `web/packages/plugin-sdk`. A `modelsphere.dev/v1alpha1` Plugin CR registers an installed Helm release; Console reads its `plugin.yaml` and the release's `frontend/` files. SDK registration supplies the menu, components and internal routes. `/plugins/index.json` returns descriptors, and `/plugins/<cr-name>/*` serves the release's assets without Console credentials. Registration validates identity and collisions before adding a module. No CR adds no external module.
 
-Development uses the SDK Vite preset, same-origin WebSocket proxy and the host's React Refresh runtime. Deployment uses a built bundle served by a static-resource image. Configuration changes require a backend restart and browser refresh; compatible component edits update through Fast Refresh. This integration adds no menu/page permission policy.
+Deployment uses the built bundle from the release's `frontend/` directory. Console watches Plugin CRs through an informer; enabling, disabling or deleting a CR changes the menu, routes and assets without a Console restart. Open tabs keep their registry until refreshed. This integration adds no menu/page permission policy.
 
 See the [authoring and deployment guide](development/plugins.md) and [design](plans/2026-11-05-global-sdk-design.md).
 

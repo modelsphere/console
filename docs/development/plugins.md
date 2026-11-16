@@ -14,7 +14,7 @@ pnpm --dir "$CONSOLE_SOURCE_DIR/web/packages/plugin-sdk" test
 pnpm --dir "$CONSOLE_SOURCE_DIR/web/packages/plugin-sdk" run build
 ```
 
-A consuming repository can prepare a generated local `file:` dependency from the built SDK. Keep generated package files out of Git; prepare them before dependency installation and record the Console revision with the build. Available exports are the runtime, `/build`, `/dev`, `/react-shim` and `/testing`.
+A consuming repository can prepare a generated local `file:` dependency from the built SDK. Keep generated package files out of Git; prepare them before dependency installation and record the Console revision with the build. Available exports are the runtime, `/build`, `/react-shim` and `/testing`.
 
 ## Register pages
 
@@ -30,53 +30,11 @@ createPlugin({
 });
 ```
 
-The presets inject `__PLUGIN_VERSION__` from the frontend's `Chart.yaml`. Configuration selects the menu and root component. `[id]` routes become `:id`; `[...name]` becomes a catch-all. Use named imports for shared `react-router`, `@tanstack/react-query` and `@modelsphere/ui` modules. React and these imports use actual host instances. Authenticated `apiFetch` and i18n are exposed through `getBusiness<ConsoleServices>().console`. Optional auth metadata creates no new menu/page policy.
+The presets inject `__PLUGIN_VERSION__` from the frontend's `Chart.yaml`. The runtime registers its
+own menus and root components; the Console plugin index supplies only the file locations and the
+API prefix. `[id]` routes become `:id`; `[...name]` becomes a catch-all. Use named imports for shared `react-router`, `@tanstack/react-query` and `@modelsphere/ui` modules. React and these imports use actual host instances. Authenticated `apiFetch` and i18n are exposed through `getBusiness<ConsoleServices>().console`. Optional auth metadata creates no new menu/page policy.
 
-## Develop with Fast Refresh
-
-Create `vite.config.mjs` in the plugin frontend:
-
-```js
-import { definePluginDevConfig } from "@modelsphere/plugin-sdk/dev";
-export default definePluginDevConfig({
-  name: "example", entry: "src/runtime.tsx",
-  hostSource: process.env.CONSOLE_SOURCE_DIR,
-  hostOrigin: process.env.CONSOLE_ORIGIN,
-});
-```
-
-Run one Console frontend and Go backend using the normal development instructions. Preserve existing cluster/auth/backend settings and add:
-
-```yaml
-plugins:
-  - id: example
-    url: http://127.0.0.1:4181
-    development: true
-    entry: __modelsphere_entry.ts
-    menu:
-      title: Example
-      label: Example
-      path: /example
-      component: ExamplePage
-      icon: puzzle
-```
-
-Restart the existing backend. From the plugin frontend directory:
-
-```sh
-export CONSOLE_SOURCE_DIR=/path/to/console
-export CONSOLE_ORIGIN=http://127.0.0.1:5173
-pnpm exec vite --config vite.config.mjs
-```
-
-Refresh Console once to discover the development entry. Compatible React component edits then update automatically and preserve local state. Entry/registration changes reload the page. New shared named imports regenerate their exports while Vite runs. The SDK compiles styles against the host theme and plugin source.
-
-HTTP and WebSocket requests use `/plugins/<id>/` through both Console proxies. The plugin reuses the host Vite server's `/@react-refresh` runtime. This development mode requires the Console Vite frontend; a production frontend does not provide that runtime.
-
-## Deploy a static-resource image
-
-This URL-based descriptor remains for development and existing deployments. Installed plugins
-publish their frontend files through the Plugin CR instead of a Console values entry.
+## Build the frontend bundle
 
 Production `tsup.config.mjs`:
 
@@ -85,23 +43,22 @@ import { definePluginConfig } from "@modelsphere/plugin-sdk/build";
 export default definePluginConfig({ name: "example", entry: "src/runtime.tsx", outDir: "dist" });
 ```
 
-Run `pnpm exec tsup --config tsup.config.mjs`. It emits `index.umd.js` and Tailwind `candidates.json`. The image build must compile CSS using those candidates and the pinned Console theme. Current stylesheet integration supports one optional frontend; arbitrary multi-plugin runtime CSS merging is outside its scope.
+Run `pnpm exec tsup --config tsup.config.mjs`. It emits `index.umd.js` and Tailwind `candidates.json`. The build must compile CSS using those candidates and the pinned Console theme. Current stylesheet integration supports one optional frontend; multi-plugin runtime CSS merging is outside its scope.
 
-Serve the built files with a static-resource image. Change the descriptor to `url: http://example-frontend:8080`, `entry: index.umd.js`, `styles: [index.css]` and omit `development`. Keep the menu declaration, restart the existing backend and refresh Console. Deployment loads the classic built bundle and rejects WebSocket upgrades.
+Console serves the built files from the installed release's `frontend/` directory. Put `frontend/<entry>` in the Chart; the Plugin CR makes the release addressable at `/plugins/<group--name>/<entry>`. Deployment loads the classic bundle.
 
 ## Verify and recover
 
 | Check | Observable result |
 | --- | --- |
-| `GET /plugins/index.json` | Identity, same-origin URLs and menu; no upstream URL. |
-| Entry and stylesheet requests | HTTP 200. |
+| `GET /plugins/index.json` | Identity, same-origin entry/style URLs and backend prefix; no upstream URL. |
+| Entry and stylesheet requests | HTTP 200 under `/plugins/<group--name>/`. |
 | `Object.keys(window.__MODELSPHERE_SDK__.getPluginComponents("example"))` | Contains `ExamplePage`. |
 | Menu/root and `items/<id>` | Render under host Router/Query/UI providers. |
-| Compatible component edit | Text changes with unchanged document and local state. |
-| Service unavailable | Visible plugin loading error; built-ins remain usable. Restore the service and refresh. |
-| Set `plugins: []`, restart and refresh | Optional menu/routes disappear; backend business records remain. |
+| CR disabled or deleted | Menu/routes and assets disappear; no Console restart needed. |
+| Backend upstream unavailable | API requests fail with 502; built-ins remain usable. |
 
-Configuration is read at backend startup. Open tabs retain their registry until refreshed. Plugin JavaScript runs with Console frontend privileges, so operators must select trusted services. The resource proxy strips Cookie/Authorization and upstream Set-Cookie; existing business API authentication/authorization still applies.
+Console watches Plugin CRs through an informer. Open tabs retain their registry until refreshed. Plugin JavaScript runs with Console frontend privileges, so operators must register trusted releases. Backend requests pass through Console IAM authorization before reaching the plugin.
 
 ## Package and install with ModelSphere CLI
 
@@ -174,4 +131,4 @@ host cannot supply fails before Helm runs. Uninstall without an argument lists r
 and asks for a selection; automation can pass the full `group/name` with `--yes`. Uninstall
 deletes the CR first, then the release.
 
-`web/test/plugin-runtime.html` is a development browser test fixture using configured plugins and actual host providers. It is excluded from the production entry and does not disable application authentication.
+`web/test/plugin-runtime.html` is a development browser test fixture that loads the plugins Console serves, with actual host providers. It is excluded from the production entry and does not disable application authentication.

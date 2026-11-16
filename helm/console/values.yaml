@@ -71,13 +71,6 @@ admin:
 # swissd (model deployment) is not listed here: see swiss and externalSwiss.
 backends: []
 
-# Trusted frontend image services. Each entry declares id, url, entry, optional
-# styles, and one menu (title, label, path, component, optional icon).
-# Empty means no external frontend menu. This static path is for development and
-# existing deployments; installed plugins register through a Plugin CR instead.
-# See docs/development/plugin-cli.md.
-plugins: []
-
 # swissd, the model deployment backend. Pick one:
 #
 #   swiss.enabled: true   install it with this release, from the swiss chart

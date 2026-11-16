@@ -16,7 +16,7 @@ spec:
       annotations:
         {{- /* Rendered config: without this the pods keep serving the config they
                started with, so a values change that only alters console.yaml
-               (plugins, backends) never reaches a running install. */}}
+               (backends, swiss) never reaches a running install. */}}
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         prometheus.io/scrape: "true"
         prometheus.io/port: {{ .Values.metrics.port | quote }}

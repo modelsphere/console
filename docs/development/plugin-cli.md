@@ -141,11 +141,10 @@ node "$PLUGIN_REPO/hack/package-plugin.mjs" \
 脚本会把当前 Chart、`frontend/dist` 和 `plugin.yaml` 打进包，并执行 `helm lint --strict`。
 CI 在镜像发布成功后上传同样的 `.tgz` artifact。
 
-> 工作区现有的 `canaryd-0.3.0.tgz` 属于旧的 Console values 注册方式：包内没有
-> `frontend/` 目录，`plugin.yaml` 仍是 `modelsphere.io/v1alpha1`，也没有
-> `ReverseProxy` 模板。新架构要求包内包含 `frontend/<entry>`、`apiVersion: v1`
-> 的 `plugin.yaml` 和带 `authProxy: true` 的 `ReverseProxy`；使用前必须按上面的
-> 命令重新打包，并确保后端镜像包含当前分支的代码。
+> 工作区现有的 `canaryd-0.3.0.tgz` 是旧格式的包：包内没有 `frontend/` 目录，
+> `plugin.yaml` 仍是 `modelsphere.io/v1alpha1`。当前结构要求包内包含
+> `frontend/<entry>`、`apiVersion: v1` 的 `plugin.yaml` 和带 `authProxy: true`
+> 的 `ReverseProxy`；使用前必须按上面的命令重新打包，并确保后端镜像包含当前分支的代码。
 
 `modelsphere plugin package` 保留给开发者校验源码 Chart；同名包默认拒绝覆盖，
 显式 `--force` 时先验证新包再原子替换旧包。它不会自动选择发布镜像版本。
@@ -267,14 +266,7 @@ curl -fsS -o /dev/null -w 'entry_http=%{http_code}\n' \
 ```
 
 `index.json` 中应出现 `id: canary`、`entry: /plugins/modelsphere.dev--canary/index.umd.js`
-和 `backend` 声明。如果同一插件此前在 Console values 的 `plugins` 里静态注册过，
-升级时要清掉旧条目，否则 index 会出现两个相同 `id` 的项：
-
-```sh
-helm --kubeconfig "$KUBECONFIG" --kube-context "$KUBE_CONTEXT" \
-  upgrade "$CONSOLE_RELEASE" oci://ghcr.io/modelsphere/charts/console \
-  --namespace console-system --reuse-values --set-json 'plugins=[]'
-```
+和 `backend` 声明。
 
 登录 Console 后打开：
 
@@ -373,5 +365,5 @@ CR 应已消失，Helm 应返回 `release: not found`，index 中不再出现 `"
 | CR 注销失败 | CLI 停止，不卸载 release | 先修复 API 访问，再执行 uninstall |
 | 后台接口 403 | Console IAM 拒绝 | 给用户绑定包含 `backends/canary` 的 `get` 权限 |
 
-不要手工修改插件 release 内部资源，也不要把注册信息写回 Console 的 Helm values。
-注册和生命周期分别由 Plugin CR 与 Helm 管理。
+不要手工修改插件 release 内部资源。Console 的插件注册只来自 Plugin CR，
+release 的安装、升级和卸载由 Helm 管理。

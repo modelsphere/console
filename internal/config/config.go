@@ -24,30 +24,14 @@ type Config struct {
 	Server   Server    `yaml:"server,omitempty"`
 	Backends []Backend `yaml:"backends,omitempty"`
 	Router   Router    `yaml:"router,omitempty"`
-	Plugins  []Plugin  `yaml:"plugins,omitempty"`
 
 	Origin string `yaml:"-"`
 }
 
+// ConfiguredBackends returns the declared backends as a copy, so callers can
+// append plugin routes from the cluster without mutating the loaded config.
 func (c *Config) ConfiguredBackends() []Backend {
-	backends := append([]Backend(nil), c.Backends...)
-	for _, plugin := range c.Plugins {
-		if plugin.Backend == nil {
-			continue
-		}
-		name := plugin.Backend.Name
-		if name == "" {
-			name = plugin.ID
-		}
-		backends = append(backends, Backend{
-			Name:            name,
-			Prefix:          plugin.Backend.Prefix,
-			URL:             plugin.Backend.URL,
-			APIKeyEnv:       plugin.Backend.APIKeyEnv,
-			WritePermission: plugin.Backend.WritePermission,
-		})
-	}
-	return backends
+	return append([]Backend(nil), c.Backends...)
 }
 
 // Router is /v1, the endpoint programs call models through with API keys admins
@@ -250,9 +234,6 @@ func (c *Config) origin() string {
 
 // Validate covers what console needs to serve.
 func (c *Config) Validate() error {
-	if err := validatePlugins(c.Plugins); err != nil {
-		return fmt.Errorf("%s: %w", c.origin(), err)
-	}
 	if c.Server.Auth.JWTSecret == "" && !c.Server.Auth.Disabled {
 		return fmt.Errorf("%s: server.auth.jwtSecret is required -- it signs every token, or set server.auth.disabled to run without a login", c.origin())
 	}

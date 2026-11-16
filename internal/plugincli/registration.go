@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
-	"github.com/modelsphere/console/internal/config"
 	"github.com/modelsphere/console/internal/pluginpackage"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,14 +29,40 @@ func (r Runner) RemoveRegistration(ctx context.Context, name string) error {
 	return err
 }
 
-func registrationChoices(plugins []pluginapi.Plugin) []config.Plugin {
-	choices := []config.Plugin{}
+// pluginChoice is one Plugin CR the CLI can act on, reduced to what selection
+// and uninstall need.
+type pluginChoice struct {
+	Group   string
+	Name    string
+	Release string
+	Version string
+}
+
+// identity is the stable group/name selector users pass on the command line.
+func (c pluginChoice) identity() string {
+	return pluginapi.PluginIdentity{Group: c.Group, Name: c.Name}.String()
+}
+
+// releaseName is the Helm release behind the CR, defaulting to the plugin name.
+func (c pluginChoice) releaseName() string {
+	if c.Release != "" {
+		return c.Release
+	}
+	return c.Name
+}
+
+func registrationChoices(plugins []pluginapi.Plugin) []pluginChoice {
+	choices := []pluginChoice{}
 	for _, plugin := range plugins {
 		identity, ok := pluginapi.ParsePluginResourceName(plugin.Name)
 		if !ok {
 			continue
 		}
-		choices = append(choices, config.Plugin{ID: identity.Name, Group: identity.Group, Release: plugin.Spec.Chart.ReleaseName})
+		choice := pluginChoice{Group: identity.Group, Name: identity.Name, Release: plugin.Spec.Chart.ReleaseName}
+		if plugin.Status.PluginMeta != nil {
+			choice.Version = plugin.Status.PluginMeta.Version
+		}
+		choices = append(choices, choice)
 	}
 	return choices
 }

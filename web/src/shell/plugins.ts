@@ -1,7 +1,6 @@
 import { validateModules, type ConsoleModule } from "@/shell/module";
 import { createGlobalHost } from "@/shell/global-sdk/host";
 import type { InstalledPlugin } from "@/shell/global-sdk/runtime";
-import { importDevelopmentEntry } from "./plugin-development";
 
 function loadAsset(asset: HTMLScriptElement | HTMLLinkElement): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -26,10 +25,6 @@ async function loadEntryAssets(plugin: InstalledPlugin, assets: HTMLElement[]) {
     link.href = href;
     assets.push(link);
     await loadAsset(link);
-  }
-  if (plugin.development) {
-    await importDevelopmentEntry(plugin.entry);
-    return;
   }
   const script = document.createElement("script");
   script.src = plugin.entry;

@@ -15,25 +15,13 @@ import type {
   ResourceVisibilityExtension,
 } from "@/extensions/types";
 
-export interface PluginMenu {
-  title: string;
-  label: string;
-  path: string;
-  component: string;
-  icon?: string;
-  capability?: string;
-  requiresWrite?: boolean;
-}
-
 export interface InstalledPlugin {
   id: string;
   group?: string;
   version?: string;
   entry: string;
   styles?: string[];
-  menu?: PluginMenu | null;
   backend?: { name: string; prefix: string; writePermission?: string };
-  development?: boolean;
 }
 
 interface SDKMenu { name: string; path: string; title?: string; icon?: string; authKey?: string; hidden?: boolean }
@@ -73,7 +61,7 @@ function buildModule(registration: Registration): ConsoleModule {
   if (error) throw error;
   if (!definition) throw new Error("Entry did not register a ModelSphere SDK plugin");
   const declared = definition.menus?.find((menu) => !menu.hidden);
-  const menu = plugin.menu ?? (declared ? {
+  const menu = declared ? {
     title: definition.displayName ?? declared.title ?? declared.name,
     label: declared.title ?? declared.name,
     path: declared.path,
@@ -81,16 +69,16 @@ function buildModule(registration: Registration): ConsoleModule {
     icon: declared.icon || definition.icon,
     capability: plugin.backend?.name,
     requiresWrite: false,
-  } : undefined);
+  } : undefined;
   if (!menu) throw new Error("Entry did not register a menu");
-  const component = plugin.menu ? components[menu.component] : routes[menu.path] ?? components[menu.component];
+  const component = routes[menu.path] ?? components[menu.component];
   if (!component) throw new Error(`Menu component "${menu.component}" was not registered`);
   const icons = { boxes: Boxes, "flask-conical": FlaskConical, puzzle: Puzzle };
   if (menu.icon && !(menu.icon in icons)) throw new Error(`Unsupported menu icon "${menu.icon}"`);
   const pages: ModulePage[] = [{ path: "", element: <RoutePage component={component} />, requiresWrite: menu.requiresWrite,
     menu: { label: menu.label, icon: icons[menu.icon as keyof typeof icons] ?? Puzzle } }];
   for (const [pattern, route] of Object.entries(routes)) {
-    if (!plugin.menu && pattern === menu.path) continue;
+    if (pattern === menu.path) continue;
     const path = routePath(pattern);
     pages.push({ path, element: <RoutePage component={route} /> });
   }

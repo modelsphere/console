@@ -2,7 +2,7 @@
   "name": "@modelsphere/plugin-sdk",
   "version": "0.1.0",
   "private": true,
-  "description": "ModelSphere plugin SDK: shared host runtime, build presets and local development",
+  "description": "ModelSphere plugin SDK: shared host runtime and build presets",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -25,11 +25,6 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.mjs",
       "require": "./dist/testing.js"
-    },
-    "./dev": {
-      "types": "./dist/dev.d.ts",
-      "import": "./dist/dev.mjs",
-      "require": "./dist/dev.js"
     }
   },
   "repository": {
@@ -64,9 +59,6 @@
   ],
   "dependencies": {
     "@tailwindcss/oxide": "4.3.3",
-    "@tailwindcss/vite": "4.3.4",
-    "@vitejs/plugin-react": "6.2.1",
-    "vite": "8.3.6",
     "typescript": "5.9.3"
   }
 }

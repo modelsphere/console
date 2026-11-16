@@ -8,7 +8,7 @@ import "../src/index.css";
 const result = await loadPlugins([]);
 if (result.errors.length) throw new Error(result.errors.join("\n"));
 const plugin = result.modules[0];
-if (!plugin) throw new Error("Configure a plugin before running this fixture");
+if (!plugin) throw new Error("No plugin is served; install one through a Plugin CR first");
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={client}>

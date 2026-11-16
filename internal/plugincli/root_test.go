@@ -10,7 +10,6 @@ import (
 	"time"
 
 	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
-	"github.com/modelsphere/console/internal/config"
 	"github.com/modelsphere/console/internal/pluginpackage"
 	sigyaml "sigs.k8s.io/yaml"
 )
@@ -23,17 +22,14 @@ func TestForcePackagePreservesOldPackageWhenGeneratedArchiveIsInvalid(t *testing
 	}
 	files := map[string]string{
 		"Chart.yaml": "apiVersion: v2\nname: example\nversion: 1.0.0\n",
-		"plugin.yaml": `apiVersion: modelsphere.io/v1alpha1
-kind: Plugin
+		"plugin.yaml": `apiVersion: v1
 group: modelsphere.dev
 name: example
 version: 1.0.0
-type: native
 frontend:
-  entry: index.js
-  service: {name: example, port: 8080}
-menus:
-  - {title: Example, label: Example, path: /example, component: Root}
+  type: component
+  runtime: remote
+  entry: index.umd.js
 `,
 	}
 	for name, content := range files {
@@ -84,16 +80,16 @@ func TestPlatformValuesInheritRegistrySecretReferencesOnlyWhenRequested(t *testi
 }
 
 func TestChoosePluginUsesStableIdentity(t *testing.T) {
-	plugins := []config.Plugin{
-		{Group: "modelsphere.dev", ID: "canary", Version: "0.4.0", Release: "canary"},
-		{Group: "modelsphere.dev", ID: "metrics", Version: "1.2.1", Release: "metrics"},
+	choices := []pluginChoice{
+		{Group: "modelsphere.dev", Name: "canary", Version: "0.4.0", Release: "canary"},
+		{Group: "modelsphere.dev", Name: "metrics", Version: "1.2.1", Release: "metrics"},
 	}
 	var output bytes.Buffer
-	selected, err := choosePlugin(bufio.NewReader(strings.NewReader("2\n")), &output, plugins)
+	selected, err := choosePlugin(bufio.NewReader(strings.NewReader("2\n")), &output, choices)
 	if err != nil {
 		t.Fatalf("choosePlugin() error = %v", err)
 	}
-	if got := configuredPluginIdentity(selected); got != "modelsphere.dev/metrics" {
+	if got := selected.identity(); got != "modelsphere.dev/metrics" {
 		t.Fatalf("selected identity = %q", got)
 	}
 	if !strings.Contains(output.String(), "modelsphere.dev/canary") {
@@ -101,14 +97,14 @@ func TestChoosePluginUsesStableIdentity(t *testing.T) {
 	}
 }
 
-func TestSelectConfiguredPluginAcceptsLegacyName(t *testing.T) {
-	plugins := []config.Plugin{{ID: "canary"}}
-	selected, err := selectConfiguredPlugin(plugins, "canary")
+func TestSelectPluginAcceptsBareName(t *testing.T) {
+	choices := []pluginChoice{{Group: "modelsphere.dev", Name: "canary"}}
+	selected, err := selectPlugin(choices, "canary")
 	if err != nil {
-		t.Fatalf("selectConfiguredPlugin() error = %v", err)
+		t.Fatalf("selectPlugin() error = %v", err)
 	}
-	if got := configuredPluginIdentity(selected); got != "modelsphere.dev/canary" {
-		t.Fatalf("legacy identity = %q", got)
+	if got := selected.identity(); got != "modelsphere.dev/canary" {
+		t.Fatalf("bare-name identity = %q", got)
 	}
 }
 
@@ -123,14 +119,14 @@ func TestConfirmUninstallRequiresExplicitYes(t *testing.T) {
 }
 
 func TestSelectionAndConfirmationShareInput(t *testing.T) {
-	plugins := []config.Plugin{{Group: "modelsphere.dev", ID: "canary"}}
+	choices := []pluginChoice{{Group: "modelsphere.dev", Name: "canary"}}
 	reader := bufio.NewReader(strings.NewReader("1\ny\n"))
 	var output bytes.Buffer
-	selected, err := selectUninstallPlugin(reader, &output, plugins, "")
+	selected, err := selectUninstallPlugin(reader, &output, choices, "")
 	if err != nil {
 		t.Fatalf("selectUninstallPlugin() error = %v", err)
 	}
-	if err := confirmUninstall(reader, &output, configuredPluginIdentity(selected)); err != nil {
+	if err := confirmUninstall(reader, &output, selected.identity()); err != nil {
 		t.Fatalf("confirmUninstall() error = %v", err)
 	}
 }

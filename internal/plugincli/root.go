@@ -15,7 +15,6 @@ import (
 	"time"
 
 	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
-	"github.com/modelsphere/console/internal/config"
 	"github.com/modelsphere/console/internal/pluginpackage"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -423,35 +422,31 @@ func baseSwissURL(raw string) (string, error) {
 	return strings.TrimSuffix(parsed.String(), "/"), nil
 }
 
-func configuredPluginIdentity(plugin config.Plugin) string {
-	return config.PluginIdentity(plugin.Group, plugin.ID)
-}
-
-func selectConfiguredPlugin(plugins []config.Plugin, selector string) (config.Plugin, error) {
+func selectPlugin(choices []pluginChoice, selector string) (pluginChoice, error) {
 	if selector == "" {
-		return config.Plugin{}, fmt.Errorf("plugin identity is required")
+		return pluginChoice{}, fmt.Errorf("plugin identity is required")
 	}
-	for _, plugin := range plugins {
-		if configuredPluginIdentity(plugin) == selector {
-			return plugin, nil
+	for _, choice := range choices {
+		if choice.identity() == selector {
+			return choice, nil
 		}
 	}
 	if identifierPattern.MatchString(selector) {
-		var match *config.Plugin
-		for index := range plugins {
-			if plugins[index].ID != selector {
+		var match *pluginChoice
+		for index := range choices {
+			if choices[index].Name != selector {
 				continue
 			}
 			if match != nil {
-				return config.Plugin{}, fmt.Errorf("plugin name %q is ambiguous; use group/name", selector)
+				return pluginChoice{}, fmt.Errorf("plugin name %q is ambiguous; use group/name", selector)
 			}
-			match = &plugins[index]
+			match = &choices[index]
 		}
 		if match != nil {
 			return *match, nil
 		}
 	}
-	return config.Plugin{}, fmt.Errorf("plugin %q is not registered in Console", selector)
+	return pluginChoice{}, fmt.Errorf("plugin %q is not registered in Console", selector)
 }
 
 func runList(ctx context.Context, output io.Writer, options *Options) error {
@@ -494,38 +489,31 @@ func runList(ctx context.Context, output io.Writer, options *Options) error {
 	return writer.Flush()
 }
 
-func choosePlugin(input *bufio.Reader, output io.Writer, plugins []config.Plugin) (config.Plugin, error) {
-	if len(plugins) == 0 {
-		return config.Plugin{}, fmt.Errorf("no plugins are registered in Console")
+func choosePlugin(input *bufio.Reader, output io.Writer, choices []pluginChoice) (pluginChoice, error) {
+	if len(choices) == 0 {
+		return pluginChoice{}, fmt.Errorf("no plugins are registered in Console")
 	}
-	for index, plugin := range plugins {
-		version := plugin.Version
+	for index, choice := range choices {
+		version := choice.Version
 		if version == "" {
 			version = "-"
 		}
-		if _, err := fmt.Fprintf(output, "%d. %s %s release=%s\n", index+1, configuredPluginIdentity(plugin), version, pluginRelease(plugin)); err != nil {
-			return config.Plugin{}, err
+		if _, err := fmt.Fprintf(output, "%d. %s %s release=%s\n", index+1, choice.identity(), version, choice.releaseName()); err != nil {
+			return pluginChoice{}, err
 		}
 	}
-	if _, err := fmt.Fprint(output, "Select plugin [1-", len(plugins), "]: "); err != nil {
-		return config.Plugin{}, err
+	if _, err := fmt.Fprint(output, "Select plugin [1-", len(choices), "]: "); err != nil {
+		return pluginChoice{}, err
 	}
 	line, err := input.ReadString('\n')
 	if err != nil && len(strings.TrimSpace(line)) == 0 {
-		return config.Plugin{}, fmt.Errorf("read plugin selection: %w", err)
+		return pluginChoice{}, fmt.Errorf("read plugin selection: %w", err)
 	}
 	choice, err := strconv.Atoi(strings.TrimSpace(line))
-	if err != nil || choice < 1 || choice > len(plugins) {
-		return config.Plugin{}, fmt.Errorf("plugin selection must be a number from 1 to %d", len(plugins))
+	if err != nil || choice < 1 || choice > len(choices) {
+		return pluginChoice{}, fmt.Errorf("plugin selection must be a number from 1 to %d", len(choices))
 	}
-	return plugins[choice-1], nil
-}
-
-func pluginRelease(plugin config.Plugin) string {
-	if plugin.Release != "" {
-		return plugin.Release
-	}
-	return plugin.ID
+	return choices[choice-1], nil
 }
 
 func runInstall(ctx context.Context, output io.Writer, options *Options, flags *lifecycleFlags, input string) error {
@@ -598,13 +586,13 @@ func runUninstall(ctx context.Context, input io.Reader, output io.Writer, option
 		return err
 	}
 	if !flags.yes {
-		if err := confirmUninstall(reader, output, configuredPluginIdentity(selected)); err != nil {
+		if err := confirmUninstall(reader, output, selected.identity()); err != nil {
 			return err
 		}
 	}
 	for _, registration := range registrations {
 		identity, valid := pluginapi.ParsePluginResourceName(registration.Name)
-		if !valid || identity.String() != configuredPluginIdentity(selected) {
+		if !valid || identity.String() != selected.identity() {
 			continue
 		}
 		if err := runner.RemoveRegistration(ctx, registration.Name); err != nil {
@@ -623,11 +611,11 @@ func runUninstall(ctx context.Context, input io.Reader, output io.Writer, option
 	return fmt.Errorf("plugin registration disappeared")
 }
 
-func selectUninstallPlugin(input *bufio.Reader, output io.Writer, plugins []config.Plugin, selector string) (config.Plugin, error) {
+func selectUninstallPlugin(input *bufio.Reader, output io.Writer, choices []pluginChoice, selector string) (pluginChoice, error) {
 	if selector != "" {
-		return selectConfiguredPlugin(plugins, selector)
+		return selectPlugin(choices, selector)
 	}
-	return choosePlugin(input, output, plugins)
+	return choosePlugin(input, output, choices)
 }
 
 func confirmUninstall(input *bufio.Reader, output io.Writer, identity string) error {
