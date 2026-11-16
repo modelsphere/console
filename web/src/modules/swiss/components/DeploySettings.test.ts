@@ -125,8 +125,19 @@ describe("catalog input answers", () => {
       untouched: 1,
     };
     const opts = { model: "m", inputs: [master, arg], values, formLayer, inputsAnnotation: annotation, siteInputs: { [arg.key]: "site-{{model}}" }, hf: "" };
+    const seeded = formFromPlan(
+      {
+        release: { name: "r", namespace: "n" },
+        layers: { form: { ...formLayer, model: { localPath: "/models/m" } } },
+        additionalAnnotations: { [INPUTS_ANNOTATION]: annotation },
+      } as unknown as Plan,
+      undefined,
+      { inputs: [master, arg], values },
+    );
+    expect(seeded.localPath).toBe("/models/m");
+    expect(seeded.inputs).toEqual({ [master.key]: "mine:1", [arg.key]: "yes" });
     // The upgrade form prefills the release answers; master was retyped.
-    const req = planRequest({ ...EMPTY, inputs: { [master.key]: " new:1 ", [arg.key]: "yes" } }, opts);
+    const req = planRequest({ ...seeded, localPath: "", inputs: { ...seeded.inputs, [master.key]: " new:1 " } }, opts);
     expect(req.overrides).toMatchObject({
       storageKVOffload: { mooncake: { master: "new:1", protocol: "rdma" } },
       old: { keep: 1 },

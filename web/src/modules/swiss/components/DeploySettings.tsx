@@ -4,7 +4,7 @@ import type { ApplyFlags, ClusterInfo, GPUSpec, Input as CatalogInput, Node, Pla
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { pickableProducts, productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
-import { CHECK_MS, dropInputWrites, filledSiteAnswers, inputAnnotations, inputError, inputProblem, releaseInputState, rememberable, setInputOverrides, type DroppedInput, type InputChoice, type InputRow } from "@swiss/lib/inputs";
+import { CHECK_MS, INPUTS_ANNOTATION, dropInputWrites, filledSiteAnswers, inputAnnotations, inputError, inputProblem, releaseInputState, rememberable, setInputOverrides, type DroppedInput, type InputChoice, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
 import { envBase, overlay, withEnv, withPreset } from "@swiss/lib/formLayer";
@@ -2425,7 +2425,11 @@ export function applyFlags(f: Form): ApplyFlags | undefined {
 // The plan stores the composed overrides tree, not the form fields, so this is
 // the inverse of planRequest -- and the pair is why an upgrade can show the
 // settings rather than only promise it carried them forward.
-export function formFromPlan(plan: Plan, gpuSpecs?: GPUSpec[]): Form {
+export function formFromPlan(
+  plan: Plan,
+  gpuSpecs?: GPUSpec[],
+  variant?: Pick<Variant, "inputs" | "values">,
+): Form {
   // The form's own document, not the composed result: an upgrade seeds from
   // what the operator set, so recomposing against a newer catalog keeps it.
   const o = (plan.layers?.form ?? {}) as Record<string, unknown>;
@@ -2453,6 +2457,9 @@ export function formFromPlan(plan: Plan, gpuSpecs?: GPUSpec[]): Form {
     namespace: plan.release.namespace,
     serviceId: str("serviceId"),
     localPath: str("model.localPath"),
+    inputs: variant
+      ? releaseInputState(variant.inputs ?? [], variant.values, o, plan.additionalAnnotations?.[INPUTS_ANNOTATION]).answers
+      : {},
     scaler: bool("scaler.enabled"),
     scalerMin: str("scaler.minReplicas"),
     scalerMax: str("scaler.maxReplicas"),

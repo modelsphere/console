@@ -150,44 +150,36 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   if (current.data && !seedPlan) setSeedPlan(current.data);
   const deployModel = upgrade ? "" : target.model;
   const gpuSpecs = profile.data?.profile?.nodes?.gpus;
-  const initial = useMemo<Form>(
-    () => (upgrade ? (seedPlan ? formFromPlan(seedPlan, gpuSpecs) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }),
-    [upgrade, seedPlan, deployModel, gpuSpecs],
+  const deployForm = useMemo<Form>(
+    () => (upgrade ? EMPTY : { ...EMPTY, serviceId: defaultServiceId(deployModel) }),
+    [upgrade, deployModel],
   );
   const initialRecovery = useMemo(() => recoverySettings(
     upgrade && seedPlan ? planValues(seedPlan) : mergeValues(entry.data?.variant.values, profile.data?.profile?.extra),
   ), [upgrade, seedPlan, entry.data?.variant.values, profile.data?.profile?.extra]);
   const [recoveryPatch, setRecoveryPatch] = useState<Partial<ReturnType<typeof recoverySettings>>>({});
   const recovery = { ...initialRecovery, ...recoveryPatch };
-  const [form, setForm] = useState<Form>(initial);
+  const [form, setForm] = useState<Form>(deployForm);
   const checkedInputs = useDebounced(form.inputs, CHECK_MS);
   const [remember, setRemember] = useState<Record<string, boolean>>({});
-  const catalogRoute = upgrade && current.data ? initial.route || initial.serviceId || target.release : undefined;
+  const [upgradeSeed, setUpgradeSeed] = useState<Form>();
+  useEffect(() => {
+    if (!upgrade || !seedPlan || !v || profile.isPending || upgradeSeed) return;
+    const seeded = formFromPlan(seedPlan, gpuSpecs, v);
+    setUpgradeSeed(seeded);
+    setForm(seeded);
+  }, [upgrade, seedPlan, v, profile.isPending, gpuSpecs, upgradeSeed]);
+  const catalogRoute = upgrade && upgradeSeed ? upgradeSeed.route || upgradeSeed.serviceId || target.release : undefined;
   const routeOptions = useQuery({
     queryKey: ["route-options", catalogRoute ?? ""],
     queryFn: ({ signal }) => readRouteOptions(catalogRoute, signal),
-    enabled: !upgrade || !!current.data,
+    enabled: !upgrade || !!upgradeSeed,
     staleTime: 30_000,
     retry: false,
   });
-  const [upgradeSeeded, setUpgradeSeeded] = useState(false);
-  useEffect(() => {
-    setForm(initial);
-    if (upgrade && seedPlan) setUpgradeSeeded(true);
-  }, [initial, upgrade, seedPlan]);
-  // The release's recorded answers fill the input fields once the variant is known,
-  // so they show as values that can be changed or cleared; none is a fallback after.
-  // Seeded per `initial`: a later rebuild of it (the profile landing after the
-  // variant) resets the form above and is seeded again here.
-  const [inputsSeed, setInputsSeed] = useState<{ for: Form; inputs: Record<string, string> }>();
-  useEffect(() => {
-    if (!upgrade || !seedPlan || !v || inputsSeed?.for === initial) return;
-    const seeded = releaseInputState(v.inputs ?? [], v.values, seedPlan.layers?.form, seedPlan.additionalAnnotations?.[INPUTS_ANNOTATION]).answers;
-    setInputsSeed({ for: initial, inputs: seeded });
-    setForm((f) => ({ ...f, inputs: { ...seeded, ...f.inputs } }));
-  }, [upgrade, seedPlan, v, initial, inputsSeed]);
   const [seed, setSeed] = useState<SwitchDefaults | null>(null);
-  const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: seed ? reseed(initial, {}, seed) : inputsSeed ? { ...initial, inputs: inputsSeed.inputs } : initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
+  const initial = upgrade ? (upgradeSeed ?? EMPTY) : (seed ? reseed(deployForm, {}, seed) : deployForm);
+  const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
 
   const [step, setStep] = useState<"form" | "review">("form");
   const [submitted, setSubmitted] = useState(false);
@@ -225,9 +217,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // A product the variant does not list is one swissd takes only as forced.
   const forceGpuProducts = unlistedProducts(v?.requires.gpuProduct, form.gpuProducts).length > 0;
   const change = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
-  const inputsAnnotation = upgrade ? current.data?.additionalAnnotations?.[INPUTS_ANNOTATION] : undefined;
-  const inputs = inputRows(v?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", modelName ?? "", v?.values, upgrade ? current.data?.layers?.form : undefined, inputsAnnotation);
-  const droppedInputs = upgrade && entry.data ? releaseInputState(v?.inputs ?? [], v?.values, current.data?.layers?.form, inputsAnnotation).dropped : [];
+  const inputsAnnotation = upgrade ? seedPlan?.additionalAnnotations?.[INPUTS_ANNOTATION] : undefined;
+  const inputs = inputRows(v?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", modelName ?? "", v?.values, upgrade ? seedPlan?.layers?.form : undefined, inputsAnnotation);
+  const droppedInputs = upgrade && entry.data ? releaseInputState(v?.inputs ?? [], v?.values, seedPlan?.layers?.form, inputsAnnotation).dropped : [];
   // A profile swissd did not parse is not written to from here.
   const canRemember = profile.data?.yaml !== undefined && !profile.data.error && !!cluster.data?.allowDeploy;
   const saves = canRemember ? siteSaves(inputs, form.inputs, remember) : [];
@@ -243,7 +235,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const loading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
   const error = cluster.error ?? current.error ?? entry.error;
   const nextSeed = useMemo(() => (seedReady ? switchDefaults(siteDefaults, variantValues) : null), [seedReady, siteDefaults, variantValues]);
-  const formSeeded = upgrade ? upgradeSeeded : !!seed && !!nextSeed && JSON.stringify(seed) === JSON.stringify(nextSeed);
+  const formSeeded = upgrade ? !!upgradeSeed : !!seed && !!nextSeed && JSON.stringify(seed) === JSON.stringify(nextSeed);
   // Chart discovery (images and per-role chart defaults) runs once on open after
   // the form is seeded, on target changes, and on manual refresh.
   // Override YAML runs its own standalone dry-run when opened so form edits stay quiet.

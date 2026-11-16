@@ -143,26 +143,18 @@ export function Upgrade() {
   // rollback, from the revision being restored, which is what would come back.
   // An upgrade whose form starts empty would silently propose dropping every
   // setting.
+  const from = rollbackTo ? archived.data : current.data;
+  const seedReady =
+    !!from &&
+    !cluster.isPending &&
+    !profile.isPending &&
+    (!!rollbackTo || !catalogName || variantMissing || !entry.isPending);
   const [seededFromPlan, setSeededFromPlan] = useState(false);
   useEffect(() => {
-    const from = rollbackTo ? archived.data : current.data;
-    if (from) {
-      setForm(formFromPlan(from, profile.data?.profile?.nodes?.gpus));
-      setSeededFromPlan(true);
-    }
-  }, [current.data, archived.data, rollbackTo]);
-  // The release's recorded answers fill the input fields once the variant is known,
-  // so they show as values that can be changed or cleared; none is a fallback after.
-  // Again whenever the plan seed above runs again, since that replaces the form.
-  const seedVariant = entry.data?.variant;
-  const [inputsSeededFrom, setInputsSeededFrom] = useState<Plan>();
-  useEffect(() => {
-    const from = current.data;
-    if (rollbackTo || !from || !seedVariant || inputsSeededFrom === from) return;
-    const seeded = releaseInputState(seedVariant.inputs ?? [], seedVariant.values, from.layers?.form, from.additionalAnnotations?.[INPUTS_ANNOTATION]).answers;
-    setInputsSeededFrom(from);
-    setForm((f) => ({ ...f, inputs: { ...seeded, ...f.inputs } }));
-  }, [current.data, seedVariant, rollbackTo, inputsSeededFrom]);
+    if (!seedReady || seededFromPlan) return;
+    setForm(formFromPlan(from, profile.data?.profile?.nodes?.gpus, rollbackTo ? undefined : entry.data?.variant));
+    setSeededFromPlan(true);
+  }, [seedReady, seededFromPlan, from, profile.data, rollbackTo, entry.data]);
 
   const reset = () => {
     setPlan(null);
