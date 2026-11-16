@@ -161,16 +161,16 @@ export function InferenceDetail() {
         <PanelTabs items={visible.map((key) => ({ value: key, label: t(`tabs.${key}`), count: counts[key] }))} />
 
         <TabsContent value="overview">
-          <Overview namespace={namespace} release={release} status={s} plan={plan.data} objects={objects.data?.objects} objectsUnreadable={objects.isError} poll={!upgrading} onAllRuns={() => setTab("runs")} onAllEvents={() => setTab("events")} onViewInstances={() => setTab("instances")} />
+          <Overview namespace={namespace} release={release} status={s} plan={plan.data} objects={objects.data?.objects} objectsUnreadable={objects.isError} onAllRuns={() => setTab("runs")} onAllEvents={() => setTab("events")} onViewInstances={() => setTab("instances")} />
         </TabsContent>
         <TabsContent value="instances">
           <Instances status={s} onLogs={(pod) => setTab("logs", pod)} />
         </TabsContent>
         <TabsContent value="logs">
-          <Logs key={search.get("pod") ?? ""} namespace={namespace} release={release} statusPods={pods} initialPod={search.get("pod") ?? undefined} poll={!upgrading} />
+          <Logs key={search.get("pod") ?? ""} namespace={namespace} release={release} statusPods={pods} initialPod={search.get("pod") ?? undefined} />
         </TabsContent>
         <TabsContent value="events">
-          <Events namespace={namespace} release={release} pods={pods} poll={!upgrading} />
+          <Events namespace={namespace} release={release} pods={pods} />
         </TabsContent>
         <TabsContent value="resources">
           <ReleaseObjects namespace={namespace} release={release} />
@@ -182,7 +182,7 @@ export function InferenceDetail() {
           <Versions namespace={namespace} release={release} rollbackBlocked={removing ? t("disabled.uninstalling") : readOnly || !plan.data ? t("disabled.readOnly") : false} />
         </TabsContent>
         <TabsContent value="runs">
-          <Runs namespace={namespace} release={release} poll={!upgrading} />
+          <Runs namespace={namespace} release={release} />
         </TabsContent>
         {plan.data && (
           <TabsContent value="plan">

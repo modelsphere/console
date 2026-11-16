@@ -16,7 +16,7 @@ const SINCE = [
   { value: 86400, key: "since24h" },
 ];
 
-export function Logs({ namespace, release, statusPods, initialPod, poll = true }: { namespace: string; release: string; statusPods: readonly string[]; initialPod?: string; poll?: boolean }) {
+export function Logs({ namespace, release, statusPods, initialPod }: { namespace: string; release: string; statusPods: readonly string[]; initialPod?: string }) {
   const t = useT();
   const [picked, setPod] = useState(initialPod ?? "");
   const [pickedContainer, setContainer] = useState("");
@@ -30,7 +30,7 @@ export function Logs({ namespace, release, statusPods, initialPod, poll = true }
   const list = useQuery({
     queryKey: ["k8s-pods", namespace, release],
     queryFn: () => workloadApi.pods(namespace, release),
-    refetchInterval: poll ? 15_000 : false,
+    refetchInterval: 15_000,
     retry: false,
   });
   const listed = (list.data?.items ?? []).filter((p) => ofRelease(p.name, release, statusPods));
@@ -43,7 +43,7 @@ export function Logs({ namespace, release, statusPods, initialPod, poll = true }
     queryKey: ["k8s-log", namespace, pod, container, lines, since, previous],
     queryFn: () => workloadApi.log(namespace, pod, { container, tailLines: lines, sinceSeconds: since, previous }),
     enabled: !!pod && !!container,
-    refetchInterval: poll && follow ? 5_000 : false,
+    refetchInterval: follow ? 5_000 : false,
     retry: false,
   });
 
