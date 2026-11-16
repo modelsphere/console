@@ -30,7 +30,8 @@
     "submit": "Sign in",
     "submitting": "Signing in…",
     "failed": "Sign-in failed",
-    "badCredentials": "Incorrect username or password"
+    "badCredentials": "Incorrect username or password",
+    "serviceUnavailable": "The sign-in service is unavailable. Check your network or VPN connection and try again, or contact your administrator."
   },
   "password": {
     "current": "Current password",
