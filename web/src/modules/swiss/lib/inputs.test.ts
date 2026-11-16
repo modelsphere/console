@@ -12,7 +12,7 @@ const port: Input = { key: "service.port", title: "Port", type: "integer", examp
 const site = (inputs: Record<string, string | number | boolean>): SiteProfile => ({
   name: "prod",
   model: { pathTemplate: "/models/{{name}}" },
-  inputs,
+  inputs: Object.entries(inputs).map(([key, value]) => ({ key, value })),
 });
 
 describe("fillTemplate", () => {

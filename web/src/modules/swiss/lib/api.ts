@@ -329,6 +329,12 @@ export interface Preset {
   values?: Record<string, unknown>;
 }
 
+// One site answer. A list entry, so a key like volumes.[name=x].path is a plain string.
+export interface SiteInput {
+  key: string;
+  value: string | number | boolean;
+}
+
 export interface SiteProfile {
   name: string;
   namespace?: string;
@@ -371,8 +377,8 @@ export interface SiteProfile {
   // The site's preferences, beneath the catalog: a variant overrides them.
   // features unset is on (featureOn).
   defaults?: { features?: { cart?: boolean; serviceMonitor?: boolean; sloRequirement?: boolean; scaler?: boolean } };
-  // Answers a variant's inputs by chart path; strings take pathTemplate's placeholders.
-  inputs?: Record<string, string | number | boolean>;
+  // Answers a variant's inputs by key, each key once; strings take pathTemplate's placeholders.
+  inputs?: SiteInput[];
   // Named values a deploy may pick one of; the console merges it into the form layer.
   presets?: Record<string, Preset>;
   nodes?: {

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, Plus, RefreshCw, RotateCcw, TriangleAlert, X } from "lucide-react";
-import type { ApplyFlags, ClusterInfo, GPUSpec, Input as CatalogInput, Node, Plan, PlanRequest, Preset, ProfileResponse, Variant } from "@swiss/lib/api";
+import type { ApplyFlags, ClusterInfo, GPUSpec, Input as CatalogInput, Node, Plan, PlanRequest, Preset, ProfileResponse, SiteInput, Variant } from "@swiss/lib/api";
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { pickableProducts, productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
@@ -2252,7 +2252,7 @@ export function planRequest(
     // deployed before answers were recorded.
     inputsAnnotation?: string;
     // Site profile answers. A list key writes one; a field key leaves it to swissd.
-    siteInputs?: Record<string, string | number | boolean>;
+    siteInputs?: SiteInput[];
     hf?: string;
     // The values of the preset f picks.
     preset?: Record<string, unknown>;

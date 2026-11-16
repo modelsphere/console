@@ -155,8 +155,8 @@ export function SiteProfile() {
             title="Variant inputs"
             hint="Answers to the inputs catalog variants declare, by chart key. Only a variant that declares a key takes its answer, and a deploy can still override it."
           >
-            {p.inputs && Object.keys(p.inputs).length > 0 ? (
-              Object.entries(p.inputs).map(([k, v]) => <Row key={k} label={k} value={answerText(v)} mono />)
+            {p.inputs?.length ? (
+              p.inputs.map((s) => <Row key={s.key} label={s.key} value={answerText(s.value)} mono />)
             ) : (
               <Row label="Answers" value={undefined} fallback="none: an input takes its default, or the deploy's answer" />
             )}
