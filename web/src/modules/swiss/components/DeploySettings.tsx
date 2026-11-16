@@ -2375,7 +2375,9 @@ export function planRequest(
   if (base) {
     dropClearedImages(base, f.images);
     dropClearedResources(base, resourceEdits);
-    if (inputState?.present) dropInputWrites(base, inputState.dropKeys);
+    // swissd takes this layer as is, so every declared input is rebuilt from
+    // its current answer below, and a recorded key the variant dropped goes.
+    if (opts.inputs) dropInputWrites(base, [...opts.inputs.map((i) => i.key), ...(inputState?.dropKeys ?? [])]);
   }
   const layer = withEnv(opts.values, withPreset(base ? overlay(base, overrides) : overrides, preset));
   setAffinity(layer, f.affinity, f.gpuProducts.length > 0);

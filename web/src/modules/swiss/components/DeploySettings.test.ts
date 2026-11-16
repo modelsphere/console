@@ -157,6 +157,27 @@ describe("catalog input answers", () => {
     expect(values.extraArgs).toEqual(["--foo=1", "--bar"]);
   });
 
+  it("does not carry a cleared answer from a release with no annotation", () => {
+    const formLayer = { storageKVOffload: { mooncake: { master: "old:1", protocol: "rdma" } }, extraArgs: ["--foo=OLD", "--bar"] };
+    const req = planRequest({ ...EMPTY, inputs: { [master.key]: "" } }, { model: "m", inputs: [master, arg], values, formLayer, hf: "" });
+    // Unanswered, the copied list goes and the catalog's applies again.
+    expect(req.overrides).toMatchObject({ storageKVOffload: { mooncake: { protocol: "rdma" } } });
+    expect(req.overrides).not.toHaveProperty("storageKVOffload.mooncake.master");
+    expect(req.overrides).not.toHaveProperty("extraArgs");
+    expect(req.additionalAnnotations).toEqual({ [INPUTS_ANNOTATION]: "[]" });
+  });
+
+  it("does not carry a site or default write that no longer applies", () => {
+    const withDefault: Input = { ...master, default: "def:1" };
+    const formLayer = { storageKVOffload: { mooncake: { master: "def:1" } }, extraArgs: ["site-old", "--bar"] };
+    const opts = { model: "m", inputs: [withDefault, arg], values, formLayer, inputsAnnotation: "[]", hf: "" };
+    const req = planRequest(EMPTY, opts);
+    expect(req.overrides).not.toHaveProperty("extraArgs");
+    expect(req.overrides).toMatchObject({ storageKVOffload: { mooncake: { master: "def:1" } } });
+    const noDefault = planRequest(EMPTY, { ...opts, inputs: [master, arg] });
+    expect(noDefault.overrides).not.toHaveProperty("storageKVOffload.mooncake.master");
+  });
+
   it("fills a list key from the site when nothing is typed", () => {
     const req = planRequest(EMPTY, { model: "glm", inputs: [arg], values, siteInputs: { [arg.key]: "mc-{{model}}" }, hf: "org/name" });
     expect(req.overrides?.extraArgs).toEqual(["mc-glm", "--bar"]);
