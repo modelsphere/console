@@ -3,6 +3,7 @@ module github.com/modelsphere/console
 go 1.26.0
 
 require (
+	github.com/Masterminds/semver/v3 v3.3.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/prometheus/client_golang v1.24.1
 	github.com/spf13/cobra v1.10.1
@@ -16,7 +17,6 @@ require (
 )
 
 require (
-	github.com/Masterminds/semver/v3 v3.3.0 // indirect
 	github.com/Masterminds/squirrel v1.5.4 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

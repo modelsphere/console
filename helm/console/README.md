@@ -216,7 +216,7 @@ Every setting is documented in the comments of `values.yaml` (`helm show values 
 | Value | Effect |
 |---|---|
 | `externalSwiss.*` | connects to an existing Swiss, see above |
-| `platform.inferenceNamespaces` | host-provided production inference scope; the plugin CLI maps it to the plugin Chart's `targetNamespaces` value |
+| `platform.inferenceNamespaces` | production inference scope published as the `platform.modelsphere.dev/inference-namespaces` capability; the plugin CLI binds it into each consuming plugin's `consumed` values |
 | `playground.gateway.*` | points at an inference gateway directly (without Swiss, use `configMap` + `service`) |
 | `service.type` | how the UI is exposed; `NodePort` by default |
 | `admin.encryptedPassword` | presets the administrator password as a bcrypt hash |

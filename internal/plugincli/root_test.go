@@ -10,7 +10,6 @@ import (
 	"time"
 
 	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
-	"github.com/modelsphere/console/internal/pluginpackage"
 	sigyaml "sigs.k8s.io/yaml"
 )
 
@@ -59,23 +58,31 @@ frontend:
 	}
 }
 
-func TestPlatformValuesInheritRegistrySecretReferencesOnlyWhenRequested(t *testing.T) {
+func TestConsumedValuesFollowProviderDeclarations(t *testing.T) {
 	values := consoleValues{ImagePullSecrets: []imagePullSecret{{Name: "registry-pull"}}}
-	path, err := writePlatformValues(values, pluginpackage.Requirements{ImagePullSecrets: true})
+	providers := []capabilityProvider{platformCapabilityProvider(values, "console-system")}
+	consumed, err := resolveCapabilities([]pluginapi.PluginCapabilityBinding{
+		{Capability: capabilityImagePullSecrets, Version: "v1"},
+	}, providers, "console-system")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("resolveCapabilities() error = %v", err)
+	}
+	path, err := writeConsumedValues(consumed)
+	if err != nil {
+		t.Fatalf("writeConsumedValues() error = %v", err)
 	}
 	defer os.Remove(path)
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(content), "name: registry-pull") {
-		t.Fatalf("missing registry reference: %s", content)
+	for _, expected := range []string{"consumed:", "modelsphere.dev/platform:", "imagePullSecrets:", "name: registry-pull"} {
+		if !strings.Contains(string(content), expected) {
+			t.Fatalf("consumed values missing %q: %s", expected, content)
+		}
 	}
-	path, err = writePlatformValues(values, pluginpackage.Requirements{})
-	if err != nil || path != "" {
-		t.Fatalf("undeclared dependency received an overlay: %q, %v", path, err)
+	if path, err := writeConsumedValues(nil); err != nil || path != "" {
+		t.Fatalf("empty bindings received an overlay: %q, %v", path, err)
 	}
 }
 
@@ -131,22 +138,22 @@ func TestSelectionAndConfirmationShareInput(t *testing.T) {
 	}
 }
 
-func TestPlatformRequirementsFollowPackageDeclaration(t *testing.T) {
-	manifest := pluginpackage.Manifest{Requires: pluginpackage.Requirements{Swiss: true}}
-	requirements, err := platformRequirements(manifest, "console-system", "other")
-	if err != nil {
-		t.Fatalf("platformRequirements() error = %v", err)
+func TestResolveCapabilitiesEnforcesNamespaceScope(t *testing.T) {
+	providers := []capabilityProvider{platformCapabilityProvider(consoleValues{}, "console-system")}
+	bindings := []pluginapi.PluginCapabilityBinding{{Capability: capabilityImagePullSecrets}}
+	if _, err := resolveCapabilities(bindings, providers, "other"); err == nil || !strings.Contains(err.Error(), "namespace-scoped") {
+		t.Fatalf("cross-namespace binding error = %v", err)
 	}
-	if !requirements.Swiss || requirements.ImagePullSecrets {
-		t.Fatalf("requirements = %+v", requirements)
+	if _, err := resolveCapabilities(bindings, providers, "console-system"); err != nil {
+		t.Fatalf("same-namespace binding error = %v", err)
 	}
+}
 
-	manifest.Requires.ImagePullSecrets = true
-	if _, err := platformRequirements(manifest, "console-system", "other"); err == nil || !strings.Contains(err.Error(), "namespace-scoped") {
-		t.Fatalf("cross-namespace requirement error = %v", err)
-	}
-	if _, err := platformRequirements(manifest, "console-system", "console-system"); err != nil {
-		t.Fatalf("same-namespace requirement error = %v", err)
+func TestResolveCapabilitiesRejectsUnpublishedValues(t *testing.T) {
+	providers := []capabilityProvider{platformCapabilityProvider(consoleValues{}, "console-system")}
+	_, err := resolveCapabilities([]pluginapi.PluginCapabilityBinding{{Capability: capabilityInferenceNamespaces}}, providers, "console-system")
+	if err == nil || !strings.Contains(err.Error(), "inferenceNamespaces") {
+		t.Fatalf("resolveCapabilities() error = %v", err)
 	}
 }
 
@@ -199,42 +206,45 @@ frontend:
 	}
 }
 
-func TestWritePlatformValuesUsesConsoleHostConfiguration(t *testing.T) {
-	path, err := writePlatformValues(consoleValues{
+func TestSwissCapabilityProviderPublishesGatewayBinding(t *testing.T) {
+	console := consoleValues{
 		ExternalSwiss: externalSwissValues{
 			URL:      "http://swissd.swiss-system.svc:80/api",
-			ProxyKey: externalSwissProxyKey{SecretName: "swiss-proxy-key", Key: "proxyKey"},
+			ProxyKey: externalSwissProxyKey{SecretName: "swiss-proxy-key"},
 		},
 		Platform: platformValues{InferenceNamespaces: []string{"swiss-deploy"}},
-	}, pluginpackage.Requirements{Swiss: true, InferenceNamespaces: true})
+	}
+	provider, err := swissCapabilityProvider(console)
 	if err != nil {
-		t.Fatalf("writePlatformValues() error = %v", err)
+		t.Fatalf("swissCapabilityProvider() error = %v", err)
+	}
+	consumed, err := resolveCapabilities([]pluginapi.PluginCapabilityBinding{
+		{Capability: capabilitySwissGateway, Version: "v1"},
+		{Capability: capabilityInferenceNamespaces},
+	}, []capabilityProvider{platformCapabilityProvider(console, "console-system"), provider}, "console-system")
+	if err != nil {
+		t.Fatalf("resolveCapabilities() error = %v", err)
+	}
+	path, err := writeConsumedValues(consumed)
+	if err != nil {
+		t.Fatalf("writeConsumedValues() error = %v", err)
 	}
 	defer os.Remove(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read platform values: %v", err)
+		t.Fatalf("read consumed values: %v", err)
 	}
 	content := string(data)
-	for _, expected := range []string{"targetNamespaces:", "- swiss-deploy", "url: http://swissd.swiss-system.svc:80", "proxySecret: swiss-proxy-key"} {
+	for _, expected := range []string{"modelsphere.dev/swiss:", "endpoint: http://swissd.swiss-system.svc:80", "apiKeyRef: swiss-proxy-key", "apiKeyKey: proxyKey", "inferenceNamespaces:", "- swiss-deploy"} {
 		if !strings.Contains(content, expected) {
-			t.Fatalf("platform values missing %q: %s", expected, content)
+			t.Fatalf("consumed values missing %q: %s", expected, content)
 		}
 	}
 }
 
-func TestWritePlatformValuesRejectsMissingHostConfiguration(t *testing.T) {
-	_, err := writePlatformValues(consoleValues{}, pluginpackage.Requirements{Swiss: true, InferenceNamespaces: true})
-	if err == nil || !strings.Contains(err.Error(), "platform.inferenceNamespaces") {
-		t.Fatalf("writePlatformValues() error = %v", err)
-	}
-}
-
-func TestWritePlatformValuesRejectsMissingSwissConfiguration(t *testing.T) {
-	_, err := writePlatformValues(consoleValues{
-		Platform: platformValues{InferenceNamespaces: []string{"swiss-deploy"}},
-	}, pluginpackage.Requirements{Swiss: true, InferenceNamespaces: true})
+func TestSwissCapabilityProviderRejectsMissingConsoleConfiguration(t *testing.T) {
+	_, err := swissCapabilityProvider(consoleValues{})
 	if err == nil || !strings.Contains(err.Error(), "externalSwiss.url") {
-		t.Fatalf("writePlatformValues() error = %v", err)
+		t.Fatalf("swissCapabilityProvider() error = %v", err)
 	}
 }

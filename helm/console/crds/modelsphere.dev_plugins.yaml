@@ -271,6 +271,46 @@ spec:
                   apiVersion:
                     description: APIVersion is the plugin API version (e.g., "v1").
                     type: string
+                  consumes:
+                    description: |-
+                      Consumes declares capabilities another provider must supply at install
+                      time. The installer resolves each binding against installed providers.
+                    items:
+                      description: PluginCapabilityBinding binds a package to a capability
+                        it consumes.
+                      properties:
+                        capability:
+                          description: Capability is the reverse-DNS identity declared
+                            by the provider.
+                          type: string
+                        from:
+                          description: From pins the provider when several offer the
+                            same capability.
+                          properties:
+                            group:
+                              description: Group is the provider's plugin API group.
+                              type: string
+                            kind:
+                              description: |-
+                                Kind is "Plugin" or "Platform". Platform also covers capabilities the
+                                platform supplies itself, before a dedicated plugin provides them.
+                              type: string
+                            name:
+                              description: Name is the provider's plugin name.
+                              type: string
+                            version:
+                              description: Version is a SemVer constraint on the provider's
+                                version.
+                              type: string
+                          type: object
+                        version:
+                          description: Version is the capability schema version the
+                            consumer understands.
+                          type: string
+                      required:
+                      - capability
+                      type: object
+                    type: array
                   depends:
                     description: |-
                       Depends declares plugin names and version constraints from plugin.yaml.
@@ -316,6 +356,39 @@ spec:
                   name:
                     description: Name is the plugin identifier.
                     type: string
+                  provides:
+                    description: |-
+                      Provides declares capabilities this package makes available to other
+                      packages. Consumers bind to a declaration by name and version.
+                    items:
+                      description: PluginCapability is a capability a package publishes
+                        to other packages.
+                      properties:
+                        capability:
+                          description: Capability is the reverse-DNS identity, e.g.
+                            swiss.modelsphere.dev/gateway.
+                          type: string
+                        sameNamespace:
+                          description: |-
+                            SameNamespace restricts consumers to the provider's namespace. Data such
+                            as imagePullSecrets only resolves inside the namespace that owns it.
+                          type: boolean
+                        values:
+                          additionalProperties:
+                            type: string
+                          description: |-
+                            Values publishes consumer-visible keys as paths into the provider's own
+                            values, so consumers never learn the provider's values layout.
+                          type: object
+                        version:
+                          description: Version is the capability schema version, e.g.
+                            v1.
+                          type: string
+                      required:
+                      - capability
+                      - version
+                      type: object
+                    type: array
                   roleTemplates:
                     description: RoleTemplates are permission templates declared by
                       the plugin.

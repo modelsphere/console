@@ -183,11 +183,15 @@ type PluginMeta struct {
 	// Frontend holds frontend integration configuration.
 	Frontend FrontendConfig `json:"frontend"`
 
-	// Requires declares host capabilities the installer must supply. The
-	// installer reads it from the package; Console does not grant capabilities
-	// from it.
+	// Provides declares capabilities this package makes available to other
+	// packages. Consumers bind to a declaration by name and version.
 	// +optional
-	Requires PluginRequirements `json:"requires,omitempty"`
+	Provides []PluginCapability `json:"provides,omitempty"`
+
+	// Consumes declares capabilities another provider must supply at install
+	// time. The installer resolves each binding against installed providers.
+	// +optional
+	Consumes []PluginCapabilityBinding `json:"consumes,omitempty"`
 
 	// APIAccess lists API paths the plugin needs access to.
 	// +optional
@@ -213,20 +217,57 @@ type PluginDependency struct {
 	Version string `json:"version,omitempty"`
 }
 
-// PluginRequirements names host capabilities a plugin package asks the installer
-// to supply. The CLI maps each one to Console host configuration.
-type PluginRequirements struct {
-	// ImagePullSecrets asks for the Console release imagePullSecrets.
-	// +optional
-	ImagePullSecrets bool `json:"imagePullSecrets,omitempty" yaml:"imagePullSecrets,omitempty"`
+// PluginCapability is a capability a package publishes to other packages.
+type PluginCapability struct {
+	// Capability is the reverse-DNS identity, e.g. swiss.modelsphere.dev/gateway.
+	Capability string `json:"capability" yaml:"capability"`
 
-	// Swiss asks for the host's externalSwiss endpoint and proxy key reference.
-	// +optional
-	Swiss bool `json:"swiss,omitempty" yaml:"swiss,omitempty"`
+	// Version is the capability schema version, e.g. v1.
+	Version string `json:"version" yaml:"version"`
 
-	// InferenceNamespaces asks for the host's production inference scope.
+	// Values publishes consumer-visible keys as paths into the provider's own
+	// values, so consumers never learn the provider's values layout.
 	// +optional
-	InferenceNamespaces bool `json:"inferenceNamespaces,omitempty" yaml:"inferenceNamespaces,omitempty"`
+	Values map[string]string `json:"values,omitempty" yaml:"values,omitempty"`
+
+	// SameNamespace restricts consumers to the provider's namespace. Data such
+	// as imagePullSecrets only resolves inside the namespace that owns it.
+	// +optional
+	SameNamespace bool `json:"sameNamespace,omitempty" yaml:"sameNamespace,omitempty"`
+}
+
+// PluginCapabilityBinding binds a package to a capability it consumes.
+type PluginCapabilityBinding struct {
+	// Capability is the reverse-DNS identity declared by the provider.
+	Capability string `json:"capability" yaml:"capability"`
+
+	// Version is the capability schema version the consumer understands.
+	// +optional
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+
+	// From pins the provider when several offer the same capability.
+	// +optional
+	From *PluginCapabilitySource `json:"from,omitempty" yaml:"from,omitempty"`
+}
+
+// PluginCapabilitySource identifies the provider a binding accepts.
+type PluginCapabilitySource struct {
+	// Kind is "Plugin" or "Platform". Platform also covers capabilities the
+	// platform supplies itself, before a dedicated plugin provides them.
+	// +optional
+	Kind string `json:"kind,omitempty" yaml:"kind,omitempty"`
+
+	// Group is the provider's plugin API group.
+	// +optional
+	Group string `json:"group,omitempty" yaml:"group,omitempty"`
+
+	// Name is the provider's plugin name.
+	// +optional
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+
+	// Version is a SemVer constraint on the provider's version.
+	// +optional
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 }
 
 // UninstallPrecheck declares a plugin backend endpoint that decides whether the

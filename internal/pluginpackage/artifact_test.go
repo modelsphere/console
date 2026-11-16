@@ -36,12 +36,12 @@ func TestInspectHelmArchiveWithTopLevelDirectory(t *testing.T) {
 	}
 }
 
-func TestInspectReadsV1HostRequirements(t *testing.T) {
+func TestInspectReadsV1CapabilityBindings(t *testing.T) {
 	directory := t.TempDir()
 	if err := os.WriteFile(filepath.Join(directory, "Chart.yaml"), []byte("apiVersion: v2\nname: canaryd\nversion: 0.3.0\ntype: application\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	manifest := "apiVersion: v1\ngroup: modelsphere.dev\nname: canary\nversion: 0.4.0\ndisplayName: Canary\ndescription: Persistent model inference experiments.\nrequires:\n  imagePullSecrets: true\n  swiss: true\n  inferenceNamespaces: true\nfrontend:\n  type: component\n  runtime: remote\n  entry: index.umd.js\nactivation:\n  policy: auto\n"
+	manifest := "apiVersion: v1\ngroup: modelsphere.dev\nname: canary\nversion: 0.4.0\ndisplayName: Canary\ndescription: Persistent model inference experiments.\nconsumes:\n  - capability: platform.modelsphere.dev/image-pull-secrets\n    version: v1\n  - capability: swiss.modelsphere.dev/gateway\n    version: v1\n    from:\n      kind: Plugin\n      name: swiss\n      version: \">=0.4.0 <0.6.0\"\nfrontend:\n  type: component\n  runtime: remote\n  entry: index.umd.js\nactivation:\n  policy: auto\n"
 	if err := os.WriteFile(filepath.Join(directory, "plugin.yaml"), []byte(manifest), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -49,9 +49,12 @@ func TestInspectReadsV1HostRequirements(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
-	want := Requirements{ImagePullSecrets: true, Swiss: true, InferenceNamespaces: true}
-	if artifact.Manifest.Requires != want {
-		t.Fatalf("Requires = %+v, want %+v", artifact.Manifest.Requires, want)
+	bindings := artifact.Manifest.Consumes
+	if len(bindings) != 2 || bindings[0].Capability != "platform.modelsphere.dev/image-pull-secrets" {
+		t.Fatalf("Consumes = %+v", bindings)
+	}
+	if bindings[1].From == nil || bindings[1].From.Kind != "Plugin" || bindings[1].From.Version != ">=0.4.0 <0.6.0" {
+		t.Fatalf("binding source = %+v", bindings[1].From)
 	}
 }
 
@@ -81,7 +84,7 @@ func writeChartDirectory(t *testing.T) string {
 }
 
 func pluginYAML() string {
-	return "apiVersion: v1\ngroup: modelsphere.dev\nname: canary\nversion: 0.4.0\ndisplayName: Canary\nrequires:\n  swiss: true\n  inferenceNamespaces: true\nfrontend:\n  type: component\n  runtime: remote\n  entry: index.umd.js\n"
+	return "apiVersion: v1\ngroup: modelsphere.dev\nname: canary\nversion: 0.4.0\ndisplayName: Canary\nconsumes:\n  - capability: swiss.modelsphere.dev/gateway\n    version: v1\n  - capability: platform.modelsphere.dev/inference-namespaces\nfrontend:\n  type: component\n  runtime: remote\n  entry: index.umd.js\n"
 }
 
 func createArchive(t *testing.T, destination string, files map[string]string) {

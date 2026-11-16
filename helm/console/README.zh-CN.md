@@ -215,7 +215,7 @@ kubectl delete crd users.iam.theriseunion.io iamroles.iam.theriseunion.io \
 | values | 作用 |
 |---|---|
 | `externalSwiss.*` | 接入已有 Swiss，见上文 |
-| `platform.inferenceNamespaces` | 插件宿主提供的生产推理 namespace 范围；CLI 安装插件时自动映射为插件 Chart 所需的 `targetNamespaces` |
+| `platform.inferenceNamespaces` | 以 `platform.modelsphere.dev/inference-namespaces` 能力公开的生产推理 namespace 范围；CLI 安装插件时绑定到消费方的 `consumed` 值 |
 | `playground.gateway.*` | 直接指定推理网关（没有 Swiss 时用 `configMap` + `service`） |
 | `service.type` | 暴露方式，默认 `NodePort` |
 | `admin.encryptedPassword` | 预先设定管理员密码的 bcrypt 哈希 |

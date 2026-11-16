@@ -322,20 +322,12 @@ type platformValues struct {
 	InferenceNamespaces []string `yaml:"inferenceNamespaces,omitempty"`
 }
 
-type pluginPlatformValues struct {
-	ImagePullSecrets []imagePullSecret  `yaml:"imagePullSecrets,omitempty"`
-	TargetNamespaces []string           `yaml:"targetNamespaces,omitempty"`
-	Swiss            *pluginSwissValues `yaml:"swiss,omitempty"`
+type pluginCapabilityValues struct {
+	Consumed consumedValues `yaml:"consumed,omitempty"`
 }
 
 type imagePullSecret struct {
 	Name string `yaml:"name"`
-}
-
-type pluginSwissValues struct {
-	URL            string `yaml:"url,omitempty"`
-	ProxySecret    string `yaml:"proxySecret,omitempty"`
-	ProxySecretKey string `yaml:"proxySecretKey,omitempty"`
 }
 
 func loadConsoleValues(ctx context.Context, runner Runner, release, namespace string) (consoleValues, error) {
@@ -350,56 +342,40 @@ func loadConsoleValues(ctx context.Context, runner Runner, release, namespace st
 	return values, nil
 }
 
-func writePlatformValues(values consoleValues, requirements pluginpackage.Requirements) (string, error) {
-	if !requirements.Swiss && !requirements.InferenceNamespaces && !requirements.ImagePullSecrets {
+// writeConsumedValues writes the capability values a package consumes to a
+// protected temporary values file. Nothing bound means no file.
+func writeConsumedValues(consumed consumedValues) (string, error) {
+	if len(consumed) == 0 {
 		return "", nil
 	}
-	override := pluginPlatformValues{}
-	if requirements.ImagePullSecrets {
-		override.ImagePullSecrets = append([]imagePullSecret(nil), values.ImagePullSecrets...)
-	}
-	if requirements.InferenceNamespaces {
-		override.TargetNamespaces = platformInferenceNamespaces(values)
-		if len(override.TargetNamespaces) == 0 {
-			return "", fmt.Errorf("plugin requires platform.inferenceNamespaces; configure it in the Console Helm values")
-		}
-	}
-	if requirements.Swiss {
-		swissURL, err := baseSwissURL(values.ExternalSwiss.URL)
-		if err != nil {
-			return "", fmt.Errorf("plugin requires externalSwiss.url: %w", err)
-		}
-		override.Swiss = &pluginSwissValues{
-			URL:            swissURL,
-			ProxySecret:    values.ExternalSwiss.ProxyKey.SecretName,
-			ProxySecretKey: values.ExternalSwiss.ProxyKey.Key,
-		}
-		if override.Swiss.ProxySecretKey == "" {
-			override.Swiss.ProxySecretKey = "proxyKey"
-		}
-	}
-	data, err := yaml.Marshal(override)
+	data, err := yaml.Marshal(pluginCapabilityValues{Consumed: consumed})
 	if err != nil {
-		return "", fmt.Errorf("encode platform plugin values: %w", err)
+		return "", fmt.Errorf("encode consumed capability values: %w", err)
 	}
-	file, err := os.CreateTemp("", "modelsphere-platform-values-*.yaml")
+	return writeProtectedValues(data)
+}
+
+// writeProtectedValues keeps resolved values, which may reference secrets, out
+// of the default umask.
+func writeProtectedValues(data []byte) (string, error) {
+	file, err := os.CreateTemp("", "modelsphere-plugin-values-*.yaml")
 	if err != nil {
-		return "", fmt.Errorf("create platform plugin values: %w", err)
+		return "", fmt.Errorf("create plugin capability values: %w", err)
 	}
 	path := file.Name()
 	if err := file.Chmod(0600); err != nil {
 		file.Close()
 		os.Remove(path)
-		return "", fmt.Errorf("protect platform plugin values: %w", err)
+		return "", fmt.Errorf("protect plugin capability values: %w", err)
 	}
 	if _, err := file.Write(data); err != nil {
 		file.Close()
 		os.Remove(path)
-		return "", fmt.Errorf("write platform plugin values: %w", err)
+		return "", fmt.Errorf("write plugin capability values: %w", err)
 	}
 	if err := file.Close(); err != nil {
 		os.Remove(path)
-		return "", fmt.Errorf("close platform plugin values: %w", err)
+		return "", fmt.Errorf("close plugin capability values: %w", err)
 	}
 	return path, nil
 }
@@ -544,12 +520,12 @@ func prepareInstall(ctx context.Context, options *Options, flags *lifecycleFlags
 	if err != nil {
 		return artifact, resolved, runner, err
 	}
-	requirements, err := platformRequirements(artifact.Manifest, resolved.consoleNamespace, resolved.pluginNamespace)
+	consumed, err := installConsumedCapabilities(ctx, runner, artifact.Manifest, values, resolved.consoleNamespace, resolved.pluginNamespace)
 	if err != nil {
 		return artifact, resolved, runner, err
 	}
 	resolved.pluginRelease = artifact.Manifest.Name
-	platformFile, err := writePlatformValues(values, requirements)
+	platformFile, err := writeConsumedValues(consumed)
 	if err != nil {
 		return artifact, resolved, runner, err
 	}
@@ -558,16 +534,6 @@ func prepareInstall(ctx context.Context, options *Options, flags *lifecycleFlags
 		resolved.values = append(resolved.values, platformFile)
 	}
 	return artifact, resolved, runner, nil
-}
-
-// platformRequirements takes the plugin's declared host dependencies and
-// rejects the ones the host cannot supply for this installation.
-func platformRequirements(manifest pluginpackage.Manifest, consoleNamespace, pluginNamespace string) (pluginpackage.Requirements, error) {
-	requirements := manifest.Requires
-	if requirements.ImagePullSecrets && pluginNamespace != consoleNamespace {
-		return pluginpackage.Requirements{}, fmt.Errorf("plugin requires Console imagePullSecrets, which are namespace-scoped; install it in %q or remove the requirement", consoleNamespace)
-	}
-	return requirements, nil
 }
 
 func runUninstall(ctx context.Context, input io.Reader, output io.Writer, options *Options, flags *lifecycleFlags, selector string) error {

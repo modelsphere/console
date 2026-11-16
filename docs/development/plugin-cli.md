@@ -112,7 +112,7 @@ modelsphere plugin uninstall [group/name] [flags]
 | validate | 校验 Chart 或 `.tgz` 包中的 `Chart.yaml` 和 `plugin.yaml` |
 | package | 校验、执行 `helm lint`，并生成 `.tgz` 插件包 |
 | list | 读取 Plugin CR，列出 group/name、版本、release 和状态 |
-| install | 安装/升级插件 Helm release，按 `plugin.yaml` 的 `requires` 生成宿主 overlay |
+| install | 安装/升级插件 Helm release，解析 `plugin.yaml` 的 `consumes` 绑定后注入 `consumed` 值 |
 | registration | 输出可直接 `kubectl apply` 的 Plugin CR YAML |
 | uninstall | 选择或指定插件，先删除 Plugin CR，再卸载插件 Helm release |
 
@@ -157,9 +157,10 @@ install 的执行顺序：
 2. 发现唯一的 Console Helm release；`--console-release` / `--console-namespace`
    可覆盖，`--plugin-namespace` 默认与 Console 同 namespace（装到其他 namespace 时
    要为 Console 的 ServiceAccount 补上该 namespace 的 release Secret 读取权限）。
-3. 读取 Console 的 `externalSwiss`、`platform.inferenceNamespaces` 和
-   `imagePullSecrets`。
-4. 按插件包 `plugin.yaml` 的 `requires` 生成临时宿主 overlay。
+3. 收集可用提供方：Console release 的内置平台能力（`modelsphere.dev/platform`、
+   `modelsphere.dev/swiss`），以及集群中已注册 Plugin CR 所声明的 `provides`。
+4. 按插件包 `plugin.yaml` 的 `consumes` 逐个解析绑定，生成
+   `consumed.<提供方 group>/<提供方 name>.<key>` 临时 values 文件。
 5. Helm `upgrade --install` 插件 release，默认等待就绪。
 
 ```sh
@@ -174,15 +175,17 @@ Installed runtime: modelsphere.dev/canary 0.4.0
 Registration is separate: create a Plugin CR to load it in Console.
 ```
 
-宿主能力映射见 [`plugin-platform-config.md`](plugin-platform-config.md)。要点：
+能力解析见 [`plugin-platform-config.md`](plugin-platform-config.md)。要点：
 
-| 插件声明 | Console 来源 | 结果 |
-| --- | --- | --- |
-| `requires.swiss: true` | `externalSwiss.url` 和 `externalSwiss.proxyKey` | 生成 `swiss.url` / `swiss.proxySecret*`，缺少配置时在 Helm 前失败 |
-| `requires.inferenceNamespaces: true` | `platform.inferenceNamespaces` | 生成 `targetNamespaces` |
-| `requires.imagePullSecrets: true` | Console values 的 `imagePullSecrets` | 生成同名 Secret 引用；要求插件与 Console 同 namespace，否则在 Helm 前失败 |
+| 提供方 | 能力 | 值来源 | 结果 |
+| --- | --- | --- | --- |
+| `modelsphere.dev/platform` | `platform.modelsphere.dev/image-pull-secrets` | Console values 的 `imagePullSecrets` | 写入 `consumed.modelsphere.dev/platform.imagePullSecrets`；该能力为同 namespace 作用域，插件不在 Console namespace 时在 Helm 前失败 |
+| `modelsphere.dev/platform` | `platform.modelsphere.dev/inference-namespaces` | Console values 的 `platform.inferenceNamespaces` | 写入 `consumed.modelsphere.dev/platform.inferenceNamespaces`；缺失时在 Helm 前失败 |
+| `modelsphere.dev/swiss` | `swiss.modelsphere.dev/gateway` | Console values 的 `externalSwiss.url` / `externalSwiss.proxyKey` | 写入 `consumed.modelsphere.dev/swiss.endpoint` / `apiKeyRef` / `apiKeyKey`，并去掉 URL 末尾的 `/api`；配置缺失时在 Helm 前失败 |
 
-临时 overlay 以 `0600` 创建，安装结束即删除；包内和 overlay 都不包含 Secret 内容。
+已注册插件声明的同名能力会遮蔽对应的内置提供方。多个提供方都能满足又未用 `from`
+限定时，install 直接报错要求写 `from`；`from.version` 是提供方产品版本的 SemVer 约束。
+临时 values 文件以 `0600` 创建，安装结束即删除；包内和该文件都不包含 Secret 内容。
 
 ## 6. 注册插件
 
@@ -354,7 +357,7 @@ CR 应已消失，Helm 应返回 `release: not found`，index 中不再出现 `"
 | 阶段 | CLI / Console 行为 | 检查方式 |
 | --- | --- | --- |
 | 包校验失败 | 不执行任何集群操作 | 修复 `plugin.yaml` 或 Chart 后重新 validate |
-| 缺少宿主能力 | 在 Helm 前失败（缺 Swiss 配置、推理 namespace、跨 namespace 的镜像 Secret） | 补齐 Console values 后重试 |
+| 能力无法解析 | 在 Helm 前失败（无提供方、多个提供方未用 `from` 限定、版本不满足、同 namespace 能力跨 namespace、提供方未发布该 key） | 按报错安装或升级对应提供方，补齐 Console values，或在 `consumes` 里写 `from` |
 | 插件 Helm 安装失败 | Console 没有 CR，不受影响 | `helm status <release> -n <namespace>` |
 | CR 未创建 | 运行时存在但 Console 不加载 | `modelsphere plugin list`，确认 CR 是否存在 |
 | Chart 与 CR 不匹配 | CR `Degraded`，不加载前端或路由 | 核对 `spec.version`、`spec.chart.name`、`spec.chart.releaseName` |

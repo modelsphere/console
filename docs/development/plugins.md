@@ -70,7 +70,7 @@ For a complete install/uninstall walkthrough using the CPU16 cluster, see
 | Command | Scope |
 | --- | --- |
 | `validate` / `package` | Validate `Chart.yaml` and `plugin.yaml`; build a `.tgz` |
-| `install` | Install or upgrade the plugin Helm release, with a host-capability overlay |
+| `install` | Install or upgrade the plugin Helm release, resolving the package's `consumes` bindings |
 | `registration` | Print a `modelsphere.dev/v1alpha1` Plugin CR for a separate apply |
 | `list` | Read Plugin CRs and their phases |
 | `uninstall` | Delete the Plugin CR, then uninstall the plugin release |
@@ -80,23 +80,49 @@ separate CR; Console watches it and reads the installed release's `plugin.yaml` 
 `frontend/` files. See [`plugin-cli.md`](plugin-cli.md) for the full walkthrough.
 
 The packaged Chart must contain `Chart.yaml`, `plugin.yaml`, and the frontend files under
-`frontend/`. The v1 manifest carries identity, product version, host requirements, and the
-frontend entry:
+`frontend/`. The v1 manifest carries identity, product version, the capabilities the package
+publishes or binds to, and the frontend entry:
 
 ```yaml
 apiVersion: v1
 group: modelsphere.dev
 name: example
 version: 0.1.0
-requires:
-  imagePullSecrets: true
-  swiss: true
-  inferenceNamespaces: true
+provides:
+  - capability: example.modelsphere.dev/reports
+    version: v1
+    values:
+      endpoint: .gateway.url
+      apiKeyRef: .gateway.auth.secretRef
+    sameNamespace: false
+consumes:
+  - capability: platform.modelsphere.dev/image-pull-secrets
+    version: v1
+  - capability: swiss.modelsphere.dev/gateway
+    version: v1
+    from:
+      kind: Plugin
+      group: modelsphere.dev
+      name: swiss
+      version: ">=0.4.0"
 frontend:
   type: component
   runtime: remote
   entry: index.umd.js
 ```
+
+A capability id is a reverse-DNS domain plus a name, versioned by schema (`v1`). `provides`
+maps each published key to a dotted path inside the provider's rendered Helm values, so the
+key's value is readable without knowing the provider's chart layout. `consumes` names what the
+package needs; an optional `from` pins one provider (`kind`, `group`, `name`) and a SemVer
+range on the provider's product version. Without `from`, the CLI accepts the first eligible
+provider and refuses the install when several compete.
+
+The platform is a provider like any other. `modelsphere.dev/platform` publishes
+`image-pull-secrets` (namespace-scoped) and `inference-namespaces`, and
+`modelsphere.dev/swiss` publishes `gateway`. A registered plugin declaring the same capability
+shadows the corresponding built-in, so a package written against today's platform keeps working
+when a real Swiss plugin takes over.
 
 The API route is not declared in `plugin.yaml`. The Chart renders an
 `iam.theriseunion.io/v1alpha1` `ReverseProxy` whose `spec.matcher.path` starts with `/api/`
@@ -124,11 +150,13 @@ modelsphere plugin list
 modelsphere plugin uninstall modelsphere.dev/canary --yes --wait
 ```
 
-Install discovers the unique Console release when no Console flags are provided, reads its
-`externalSwiss`, `platform.inferenceNamespaces` and `imagePullSecrets`, and turns only the
-requirements declared by the package into a temporary overlay. A declared capability that the
-host cannot supply fails before Helm runs. Uninstall without an argument lists registrations
-and asks for a selection; automation can pass the full `group/name` with `--yes`. Uninstall
-deletes the CR first, then the release.
+Install discovers the unique Console release when no Console flags are provided, reads the
+platform's Helm values and its registered plugins, then resolves every `consumes` binding into
+a temporary values file under `consumed.<providerGroup>/<providerName>.<key>`. Resolution is
+preflight: a missing provider, an ambiguous choice, a provider outside the requested SemVer
+range, a namespace-scoped capability in another namespace, or a declared value path that
+resolves to nothing all fail before Helm runs. Uninstall without an argument lists
+registrations and asks for a selection; automation can pass the full `group/name` with `--yes`.
+Uninstall deletes the CR first, then the release.
 
 `web/test/plugin-runtime.html` is a development browser test fixture that loads the plugins Console serves, with actual host providers. It is excluded from the production entry and does not disable application authentication.
