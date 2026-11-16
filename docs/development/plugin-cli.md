@@ -368,6 +368,7 @@ CR 应已消失，Helm 应返回 `release: not found`，index 中不再出现 `"
 | Chart 与 CR 不匹配 | CR `Degraded`，不加载前端或路由 | 核对 `spec.version`、`spec.chart.name`、`spec.chart.releaseName` |
 | release 未部署 | CR `Degraded` | `helm status`，确认状态是 `deployed` |
 | release 在 Console namespace 之外 | Console 无权读取 Helm release Secret，CR `Degraded` | 在该 namespace 为 Console 的 ServiceAccount 授权 Secret `get/list`，或改装到 Console namespace |
+| Console 缺 `plugins` 权限 | informer 报 `forbidden`，`/readyz` 持续 503 | 升级到包含 `plugins` ClusterRole 与 release Secret Role 的 Console Chart 版本 |
 | 前端入口缺失或路径非法 | CR `Degraded`，不提供资源 | 重新打包，确认包内有 `frontend/<entry>` |
 | CR 注销失败 | CLI 停止，不卸载 release | 先修复 API 访问，再执行 uninstall |
 | 后台接口 403 | Console IAM 拒绝 | 给用户绑定包含 `backends/canary` 的 `get` 权限 |
