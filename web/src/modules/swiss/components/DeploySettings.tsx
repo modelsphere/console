@@ -4,7 +4,7 @@ import type { ApplyFlags, ClusterInfo, GPUSpec, Input as CatalogInput, Node, Pla
 import { cn } from "@swiss/lib/utils";
 import { cacheFieldError, type CacheCard, type CacheDefaults } from "@swiss/lib/cache";
 import { pickableProducts, productChoices, unlistedProducts, type GPUCapacity } from "@swiss/lib/gpu";
-import { CHECK_MS, INPUTS_ANNOTATION, filledSiteAnswers, inputAnnotations, inputError, inputProblem, releaseInputState, rememberable, setInputOverrides, type DroppedInput, type InputChoice, type InputRow } from "@swiss/lib/inputs";
+import { CHECK_MS, INPUTS_ANNOTATION, filledSiteAnswers, inputAnnotations, inputError, inputProblem, parseInputRecords, releaseInputState, rememberable, setInputOverrides, type DroppedInput, type InputChoice, type InputRow } from "@swiss/lib/inputs";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { PRODUCT_KEY, editRule, listLabel, setAffinity, type AffinityRule } from "@swiss/lib/affinity";
 import { envBase, withEnv, withPreset } from "@swiss/lib/formLayer";
@@ -2359,11 +2359,6 @@ export function planRequest(
   if (f.priorityClassName.trim()) overrides.priorityClassName = f.priorityClassName.trim();
   if (f.schedulerName.trim()) overrides.schedulerName = f.schedulerName.trim();
 
-  // Absent inputs means the variant is not loaded yet: leave the release's
-  // input writes where they are instead of treating every old answer as dropped.
-  const inputState = opts.inputs
-    ? releaseInputState(opts.inputs, opts.values, opts.formLayer, opts.inputsAnnotation)
-    : undefined;
   const written = setInputOverrides(overrides, opts.inputs, f.inputs, {
     values: opts.values,
     site: filledSiteAnswers(opts.inputs, opts.siteInputs, opts.hf ?? "", opts.model),
@@ -2383,7 +2378,7 @@ export function planRequest(
   // A variant with inputs always sends the annotation, `[]` when nothing was
   // typed or carried, so the next upgrade does not read site or default
   // writes back from the form layer as release answers.
-  const annotations = inputAnnotations(written, { replace: !!opts.inputs?.length || inputState?.present });
+  const annotations = inputAnnotations(written, { replace: !!opts.inputs?.length || parseInputRecords(opts.inputsAnnotation).present });
 
   return {
     catalog: opts.catalog || undefined,

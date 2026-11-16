@@ -564,7 +564,7 @@ export function Upgrade() {
         onTab={setTab}
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
-        composeDisabled={!rollbackTo && (!inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity))}
+        composeDisabled={!rollbackTo && (!seededFromPlan || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity))}
         composeLabel={planM.isPending ? "Composing…" : plan ? "Recompose upgrade" : "Compose upgrade"}
         applyFlags={applyFlags(form)}
         onDiff={setDiff}

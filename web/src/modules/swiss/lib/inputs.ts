@@ -178,7 +178,7 @@ export function releaseInputState(
   values: Record<string, unknown> | undefined,
   formLayer: Record<string, unknown> | undefined,
   annotation: string | undefined,
-): { present: boolean; answers: Record<string, string>; dropped: DroppedInput[]; dropKeys: string[] } {
+): { present: boolean; answers: Record<string, string>; dropped: DroppedInput[] } {
   const parsed = parseInputRecords(annotation);
   if (!parsed.present) {
     const answers: Record<string, string> = {};
@@ -187,17 +187,15 @@ export function releaseInputState(
       const text = answerAt(formLayer, input.key, input.patcher);
       if (text !== undefined) answers[input.key] = text;
     }
-    return { present: false, answers, dropped: [], dropKeys: [] };
+    return { present: false, answers, dropped: [] };
   }
   const byKey = new Map((inputs ?? []).map((input) => [input.key, input]));
   const answers: Record<string, string> = {};
   const dropped: DroppedInput[] = [];
-  const dropKeys: string[] = [];
   const seen = new Set<string>();
   for (const rec of parsed.records) {
     if (seen.has(rec.key)) continue;
     seen.add(rec.key);
-    dropKeys.push(rec.key);
     const value = String(rec.value);
     if (!byKey.has(rec.key)) {
       dropped.push({ key: rec.key, value, reason: "deprecated" });
@@ -209,7 +207,7 @@ export function releaseInputState(
     }
     answers[rec.key] = value;
   }
-  return { present: true, answers, dropped, dropKeys };
+  return { present: true, answers, dropped };
 }
 
 export function filledSiteAnswers(
