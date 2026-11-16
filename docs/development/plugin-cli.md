@@ -30,8 +30,17 @@ plugin package/validate
 Console 只观察已经部署的 release。CLI 安装与注册是两个独立动作，因此可以用 GitOps
 管理 CR，也可以让不同的人分别执行安装和审批注册。
 
-Console Chart 会安装 `modelsphere.dev_plugins` CRD；本仓库的 `helm/console/crds/`
-也保留同一份 CRD 供离线检查。Console 的 ServiceAccount 对 `plugins` 只有
+Console Chart 在 `crds/` 中携带 `modelsphere.dev_plugins` CRD。Helm 只在首次
+`helm install` 时创建 `crds/` 下的 CRD；已经存在的 release 执行 `helm upgrade`
+不会补装，升级到带插件能力的版本后需要单独执行一次：
+
+```sh
+kubectl --kubeconfig "$KUBECONFIG" --context "$KUBE_CONTEXT" \
+  apply -f "$CONSOLE_REPO/helm/console/crds/"
+```
+
+缺少 CRD 时 Console 的 informer 会持续报 `the server could not find the requested
+resource`，`/readyz` 保持 503。Console 的 ServiceAccount 对 `plugins` 只有
 `get/list/watch`，对 `plugins/status` 只有写权限；另外有一个 namespaced Role，
 允许它在 Console 所在 namespace 读取 Helm 的 release Secret。插件 release 装在
 其他 namespace 时，需要在该 namespace 额外授权同样的 Secret 读取权限，否则 CR
@@ -258,7 +267,16 @@ curl -fsS -o /dev/null -w 'entry_http=%{http_code}\n' \
 ```
 
 `index.json` 中应出现 `id: canary`、`entry: /plugins/modelsphere.dev--canary/index.umd.js`
-和 `backend` 声明。登录 Console 后打开：
+和 `backend` 声明。如果同一插件此前在 Console values 的 `plugins` 里静态注册过，
+升级时要清掉旧条目，否则 index 会出现两个相同 `id` 的项：
+
+```sh
+helm --kubeconfig "$KUBECONFIG" --kube-context "$KUBE_CONTEXT" \
+  upgrade "$CONSOLE_RELEASE" oci://ghcr.io/modelsphere/charts/console \
+  --namespace console-system --reuse-values --set-json 'plugins=[]'
+```
+
+登录 Console 后打开：
 
 ```text
 http://172.28.44.16:30370/canary
