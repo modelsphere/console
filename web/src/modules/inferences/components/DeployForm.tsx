@@ -55,6 +55,7 @@ export interface DeployFormProps {
   form: Form;
   onChange: (patch: Partial<Form>) => void;
   upgrade?: boolean;
+  disabled?: boolean;
   submitted: boolean;
   target: ReactNode;
   cluster?: ClusterInfo;
@@ -74,6 +75,7 @@ export interface DeployFormProps {
   catalogRoute?: string;
   // The chart's values and swissd's layers for the Override YAML editor.
   helmValues?: HelmValuesSource;
+  onHelmValuesOpenChange?: (open: boolean) => void;
   // Every image the chart renders, from the compose dry run. Absent until that
   // returns; the engine row still shows from defaults.image.
   slots?: ImageSlot[];
@@ -99,7 +101,7 @@ export interface DeployFormProps {
   taints?: ClusterTaint[];
 }
 
-export function DeployForm({ form, onChange, upgrade, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, slots, slotsError, resources, pd, nodes, gpuSpecs, gpuVendor, recovery, inputs, droppedInputs, remember, onRemember, presets, taints }: DeployFormProps) {
+export function DeployForm({ form, onChange, upgrade, disabled, submitted, target, cluster, defaults, gpuOptions, gpuListed, gpuResources, capacity, expanded, onExpand, idPrefix, routeOptions, catalogRoute, helmValues, onHelmValuesOpenChange, slots, slotsError, resources, pd, nodes, gpuSpecs, gpuVendor, recovery, inputs, droppedInputs, remember, onRemember, presets, taints }: DeployFormProps) {
   const t = useT();
   const checked = useDebounced(form.inputs, CHECK_MS);
   const on = effective(form);
@@ -129,7 +131,12 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <fieldset
+      disabled={disabled}
+      inert={disabled || undefined}
+      aria-busy={disabled || undefined}
+      className={cn("flex min-w-0 flex-col gap-4", disabled && "pointer-events-none select-none opacity-60")}
+    >
       {section(
         "basic",
         <>
@@ -329,10 +336,10 @@ export function DeployForm({ form, onChange, upgrade, submitted, target, cluster
           <FloatingField layout="inline" label={f("skipSchemaValidation")} hint={f("skipSchemaValidationHint")}>
             {sw("skipSchemaValidation", f("skipSchemaValidation"))}
           </FloatingField>
-          <OverrideYaml value={form.edits} onChange={(edits) => onChange({ edits })} source={helmValues} />
+          <OverrideYaml value={form.edits} onChange={(edits) => onChange({ edits })} source={helmValues} onOpenChange={onHelmValuesOpenChange} />
         </>,
       )}
-    </div>
+    </fieldset>
   );
 }
 

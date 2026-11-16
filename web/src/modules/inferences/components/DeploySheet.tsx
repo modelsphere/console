@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   AlertDescription,
@@ -42,14 +42,15 @@ import { messageOf, useToast } from "@swiss/components/ui/toast";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { cacheCard } from "@swiss/lib/cache";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
+import { usePausePolling } from "@swiss/lib/polling";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
 import { SECTIONS, chartChoice, clusterTaints, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
-import { OverrideYamlButton, type HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
+import { OverrideYamlButton, helmValuesQueryOptions, type HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
 import { AdaptivePlanChangedError, composeAdaptivePlan, withAdaptiveConcurrency } from "../adaptive-concurrency";
-import { composeRecoveryPlan, composeRecoveryValuesRequest, RecoveryPlanChangedError } from "../recovery-compose";
+import { composeRecoveryPlan, RecoveryPlanChangedError } from "../recovery-compose";
 import { RecoveryFields } from "./RecoveryFields";
 import { mergeValues, planValues, recoveryError, recoveryInputError, recoverySettings, withRecovery } from "../recovery";
 import { readRouteOptions } from "@/modules/inferences/api";
@@ -68,6 +69,7 @@ export function DeploySheet({ target, onClose }: { target: DeployTarget | null; 
 }
 
 function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: () => void }) {
+  usePausePolling();
   const t = useT();
   const p = useModulePath();
   const navigate = useNavigate();
@@ -101,7 +103,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const catalogName = moveTo || ownCatalog;
 
   const indexes = useQueries({
-    queries: catalogs.map((c) => ({ queryKey: ["catalog", c.name], queryFn: () => api.catalog(c.name), enabled: upgrade || c.name === ownCatalog })),
+    queries: catalogs.map((c) => ({ queryKey: ["catalog", c.name], queryFn: () => api.catalog(c.name), enabled: upgrade || c.name === ownCatalog, retry: false })),
   });
   const modelIn = (name?: string): CatalogModel | undefined =>
     indexes[catalogs.findIndex((c) => c.name === name)]?.data?.models.find((m) => m.name === modelName);
@@ -124,6 +126,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     queryKey: ["model", catalogName, modelName, keptVariant, version],
     queryFn: () => api.model(modelName!, { catalog: catalogName, variant: keptVariant || undefined, version: version || undefined }),
     enabled: !!modelName && !!catalogName,
+    placeholderData: keepPreviousData,
   });
   const v = entry.data?.variant;
   const chartRange = !!v && isChartRange(v.chart.version);
@@ -169,11 +172,15 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     setUpgradeSeed(seeded);
     setForm(seeded);
   }, [upgrade, seedPlan, v, profile.isPending, gpuSpecs, upgradeSeed]);
-  const catalogRoute = upgrade && upgradeSeed ? upgradeSeed.route || upgradeSeed.serviceId || target.release : undefined;
+  const catalogRoute = useMemo(() => {
+    if (!upgrade || !seedPlan) return undefined;
+    const base = upgradeSeed ?? formFromPlan(seedPlan);
+    return base.route || base.serviceId || target.release;
+  }, [upgrade, seedPlan, upgradeSeed, target]);
   const routeOptions = useQuery({
     queryKey: ["route-options", catalogRoute ?? ""],
     queryFn: ({ signal }) => readRouteOptions(catalogRoute, signal),
-    enabled: !upgrade || !!upgradeSeed,
+    enabled: !upgrade || !!seedPlan,
     staleTime: 30_000,
     retry: false,
   });
@@ -182,6 +189,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
 
   const [step, setStep] = useState<"form" | "review">("form");
+  const [yamlOpen, setYamlOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [expanded, setExpanded] = useState(OPEN);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -194,7 +202,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // The form shows only once the entry and profile have loaded, so the first
   // seed lands before any plan; a later one is another variant or version, and
   // a plan composed from the old switches goes with it.
-  const seedReady = !upgrade && !!entry.data && !profile.isPending;
+  const seedReady = !upgrade && !!entry.data && !entry.isPlaceholderData && !profile.isPending;
   const siteDefaults = useMemo(() => siteSwitchDefaults(profile.data), [profile.data]);
   const variantValues = entry.data?.variant.values;
   useEffect(() => {
@@ -232,14 +240,15 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     profile.data?.profile,
   );
   // An upgrade waits for the profile too: it decides Monitor (planRequest).
-  const loading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
+  const baseLoading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
   const error = cluster.error ?? current.error ?? entry.error;
   const nextSeed = useMemo(() => (seedReady ? switchDefaults(siteDefaults, variantValues) : null), [seedReady, siteDefaults, variantValues]);
   const formSeeded = upgrade ? !!upgradeSeed : !!seed && !!nextSeed && JSON.stringify(seed) === JSON.stringify(nextSeed);
+  const loading = baseLoading || (!error && !formSeeded);
   // Chart discovery (images and per-role chart defaults) runs once on open after
   // the form is seeded, on target changes, and on manual refresh.
   // Override YAML runs its own standalone dry-run when opened so form edits stay quiet.
-  const canDiscover = !loading && !error && formSeeded && (!upgrade || !!recorded) && cluster.data?.allowDeploy !== false;
+  const canDiscover = !loading && !error && !entry.isPlaceholderData && (!upgrade || !!recorded) && cluster.data?.allowDeploy !== false;
   const compositionError = (error: unknown) => {
     if (error instanceof RecoveryPlanChangedError) return new Error(t("deploy.recovery.errors.changedPlan"));
     if (error instanceof AdaptivePlanChangedError) return new Error(t("deploy.fields.adaptiveChanged"));
@@ -251,38 +260,21 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     canDiscover,
     gpuSpecs,
   );
-  const valuesKey = JSON.stringify(
-    canDiscover
-      ? withAdaptiveConcurrency(withRecovery(requestFor({ ...form, edits: "" }), recovery), form, routeOptions.data)
-      : null,
-  );
-  const valuesM = useMutation({
-    mutationFn: async (_key: string) => {
-      try {
-        const next = await composeRecoveryValuesRequest(
-          requestFor({ ...form, edits: "" }),
-          recovery,
-          (r) => composeAdaptivePlan(r, form, routeOptions.data, deployApi.plan, catalogName),
-          catalogName,
-        );
-        return await deployApi.helmValues(next);
-      } catch (error) {
-        throw compositionError(error);
-      }
-    },
-  });
-  const valuesFresh = valuesM.variables === valuesKey;
+  // Freeze the form and actions while prefill (initial seed, target variant
+  // fetch, or chart dry-run discovery for resources/PD/images) is in flight.
+  const prefilling = loading || entry.isFetching || preview.fetching;
+  const valuesRequest = canDiscover
+    ? withAdaptiveConcurrency(withRecovery(requestFor({ ...form, edits: "" }), recovery), form, routeOptions.data)
+    : undefined;
+  const helmValues = useQuery(helmValuesQueryOptions(valuesRequest, yamlOpen && step === "form" && canDiscover));
   const valuesSource: HelmValuesSource = {
-    data: valuesFresh && !valuesM.isError ? valuesM.data : undefined,
-    loading: valuesM.isPending,
-    error: valuesFresh && valuesM.error ? (valuesM.error instanceof Error ? valuesM.error : new Error(String(valuesM.error))) : null,
+    data: helmValues.data,
+    loading: helmValues.isFetching,
+    error: helmValues.error instanceof Error ? helmValues.error : helmValues.error ? new Error(String(helmValues.error)) : null,
     load: async () => {
-      if (!canDiscover) return undefined;
-      try {
-        return await valuesM.mutateAsync(valuesKey);
-      } catch {
-        return undefined;
-      }
+      if (!valuesRequest) return undefined;
+      const res = await helmValues.refetch({ cancelRefetch: false });
+      return res.error ? undefined : res.data;
     },
   };
   const compose = useMutation({
@@ -495,11 +487,11 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               variant="outline"
               size="sm"
               className="shrink-0"
-              disabled={preview.fetching}
+              disabled={prefilling}
               onClick={() => void preview.reload()}
               title={t("deploy.refreshPreviewHint")}
             >
-              <RefreshCw className={cn("size-3.5", preview.fetching && "animate-spin")} />
+              <RefreshCw className={cn("size-3.5", prefilling && "animate-spin")} />
               {t("common:actions.refresh")}
             </Button>
           )}
@@ -509,14 +501,14 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
       {step === "form" && !loading && !error && (
         <div className={cn("flex gap-1 border-b px-5 py-2", nav.scrolled && "shadow-sm")}>
           {SECTIONS.map((s) => (
-            <Button key={s} variant="ghost" size="sm" className={cn("text-muted-foreground", nav.active === s && "bg-muted text-foreground")} onClick={() => nav.go(s)}>
+            <Button key={s} variant="ghost" size="sm" disabled={prefilling} className={cn("text-muted-foreground", nav.active === s && "bg-muted text-foreground")} onClick={() => nav.go(s)}>
               {t(`deploy.sections.${upgrade && s === "basic" ? "target" : s}`)}
             </Button>
           ))}
         </div>
       )}
 
-      <SheetBody ref={step === "form" ? nav.ref : undefined} className="relative min-h-0 flex-1 space-y-4 overflow-auto bg-surface-page px-5 py-4">
+      <SheetBody ref={step === "form" ? nav.ref : undefined} className={cn("relative min-h-0 flex-1 space-y-4 overflow-auto bg-surface-page px-5 py-4", step === "form" && prefilling && !loading && "cursor-wait")}>
         {readOnly && (
           <Alert variant="warning">
             <TriangleAlert />
@@ -542,6 +534,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               form={form}
               onChange={change}
               upgrade={upgrade}
+              disabled={prefilling}
               submitted={submitted}
               recovery={<RecoveryFields settings={recovery} onChange={(patch) => setRecoveryPatch((previous) => ({ ...previous, ...patch }))} />}
               target={targetFields}
@@ -568,6 +561,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               catalogRoute={catalogRoute}
               idPrefix={ID_PREFIX}
               helmValues={readOnly ? undefined : valuesSource}
+              onHelmValuesOpenChange={setYamlOpen}
               inputs={inputs}
               droppedInputs={droppedInputs}
               remember={canRemember ? remember : undefined}
@@ -603,8 +597,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         {step === "form" ? (
           <>
             <SheetCancelButton />
-            <OverrideYamlButton value={form.edits} onChange={(edits) => change({ edits })} source={readOnly ? undefined : valuesSource} disabled={!!readOnly || loading} />
-            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)}>
+            <OverrideYamlButton value={form.edits} onChange={(edits) => change({ edits })} source={readOnly ? undefined : valuesSource} disabled={!!readOnly || prefilling} onOpenChange={setYamlOpen} />
+            <Button onClick={submit} disabled={!!readOnly || prefilling || compose.isPending || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)}>
               {compose.isPending ? t("deploy.review.composing") : t("deploy.review.compose")}
             </Button>
           </>

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, DataSelect, FieldHint, Switch, cn } from "@modelsphere/ui";
 import { Download, RefreshCw } from "lucide-react";
 import { CopyButton } from "@/shell";
+import { usePollOptions } from "@swiss/lib/polling";
 import { useT } from "@/modules/inferences/i18n";
 import { defaultContainer, ofRelease } from "@/modules/inferences/lib";
 import { workloadApi } from "@/modules/inferences/workload-api";
@@ -26,11 +27,13 @@ export function Logs({ namespace, release, statusPods, initialPod }: { namespace
   const [follow, setFollow] = useState(false);
   const pre = useRef<HTMLPreElement>(null);
   const atBottom = useRef(true);
+  const listPoll = usePollOptions(15_000);
+  const logPoll = usePollOptions(5_000, follow);
 
   const list = useQuery({
     queryKey: ["k8s-pods", namespace, release],
     queryFn: () => workloadApi.pods(namespace, release),
-    refetchInterval: 15_000,
+    ...listPoll,
     retry: false,
   });
   const listed = (list.data?.items ?? []).filter((p) => ofRelease(p.name, release, statusPods));
@@ -43,7 +46,7 @@ export function Logs({ namespace, release, statusPods, initialPod }: { namespace
     queryKey: ["k8s-log", namespace, pod, container, lines, since, previous],
     queryFn: () => workloadApi.log(namespace, pod, { container, tailLines: lines, sinceSeconds: since, previous }),
     enabled: !!pod && !!container,
-    refetchInterval: follow ? 5_000 : false,
+    ...logPoll,
     retry: false,
   });
 
