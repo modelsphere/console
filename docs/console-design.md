@@ -134,9 +134,9 @@ Rules:
 
 Runtime plugins use `@modelsphere/plugin-sdk`, maintained in `web/packages/plugin-sdk`. A `modelsphere.dev/v1alpha1` Plugin CR registers an installed Helm release; Console reads its `plugin.yaml` and the release's `frontend/` files. SDK registration supplies the menu, components and internal routes. `/plugins/index.json` returns descriptors, and `/plugins/<cr-name>/*` serves the release's assets without Console credentials. Registration validates identity and collisions before adding a module. No CR adds no external module.
 
-Deployment uses the built bundle from the release's `frontend/` directory. Console watches Plugin CRs through an informer; enabling, disabling or deleting a CR changes the menu, routes and assets without a Console restart. Open tabs keep their registry until refreshed. This integration adds no menu/page permission policy.
+Deployment uses the built bundle from the release's `frontend/` directory. Console watches Plugin CRs through an informer; enabling, disabling or deleting a CR changes the menu, routes and assets without a Console restart. Open tabs keep their registry until refreshed. A plugin with a backend is gated by `get` on `backends/<name>`; pages are never write-gated by the host, so the plugin hides its own mutations.
 
-See the [authoring and deployment guide](development/plugins.md) and [design](plans/2026-11-05-global-sdk-design.md).
+See the [architecture](development/plugin-architecture.md), [authoring and deployment guide](development/plugins.md) and [design](plans/2026-11-05-global-sdk-design.md).
 
 ### i18n
 
