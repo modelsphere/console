@@ -1127,6 +1127,7 @@ export interface SLOBound {
 // a service id and a minimum replica count, which arrives here as highPriority
 // false and minimumDeployment, with no ttft or otps.
 export interface SLOConfig {
+  source?: { namespace?: string; name?: string; serviceId?: string; inherited: boolean; canEdit: boolean };
   found: boolean;
   route?: string;
   // CRD field, 0..10, but slo-api only ever stores 10 or 0, so this is
@@ -1152,4 +1153,4 @@ export interface SLOEdit {
   otps?: SLOSection;
 }
 
-export interface ServiceAssignment extends Omit<ServiceOwner,"verified"> {role:"production"|"arm";arm?:string;verified:boolean}
+export interface ServiceAssignment extends Omit<ServiceOwner,"verified"> {role:"production"|"arm";arm?:string;verified:boolean;mutable?:boolean}

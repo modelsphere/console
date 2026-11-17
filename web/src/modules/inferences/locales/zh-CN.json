@@ -237,6 +237,7 @@
     "suppliedError": "读取用户提供的 values 失败：{error}"
   },
   "slo": {
+    "inherited": "继承 {source}。请在生产候选服务中修改该 SLO。",
     "title": "{release} 的 SLO",
     "description": "扩缩容器据此决定副本数：要守住的延迟与吞吐，以及副本数的上下限。",
     "setup": "{release} 已开启 SLO 要求，请先在这里完成配置：扩缩容器和 openresty 都以它为目标。",

@@ -22,3 +22,8 @@ describe("service relationship actions", () => {
   expect(serviceRelationship({ assignedTo: assignment }).state).toBe("referenced");
  });
 });
+
+it("allows full referenced arm edits only with the mutable capability", () => {
+ expect(serviceRelationship({canaryState:"referenced",assignedTo:{...assignment,mutable:true}})).toMatchObject({assignmentLocked:false,adaptiveOnly:false,uninstallLocked:true});
+ expect(serviceRelationship({canaryState:"referenced",assignedTo:{...assignment,mutable:true,verified:false}})).toMatchObject({assignmentLocked:true});
+});

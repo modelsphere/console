@@ -112,8 +112,10 @@ export function InferenceDetail() {
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
+  const sloLocked = owned || (referenced && !s.assignedTo?.verified);
+  const sloWriteBlocked = sloLocked ? (owned ? t("disabled.serviceManaged") : t("disabled.serviceAssigned")) : readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
   const blocked = sloBlocked(s, plan.data);
-  const sloOpen = !owned && !removing && !assignmentLocked && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
+  const sloOpen = !sloLocked && !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
   const closeSLO = () => {
     setEditingSLO(false);
     if (!sloSetup) return;
@@ -136,7 +138,7 @@ export function InferenceDetail() {
             {
               key: "slo",
               label: t("actions.slo"),
-              disabled: blockedWrite || (blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
+              disabled: sloWriteBlocked || (blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
               onClick: () => setEditingSLO(true),
             },
             {
@@ -197,7 +199,7 @@ export function InferenceDetail() {
         )}
       </Tabs>
 
-      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !assignmentLocked && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
+      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !sloLocked && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
       <DeploySheet target={upgrading && !owned && (!assignmentLocked || adaptiveOnly) && !removing ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
         target={uninstalling && !owned && !uninstallLocked && !removing ? { namespace, release } : null}

@@ -11,6 +11,7 @@ import { Input } from "@swiss/components/ui/input";
 import { Switch } from "@swiss/components/ui/switch";
 import { messageOf, useToast } from "@swiss/components/ui/toast";
 import { ErrorState, Loading } from "@swiss/components/States";
+import { useT } from "@/modules/inferences/i18n";
 import { cn } from "@swiss/lib/utils";
 
 const TYPES = ["avg", "p50", "p80", "p90", "p95", "p99"];
@@ -111,8 +112,10 @@ export function SLOCard({
   canEdit: boolean;
   onSaved?: () => void;
 }) {
+  const t = useT();
   const f = useSLOForm(namespace, release, onSaved);
   const { slo, form } = f;
+  canEdit = canEdit && slo.data?.source?.canEdit !== false;
 
   if (!form) return slo.error ? <ErrorState what="SLO" error={slo.error} /> : <Loading what="SLO" />;
 
@@ -136,6 +139,7 @@ export function SLOCard({
       </CardHeader>
 
       <CardContent className="divide-y pt-0">
+        {slo.data?.source?.inherited && <p className="py-3 text-sm text-muted-foreground">{t("slo.inherited", { source: `${slo.data.source.namespace}/${slo.data.source.name}` })}</p>}
         <SLOFields f={f} canEdit={canEdit} />
       </CardContent>
     </Card>

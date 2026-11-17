@@ -752,3 +752,10 @@ extension provides role-specific explanations; Swiss remains the metadata source
 Autoscaling remains independent of SLO requirements. The deployment Resources
 section exposes scaler bounds or a fixed replica count; creating experiment arms
 uses fixed replicas. Turning off SLO does not implicitly disable autoscaling.
+
+
+## Editable referenced services and effective SLOs
+
+Swiss exposes `assignedTo.mutable` only for verified references when the administrator enables mutable references. Full service upgrades are available for these references; invalid references remain locked and referenced-service uninstall remains blocked. Services owned by an experiment continue to use the parent lifecycle.
+
+SLO responses expose the effective requirement and `source.inherited` / `source.canEdit`. An arm without its own requirement reads the production requirement and follows its changes; the SLO editor follows the server capability. Older Swiss responses without these additive fields keep existing behavior.

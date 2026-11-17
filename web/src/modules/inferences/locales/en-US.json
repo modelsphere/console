@@ -248,6 +248,7 @@
     "suppliedError": "Reading the supplied values failed: {error}"
   },
   "slo": {
+    "inherited": "Inherited from {source}. Edit this SLO on the production service.",
     "title": "SLO of {release}",
     "description": "What the scaler sizes the service by: the latency and throughput to hold, and the replica bounds.",
     "setup": "SLO requirement is on for {release}. Configure it here first: the scaler and openresty take their targets from it.",

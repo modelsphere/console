@@ -173,3 +173,9 @@ describe("inference detail write actions", () => {
     });
   }
 });
+
+ it("allows verified existing arms to open SLO without allowing uninstall", () => {
+  const html=renderDetail(release({assignedTo:{apiVersion:"canary.modelsphere.dev/v1alpha1",kind:"LLMCanary",namespace:"canary",name:"experiment",uid:"parent",role:"arm",arm:"baseline",verified:true}}));
+  expect(button(html,"编辑 SLO")?.disabled).toBe(false);
+  expect(button(html,"卸载")?.disabled).toBe(true);
+ });
