@@ -142,13 +142,18 @@ console:
 ```
 
 ```sh
-modelsphere plugin validate ./helm/canaryd
-modelsphere plugin package ./helm/canaryd --destination ./dist
+node hack/package-plugin.mjs --registry <registry>/<project> --tag <image-tag> --destination ./dist
+modelsphere plugin validate ./dist/canaryd-0.3.0.tgz
 modelsphere plugin install ./dist/canaryd-0.3.0.tgz --wait
 modelsphere plugin registration ./dist/canaryd-0.3.0.tgz | kubectl apply -f -
 modelsphere plugin list
 modelsphere plugin uninstall modelsphere.dev/canary --yes --wait
 ```
+
+A package carries `frontend/<entry>`; without it Console can never load the bundle, so
+`validate`, `package` and `install` reject it before Helm runs. `modelsphere plugin package`
+wraps `helm package` and does not build the frontend, which is why release packages come from
+the release script or CI.
 
 Install discovers the unique Console release when no Console flags are provided, reads the
 platform's Helm values and its registered plugins, then resolves every `consumes` binding into

@@ -20,6 +20,7 @@ const (
 	maxFileBytes    = int64(64 << 20)
 	maxTotalBytes   = int64(256 << 20)
 	maxPackageBytes = int64(256 << 20)
+	maxFiles        = 4096
 )
 
 // ChartMetadata is the subset of Chart.yaml needed by the plugin lifecycle.
@@ -56,20 +57,27 @@ func Inspect(input string) (Artifact, error) {
 	return inspectArchive(input, stat.Size())
 }
 
+// pluginContents holds the metadata documents and every regular file name, so
+// the declared frontend entry can be checked against what the artifact ships.
+type pluginContents struct {
+	metadata map[string][]byte
+	names    map[string]struct{}
+}
+
 func inspectDirectory(input string) (Artifact, error) {
-	files, err := boundedDirectory(input)
+	contents, err := boundedDirectory(input)
 	if err != nil {
 		return Artifact{}, err
 	}
-	chartData, ok := files["Chart.yaml"]
+	chartData, ok := contents.metadata["Chart.yaml"]
 	if !ok {
 		return Artifact{}, fmt.Errorf("Chart.yaml is missing from %s", input)
 	}
-	manifestData, ok := files["plugin.yaml"]
+	manifestData, ok := contents.metadata["plugin.yaml"]
 	if !ok {
 		return Artifact{}, fmt.Errorf("plugin.yaml is missing from %s", input)
 	}
-	artifact, err := parseMetadata(input, true, chartData, manifestData)
+	artifact, err := parseMetadata(input, true, chartData, manifestData, contents.names)
 	if err != nil {
 		return Artifact{}, err
 	}
@@ -92,6 +100,7 @@ func inspectArchive(input string, packageSize int64) (Artifact, error) {
 	defer gzipReader.Close()
 	reader := tar.NewReader(gzipReader)
 	var chartData, manifestData []byte
+	names := map[string]struct{}{}
 	archiveRoot := ""
 	hasArchiveRoot := false
 	var total int64
@@ -126,6 +135,10 @@ func inspectArchive(input string, packageSize int64) (Artifact, error) {
 		if header.Typeflag != tar.TypeReg {
 			continue
 		}
+		if len(names) >= maxFiles {
+			return Artifact{}, fmt.Errorf("plugin package contains more than %d files", maxFiles)
+		}
+		names[relative] = struct{}{}
 		if header.Size < 0 || header.Size > maxFileBytes || total > maxTotalBytes-header.Size {
 			return Artifact{}, fmt.Errorf("plugin package expansion exceeds limits")
 		}
@@ -144,11 +157,11 @@ func inspectArchive(input string, packageSize int64) (Artifact, error) {
 	if chartData == nil || manifestData == nil {
 		return Artifact{}, fmt.Errorf("plugin package must contain Chart.yaml and plugin.yaml in one chart root")
 	}
-	return parseMetadata(input, false, chartData, manifestData)
+	return parseMetadata(input, false, chartData, manifestData, names)
 }
 
-func boundedDirectory(root string) (map[string][]byte, error) {
-	files := map[string][]byte{}
+func boundedDirectory(root string) (pluginContents, error) {
+	contents := pluginContents{metadata: map[string][]byte{}, names: map[string]struct{}{}}
 	var total int64
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -176,22 +189,26 @@ func boundedDirectory(root string) (map[string][]byte, error) {
 			return err
 		}
 		relative = filepath.ToSlash(relative)
+		if len(contents.names) >= maxFiles {
+			return fmt.Errorf("plugin directory contains more than %d files", maxFiles)
+		}
+		contents.names[relative] = struct{}{}
 		if relative == "Chart.yaml" || relative == "plugin.yaml" {
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
-			files[relative] = data
+			contents.metadata[relative] = data
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("inspect plugin directory: %w", err)
+		return pluginContents{}, fmt.Errorf("inspect plugin directory: %w", err)
 	}
-	return files, nil
+	return contents, nil
 }
 
-func parseMetadata(input string, directory bool, chartData, manifestData []byte) (Artifact, error) {
+func parseMetadata(input string, directory bool, chartData, manifestData []byte, names map[string]struct{}) (Artifact, error) {
 	var chart ChartMetadata
 	if err := yaml.Unmarshal(chartData, &chart); err != nil {
 		return Artifact{}, fmt.Errorf("parse Chart.yaml: %w", err)
@@ -214,6 +231,10 @@ func parseMetadata(input string, directory bool, chartData, manifestData []byte)
 	}
 	if err := manifest.Validate(); err != nil {
 		return Artifact{}, fmt.Errorf("validate plugin.yaml: %w", err)
+	}
+	entry := path.Join("frontend", manifest.Frontend.Entry)
+	if _, ok := names[entry]; !ok {
+		return Artifact{}, fmt.Errorf("frontend entry %q is missing from the package; build the bundle into the Chart's frontend directory before packaging", entry)
 	}
 	return Artifact{Input: input, Directory: directory, Chart: chart, Manifest: manifest}, nil
 }

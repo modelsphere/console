@@ -263,9 +263,11 @@ func (r Runner) Uninstall(ctx context.Context, release, namespace string, wait b
 	return err
 }
 
+// runHelmWait waits for the release and, on failure, rolls the release back so a
+// timed-out install does not leave it pending and block the next attempt.
 func (r Runner) runHelmWait(ctx context.Context, args []string, wait bool, timeout time.Duration) error {
 	if wait {
-		args = append(args, "--wait", "--timeout", timeout.String())
+		args = append(args, "--wait", "--atomic", "--timeout", timeout.String())
 	}
 	_, err := r.helm(ctx, args...)
 	return err

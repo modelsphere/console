@@ -23,9 +23,10 @@ func TestInspectDirectory(t *testing.T) {
 func TestInspectHelmArchiveWithTopLevelDirectory(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "canaryd-0.3.0.tgz")
 	createArchive(t, archivePath, map[string]string{
-		"canaryd/Chart.yaml":    "apiVersion: v2\nname: canaryd\nversion: 0.3.0\ntype: application\n",
-		"canaryd/plugin.yaml":   pluginYAML(),
-		"canaryd/templates/app": "kind: Deployment\n",
+		"canaryd/Chart.yaml":            "apiVersion: v2\nname: canaryd\nversion: 0.3.0\ntype: application\n",
+		"canaryd/plugin.yaml":           pluginYAML(),
+		"canaryd/frontend/index.umd.js": "bundle",
+		"canaryd/templates/app":         "kind: Deployment\n",
 	})
 	artifact, err := Inspect(archivePath)
 	if err != nil {
@@ -43,6 +44,12 @@ func TestInspectReadsV1CapabilityBindings(t *testing.T) {
 	}
 	manifest := "apiVersion: v1\ngroup: modelsphere.dev\nname: canary\nversion: 0.4.0\ndisplayName: Canary\ndescription: Persistent model inference experiments.\nconsumes:\n  - capability: platform.modelsphere.dev/image-pull-secrets\n    version: v1\n  - capability: swiss.modelsphere.dev/gateway\n    version: v1\n    from:\n      kind: Plugin\n      name: swiss\n      version: \">=0.4.0 <0.6.0\"\nfrontend:\n  type: component\n  runtime: remote\n  entry: index.umd.js\nactivation:\n  policy: auto\n"
 	if err := os.WriteFile(filepath.Join(directory, "plugin.yaml"), []byte(manifest), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(directory, "frontend"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "frontend", "index.umd.js"), []byte("bundle"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	artifact, err := Inspect(directory)
@@ -71,6 +78,29 @@ func TestInspectRejectsUnsafeArchivePath(t *testing.T) {
 	}
 }
 
+func TestInspectRejectsDirectoryWithoutFrontendEntry(t *testing.T) {
+	directory := writeChartDirectory(t)
+	if err := os.Remove(filepath.Join(directory, "frontend", "index.umd.js")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Inspect(directory)
+	if err == nil || !strings.Contains(err.Error(), "frontend entry \"frontend/index.umd.js\" is missing") {
+		t.Fatalf("Inspect() error = %v, want missing frontend entry", err)
+	}
+}
+
+func TestInspectRejectsArchiveWithoutFrontendEntry(t *testing.T) {
+	archivePath := filepath.Join(t.TempDir(), "canaryd-0.3.0.tgz")
+	createArchive(t, archivePath, map[string]string{
+		"canaryd/Chart.yaml":  "apiVersion: v2\nname: canaryd\nversion: 0.3.0\ntype: application\n",
+		"canaryd/plugin.yaml": pluginYAML(),
+	})
+	_, err := Inspect(archivePath)
+	if err == nil || !strings.Contains(err.Error(), "frontend entry \"frontend/index.umd.js\" is missing") {
+		t.Fatalf("Inspect() error = %v, want missing frontend entry", err)
+	}
+}
+
 func writeChartDirectory(t *testing.T) string {
 	t.Helper()
 	directory := t.TempDir()
@@ -78,6 +108,12 @@ func writeChartDirectory(t *testing.T) string {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(directory, "plugin.yaml"), []byte(pluginYAML()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(directory, "frontend"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "frontend", "index.umd.js"), []byte("bundle"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	return directory

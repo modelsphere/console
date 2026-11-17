@@ -36,6 +36,7 @@ frontend:
 			t.Fatal(err)
 		}
 	}
+	writeFrontendEntry(t, chart, "index.umd.js")
 	helm := filepath.Join(directory, "helm")
 	if err := os.WriteFile(helm, []byte("#!/bin/sh\nif [ \"$1\" = package ]; then printf invalid > \"$4/example-1.0.0.tgz\"; fi\n"), 0700); err != nil {
 		t.Fatal(err)
@@ -180,6 +181,7 @@ frontend:
 			t.Fatal(err)
 		}
 	}
+	writeFrontendEntry(t, chart, "index.js")
 	command := registrationCommand(&Options{ConfigPath: filepath.Join(directory, "config.yaml"), Timeout: time.Second})
 	var output bytes.Buffer
 	command.SetOut(&output)
@@ -246,5 +248,16 @@ func TestSwissCapabilityProviderRejectsMissingConsoleConfiguration(t *testing.T)
 	_, err := swissCapabilityProvider(consoleValues{})
 	if err == nil || !strings.Contains(err.Error(), "externalSwiss.url") {
 		t.Fatalf("swissCapabilityProvider() error = %v", err)
+	}
+}
+
+// writeFrontendEntry stages the bundle a package must ship for its declared entry.
+func writeFrontendEntry(t *testing.T, chart, entry string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(chart, "frontend"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(chart, "frontend", entry), []byte("bundle"), 0600); err != nil {
+		t.Fatal(err)
 	}
 }

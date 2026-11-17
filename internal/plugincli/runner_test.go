@@ -34,6 +34,30 @@ func TestRunnerVerbosityLogsCommandAndStderr(t *testing.T) {
 	}
 }
 
+func TestUpgradePluginRollsBackFailedInstalls(t *testing.T) {
+	directory := t.TempDir()
+	recorded := filepath.Join(directory, "args.txt")
+	script := filepath.Join(directory, "helm.sh")
+	content := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + recorded + "'\n"
+	if err := os.WriteFile(script, []byte(content), 0755); err != nil {
+		t.Fatalf("write helm fixture: %v", err)
+	}
+	runner := Runner{HelmPath: script, CommandTimeout: 10 * time.Second}
+	if err := runner.UpgradePlugin(context.Background(), "canary", "/tmp/canaryd.tgz", "console-system", []string{"/tmp/values.yaml"}, true, 5*time.Minute); err != nil {
+		t.Fatalf("UpgradePlugin() error = %v", err)
+	}
+	data, err := os.ReadFile(recorded)
+	if err != nil {
+		t.Fatalf("read recorded args: %v", err)
+	}
+	args := string(data)
+	for _, expected := range []string{"upgrade\n", "--install\n", "--atomic\n", "--wait\n", "--timeout\n5m0s\n", "--values\n/tmp/values.yaml\n"} {
+		if !strings.Contains(args, expected) {
+			t.Fatalf("helm args missing %q: %s", expected, args)
+		}
+	}
+}
+
 func TestListDeployedReleasesReadsHelmSecretLabels(t *testing.T) {
 	directory := t.TempDir()
 	script := filepath.Join(directory, "kubectl.sh")
