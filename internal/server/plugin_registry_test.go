@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	iamapi "github.com/modelsphere/console/api/iam/v1alpha1"
 	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
+	"github.com/modelsphere/console/internal/iam"
 	"github.com/modelsphere/console/internal/pluginregistry"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -49,10 +49,10 @@ func registeredEntry(t *testing.T, upstream *url.URL) *pluginregistry.Entry {
 			},
 		},
 		Files: map[string][]byte{"index.js": []byte("registered entry"), "index.css": []byte("body{}")},
-		Routes: []pluginregistry.Route{{Spec: iamapi.ReverseProxySpec{
-			Matcher:    iamapi.ReverseProxyMatcher{Path: "/api/example/*"},
-			Upstream:   iamapi.ReverseProxyUpstream{Scheme: upstream.Scheme, Host: host, Port: int32(port)},
-			Directives: iamapi.ReverseProxyDirectives{AuthProxy: true},
+		Routes: []pluginregistry.Route{{Spec: iam.ReverseProxySpec{
+			Matcher:    iam.ReverseProxyMatcher{Path: "/api/example/*"},
+			Upstream:   iam.ReverseProxyUpstream{Scheme: upstream.Scheme, Host: host, Port: int32(port)},
+			Directives: iam.ReverseProxyDirectives{AuthProxy: true},
 		}}},
 	}
 }

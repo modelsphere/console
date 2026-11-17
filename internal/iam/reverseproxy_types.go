@@ -14,13 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha1
+package iam
 
 import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // ReverseProxyMatcher defines request matching rules
@@ -186,12 +185,4 @@ type ReverseProxyList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ReverseProxy `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(func(s *runtime.Scheme) error {
-		s.AddKnownTypes(GroupVersion, &ReverseProxy{}, &ReverseProxyList{})
-		metav1.AddToGroupVersion(s, GroupVersion)
-		return nil
-	})
 }

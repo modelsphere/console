@@ -6,9 +6,9 @@ import (
 	"io"
 	"strings"
 
-	iamapi "github.com/modelsphere/console/api/iam/v1alpha1"
 	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
 	"github.com/modelsphere/console/internal/config"
+	"github.com/modelsphere/console/internal/iam"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage"
 	"helm.sh/helm/v3/pkg/storage/driver"
@@ -99,7 +99,7 @@ func (r *Registry) load(ctx context.Context, plugin *pluginapi.Plugin) (*Entry, 
 }
 
 // Route uses Global's ReverseProxy fields independently of the Plugin schema.
-type Route = iamapi.ReverseProxy
+type Route = iam.ReverseProxy
 
 func readRoutes(manifest string) ([]Route, error) {
 	decoder := yaml.NewYAMLOrJSONDecoder(strings.NewReader(manifest), 4096)
@@ -113,7 +113,7 @@ func readRoutes(manifest string) ([]Route, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parse installed release resources: %w", err)
 		}
-		if obj["kind"] != "ReverseProxy" || obj["apiVersion"] != "iam.theriseunion.io/v1alpha1" {
+		if obj["kind"] != "ReverseProxy" || obj["apiVersion"] != iam.Group+"/"+iam.Version {
 			continue
 		}
 		data, err := sigyaml.Marshal(obj)
