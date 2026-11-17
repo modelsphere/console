@@ -137,3 +137,5 @@ merged to main ──▶ CI publishes <appVersion>-git<sha7> ──▶ hack/bump
 
 - `hack/bump.sh` moves `helm/console/Chart.yaml` and `internal/version` together; a test fails if they disagree.
 - Only maintainers tag. A tag must equal the chart's `appVersion`, or CI refuses it.
+
+Manual packaging: `.github/workflows/package.yml` (`workflow_dispatch`) runs the same image and chart steps from any branch. It always uploads `console-<version>.tgz`; `push` builds the image, pushes it to `image_repository`, and pushes the chart when `chart_repository` names an OCI target. Pushing anywhere but GHCR needs the `REGISTRY_USERNAME` and `REGISTRY_PASSWORD` repository secrets. `version`, `image_repository` and `image_tag` control what the chart is stamped with, which is how a chart is produced for an image built by another pipeline.
