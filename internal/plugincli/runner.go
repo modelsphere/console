@@ -21,6 +21,9 @@ type Runner struct {
 	LogWriter      io.Writer
 	Verbosity      int
 	CommandTimeout time.Duration
+
+	// secretMetadata replaces the client built from Kubeconfig in tests.
+	secretMetadata metadataLister
 }
 
 var sensitiveLogPattern = regexp.MustCompile(`(?i)((?:authorization|token|password|secret|api[-_]?key)[[:space:]]*[:=][[:space:]]*)([^[:space:],]+)`)
@@ -31,17 +34,6 @@ type HelmRelease struct {
 	Namespace string `json:"namespace"`
 	Status    string `json:"status"`
 	Chart     string `json:"chart"`
-}
-
-type helmSecretList struct {
-	Items []helmSecret `json:"items"`
-}
-
-type helmSecret struct {
-	Metadata struct {
-		Namespace string            `json:"namespace"`
-		Labels    map[string]string `json:"labels"`
-	} `json:"metadata"`
 }
 
 func (r Runner) helm(ctx context.Context, args ...string) ([]byte, error) {
@@ -185,34 +177,6 @@ func (r Runner) kubectlFlags() []string {
 
 func (r Runner) GetValues(ctx context.Context, release, namespace string) ([]byte, error) {
 	return r.helm(ctx, "get", "values", release, "--namespace", namespace, "--all", "--output", "yaml")
-}
-
-// ListDeployedReleases returns deployed Helm releases using Kubernetes release
-// Secret labels, avoiding a slow Helm query across every release history.
-func (r Runner) ListDeployedReleases(ctx context.Context) ([]HelmRelease, error) {
-	data, err := r.kubectl(ctx, "get", "secrets", "--all-namespaces", "--selector", "owner=helm,status=deployed", "--output", "json")
-	if err != nil {
-		return nil, fmt.Errorf("list deployed Helm releases: %w", err)
-	}
-	var secrets helmSecretList
-	if err := json.Unmarshal(data, &secrets); err != nil {
-		return nil, fmt.Errorf("parse deployed Helm releases: %w", err)
-	}
-	releases := make([]HelmRelease, 0, len(secrets.Items))
-	for _, secret := range secrets.Items {
-		labels := secret.Metadata.Labels
-		name := labels["name"]
-		if labels["status"] != "deployed" || name == "" || secret.Metadata.Namespace == "" {
-			continue
-		}
-		releases = append(releases, HelmRelease{
-			Name:      name,
-			Namespace: secret.Metadata.Namespace,
-			Status:    labels["status"],
-			Chart:     labels["chart"],
-		})
-	}
-	return releases, nil
 }
 
 // ListReleasesInNamespace returns all Helm releases in one namespace.
