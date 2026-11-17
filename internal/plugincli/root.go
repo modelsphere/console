@@ -175,7 +175,7 @@ func installCommand(options *Options) *cobra.Command {
 	flags := &lifecycleFlags{}
 	command := &cobra.Command{
 		Use:   "install <chart-or-package>",
-		Short: "Install or upgrade a plugin and register it with Console",
+		Short: "Install or upgrade a plugin runtime; registration is a separate CR",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runInstall(cmd.Context(), cmd.OutOrStdout(), options, flags, args[0])
