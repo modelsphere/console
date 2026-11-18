@@ -1,6 +1,7 @@
 import { Alert, AlertDescription, Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle, Spinner } from "@modelsphere/ui";
 import { Info } from "lucide-react";
 import { SLOCard } from "@swiss/components/SLOCard";
+import type { ServicePolicySLO } from "@/extensions/types";
 import { useT } from "@/modules/inferences/i18n";
 
 export interface SLOTarget {
@@ -10,7 +11,7 @@ export interface SLOTarget {
 
 // The cluster resources tab shows the stored SLO; editing it is an action, so
 // the form opens here from the header rather than as a tab of its own.
-export function SLOSheet({ target, canEdit, setup, waiting, onClose }: { target: SLOTarget | null; canEdit: boolean; setup?: boolean; waiting?: boolean; onClose: () => void }) {
+export function SLOSheet({ target, canEdit, sloPolicy, setup, waiting, onClose }: { target: SLOTarget | null; canEdit: boolean; sloPolicy?: ServicePolicySLO; setup?: boolean; waiting?: boolean; onClose: () => void }) {
   const t = useT();
   if (!target) return null;
   return (
@@ -33,7 +34,7 @@ export function SLOSheet({ target, canEdit, setup, waiting, onClose }: { target:
               <Spinner size="lg" text={t("slo.waiting")} />
             </div>
           ) : (
-            <SLOCard namespace={target.namespace} release={target.release} canEdit={canEdit} onSaved={setup ? onClose : undefined} />
+            <SLOCard namespace={target.namespace} release={target.release} canEdit={canEdit} sloPolicy={sloPolicy} onSaved={setup ? onClose : undefined} />
           )}
         </SheetBody>
       </SheetContent>

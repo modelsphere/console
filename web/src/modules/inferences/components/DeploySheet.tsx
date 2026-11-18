@@ -51,6 +51,8 @@ import { AdaptivePlanChangedError, composeAdaptivePlan, composeReferencedPlan, i
 import { composeRecoveryPlan, composeRecoveryValuesRequest, RecoveryPlanChangedError } from "../recovery-compose";
 import { RecoveryFields } from "./RecoveryFields";
 import { mergeValues, planValues, recoveryError, recoveryInputError, recoverySettings, withRecovery } from "../recovery";
+import { extensions } from "@/extensions/registry";
+import { mergeEditLayerYAML } from "../edit-layer";
 import { serviceRelationship } from "../service-relationship";
 import { assertProductionBinding, ProductionBindingChangedError } from "../production-binding";
 import { readRouteOptions } from "@/modules/inferences/api";
@@ -201,12 +203,19 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const release = upgrade ? target.release : form.serviceId || defaultServiceId(target.model);
   const namespace = upgrade ? target.namespace : form.namespace || cluster.data?.namespace || "";
   const live = useQuery({ queryKey: ["status", namespace, release], queryFn: () => api.status(namespace, release), enabled: (upgrade || step === "review") && !!release && !!namespace });
+  const policy = extensions.useServicePolicy?.({
+    namespace,
+    release,
+    owner: live.data?.assignedTo ?? live.data?.managedBy,
+    assigned: live.data?.canaryState === "referenced" || !!live.data?.assignedTo,
+  });
 
   // A product the variant does not list is one swissd takes only as forced.
   const forceGpuProducts = unlistedProducts(v?.requires.gpuProduct, form.gpuProducts).length > 0;
-  const productionReferenced = upgrade && serviceRelationship(live.data ?? {}).productionReferenced;
-  const adaptiveOnly = upgrade && serviceRelationship(live.data ?? {}).adaptiveOnly;
-  const assignmentBlocked = serviceRelationship(live.data ?? {}).owned || serviceRelationship(live.data ?? {}).assignmentLocked && !adaptiveOnly;
+  const rel = serviceRelationship(live.data ?? {}, { mutable: policy?.mutable });
+  const productionReferenced = upgrade && rel.productionReferenced;
+  const adaptiveOnly = upgrade && rel.adaptiveOnly;
+  const assignmentBlocked = rel.owned || (rel.assignmentLocked && !adaptiveOnly);
   const change = (patch: Partial<Form>) => setForm((f) => adaptiveOnly ? {
     ...f,
     adaptiveCc: patch.adaptiveCc ?? f.adaptiveCc,
@@ -268,7 +277,11 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         }
         const inputError = recoveryInputError(recovery);
         if (inputError) throw new Error(t(`deploy.recovery.errors.${inputError}`));
-        const proposed = await composeRecoveryPlan(requestFor(form), recovery, (request) => composeAdaptivePlan(request, form, routeOptions.data, deployApi.plan, catalogName), catalogName);
+        const baseRequest = requestFor(form);
+        const composeRequest = upgrade && policy?.editLayer
+          ? { ...baseRequest, editsYAML: mergeEditLayerYAML(baseRequest.editsYAML, policy.editLayer) }
+          : baseRequest;
+        const proposed = await composeRecoveryPlan(composeRequest, recovery, (request) => composeAdaptivePlan(request, form, routeOptions.data, deployApi.plan, catalogName), catalogName);
         const invalid = recoveryError(proposed, recovery);
         if (invalid) throw new Error(t(`deploy.recovery.errors.${invalid}`));
         if (productionReferenced) {

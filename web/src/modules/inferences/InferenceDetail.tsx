@@ -15,6 +15,7 @@ import { modelLine, parseTab, releaseState, sloBlocked, visibleTabs, type Tab } 
 import { statusOf } from "@/modules/inferences/components/StatusDot";
 import { DeploySheet } from "@/modules/inferences/components/DeploySheet";
 import { UninstallDialog } from "@/modules/inferences/components/UninstallDialog";
+import { extensions } from "@/extensions/registry";
 import { serviceRelationship } from "./service-relationship";
 import { ServiceRelationshipBadge } from "@/modules/inferences/components/ServiceOwnership";
 import { SLOSheet } from "@/modules/inferences/components/SLOSheet";
@@ -63,6 +64,12 @@ export function InferenceDetail() {
   });
 
   const s = status.data;
+  const policy = extensions.useServicePolicy?.({
+    namespace,
+    release,
+    owner: s?.assignedTo ?? s?.managedBy,
+    assigned: s?.canaryState === "referenced" || !!s?.assignedTo,
+  });
   const visible = visibleTabs({ plan: !!plan.data });
   const tab = parseTab(search.get("tab"), visible);
   const setTab = (next: Tab, pod?: string) =>
@@ -105,7 +112,7 @@ export function InferenceDetail() {
 
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
   const removing = isUninstalling(s);
-  const { owned, referenced, assignmentLocked, adaptiveOnly, uninstallLocked } = serviceRelationship(s);
+  const { owned, referenced, assignmentLocked, adaptiveOnly, uninstallLocked } = serviceRelationship(s, { mutable: policy?.mutable });
   const blockedWrite = owned ? t("disabled.serviceManaged") : assignmentLocked ? t("disabled.serviceAssigned") : readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
   const uninstallBlocked = uninstallLocked ? t("disabled.serviceAssigned") : blockedWrite;
   const upgradeBlocked = adaptiveOnly ? readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false : blockedWrite;
@@ -114,7 +121,7 @@ export function InferenceDetail() {
   const pods = s.pods.map((p) => p.name);
   const sloLocked = owned || (referenced && !s.assignedTo?.verified);
   const sloWriteBlocked = sloLocked ? (owned ? t("disabled.serviceManaged") : t("disabled.serviceAssigned")) : readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
-  const blocked = sloBlocked(s, plan.data);
+  const blocked = policy?.slo?.inherited ? (s.planStatus?.phase !== "applied" ? "pending" : undefined) : sloBlocked(s, plan.data);
   const sloOpen = !sloLocked && !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
   const closeSLO = () => {
     setEditingSLO(false);
@@ -199,7 +206,7 @@ export function InferenceDetail() {
         )}
       </Tabs>
 
-      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !sloLocked && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
+      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !sloLocked && !removing && policy?.slo?.canEdit !== false} sloPolicy={policy?.slo} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
       <DeploySheet target={upgrading && !owned && (!assignmentLocked || adaptiveOnly) && !removing ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
         target={uninstalling && !owned && !uninstallLocked && !removing ? { namespace, release } : null}

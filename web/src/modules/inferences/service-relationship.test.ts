@@ -3,27 +3,23 @@ import { serviceRelationship } from "./service-relationship";
 import type { ServiceAssignment, ServiceOwner } from "@swiss/lib/api";
 
 const owner: ServiceOwner = { apiVersion: "canary.modelsphere.dev/v1alpha1", kind: "LLMCanary", namespace: "models", name: "experiment", uid: "parent", verified: true };
-const assignment: ServiceAssignment = { ...owner, role: "arm", arm: "candidate" };
+const assignment: ServiceAssignment = { ...owner, role: "arm", arm: "baseline" };
 
-describe("service relationship actions", () => {
- it("keeps independent services writable and owned services under their owner", () => {
+describe("serviceRelationship", () => {
+ it("locks owned services and adaptive-only referenced arms while keeping verified production editable", () => {
   expect(serviceRelationship({ canaryState: "standalone" })).toMatchObject({ owned: false, assignmentLocked: false, uninstallLocked: false, adaptiveOnly: false });
   expect(serviceRelationship({ canaryState: "owned", assignedTo: assignment })).toMatchObject({ owned: true, referenced: false, adaptiveOnly: false });
- });
- it("permits only adaptive upgrades of verified referenced arms", () => {
+  expect(serviceRelationship({ canaryState: "owned", managedBy: { ...owner, verified: false } })).toMatchObject({ owned: true });
+  expect(serviceRelationship({ canaryState: "standalone", managedBy: owner })).toMatchObject({ owned: false, assignmentLocked: false });
   expect(serviceRelationship({ canaryState: "referenced", assignedTo: assignment })).toMatchObject({ assignmentLocked: true, adaptiveOnly: true });
   expect(serviceRelationship({ canaryState: "referenced", assignedTo: { ...assignment, role: "production", arm: undefined } })).toMatchObject({ assignmentLocked: false, uninstallLocked: true, adaptiveOnly: false, productionReferenced: true });
   expect(serviceRelationship({ canaryState: "referenced", assignedTo: { ...assignment, verified: false } })).toMatchObject({ assignmentLocked: true, adaptiveOnly: false });
   expect(serviceRelationship({ canaryState: "referenced" })).toMatchObject({ assignmentLocked: true, adaptiveOnly: false });
  });
- it("keeps compatibility with servers that expose only parent identities", () => {
-  expect(serviceRelationship({}).state).toBe("standalone");
-  expect(serviceRelationship({ managedBy: owner }).state).toBe("owned");
-  expect(serviceRelationship({ assignedTo: assignment }).state).toBe("referenced");
- });
 });
 
-it("allows full referenced arm edits only with the mutable capability", () => {
- expect(serviceRelationship({canaryState:"referenced",assignedTo:{...assignment,mutable:true}})).toMatchObject({assignmentLocked:false,adaptiveOnly:false,uninstallLocked:true});
- expect(serviceRelationship({canaryState:"referenced",assignedTo:{...assignment,mutable:true,verified:false}})).toMatchObject({assignmentLocked:true});
+it("allows full referenced arm edits only with the mutable policy from the extension", () => {
+ expect(serviceRelationship({ canaryState: "referenced", assignedTo: assignment }, { mutable: true })).toMatchObject({ assignmentLocked: false, adaptiveOnly: false, uninstallLocked: true });
+ expect(serviceRelationship({ canaryState: "referenced", assignedTo: { ...assignment, verified: false } }, { mutable: true })).toMatchObject({ assignmentLocked: true });
+ expect(serviceRelationship({ canaryState: "referenced", assignedTo: { ...assignment, role: "production", arm: undefined } }, { mutable: true })).toMatchObject({ productionReferenced: true, adaptiveOnly: false });
 });
