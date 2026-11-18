@@ -75,9 +75,11 @@ describe("planRequest for a video variant", () => {
     expect(o.sloRequirement).toEqual({ enabled: false });
   });
 
-  it("lays the form over a release's layer and a preset", () => {
-    const req = request(form(), { preset: { sglang: { nodeSelector: { pool: "gpu" } } }, formLayer: { database: { url: "kept" } } });
-    expect(req.overrides).toMatchObject({ database: { url: "kept" }, sglang: { nodeSelector: { pool: "gpu" } } });
+  it("lays the form over a preset, and sends the form alone rather than over the release's layer", () => {
+    const req = request(form(), { preset: { sglang: { nodeSelector: { pool: "gpu" } } }, formLayer: { database: { url: "old" } } });
+    expect(req.overrides).toMatchObject({ sglang: { nodeSelector: { pool: "gpu" } } });
+    // The release's form layer only reads the form back; swissd takes the new one as is.
+    expect(req.overrides).not.toHaveProperty("database");
   });
 });
 

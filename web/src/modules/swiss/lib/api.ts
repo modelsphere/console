@@ -92,6 +92,8 @@ export interface Deployment {
   backend?: ApplyWith;
   // An LLMService swiss did not write.
   external?: boolean;
+  // An LLMService swiss wrote was edited outside swiss.
+  editedInPlace?: boolean;
 }
 
 export interface DeploymentsResponse {
@@ -123,7 +125,8 @@ export interface Requires {
 }
 
 export interface Input {
-  // The chart value's dotted key: storageKVOffload.mooncake.master.
+  // kyaml-style path. A field-only key is dotted (storageKVOffload.mooncake.master);
+  // a bracket or a bare number selects a list item.
   key: string;
   title: string;
   description?: string;
@@ -135,6 +138,8 @@ export interface Input {
   example: string | number | boolean;
   // swissd's answer when the site profile has none.
   default?: string | number | boolean;
+  // String inputs only. One {value}; the chart stores the filled template.
+  patcher?: string;
 }
 
 // v1 is the legacy schema: read-only, and still what a catalog with no
@@ -326,6 +331,12 @@ export interface Preset {
   values?: Record<string, unknown>;
 }
 
+// One site answer. A list entry, so a key like volumes.[name=x].path is a plain string.
+export interface SiteInput {
+  key: string;
+  value: string | number | boolean;
+}
+
 export interface SiteProfile {
   name: string;
   namespace?: string;
@@ -368,8 +379,8 @@ export interface SiteProfile {
   // The site's preferences, beneath the catalog: a variant overrides them.
   // features unset is on (featureOn).
   defaults?: { features?: { cart?: boolean; serviceMonitor?: boolean; sloRequirement?: boolean; scaler?: boolean } };
-  // Answers a variant's inputs by chart path; strings take pathTemplate's placeholders.
-  inputs?: Record<string, string | number | boolean>;
+  // Answers a variant's inputs by key, each key once; strings take pathTemplate's placeholders.
+  inputs?: SiteInput[];
   // Named values a deploy may pick one of; the console merges it into the form layer.
   presets?: Record<string, Preset>;
   nodes?: {
@@ -621,6 +632,9 @@ export interface Plan {
   hash: string;
   // What compose accepted but a person should see, such as a forced GPU product.
   warnings?: string[];
+  // Client-owned annotations swiss stores beside the plan. Omitted when empty.
+  // On an upgrade, leaving the field out keeps the previous ones; {} clears them.
+  additionalAnnotations?: Record<string, string>;
 }
 
 export interface DiffResult {
@@ -672,6 +686,8 @@ export interface PlanRequest {
   // Must fall in the variant's chart.version. Empty keeps a running release's
   // chart while in range, else takes the newest.
   chartVersion?: string;
+  // See Plan.additionalAnnotations. On an upgrade, omit to keep, {} to clear.
+  additionalAnnotations?: Record<string, string>;
 }
 
 // Choices for one diff, install or apply. swissd never stores them, so an
@@ -737,6 +753,10 @@ export interface ReleaseStatus {
   planStatus?: PlanStatus;
   // Set when swiss manages the release; it never changes after install.
   backend?: ApplyWith;
+  // An LLMService swiss did not write.
+  external?: boolean;
+  // An LLMService swiss wrote was edited outside swiss.
+  editedInPlace?: boolean;
   // Present on the llmsvc backend. phase is "uninstalling" while the LLMService
   // has a deletionTimestamp. Absent on helm and on an older swissd.
   llmservice?: { phase?: string };

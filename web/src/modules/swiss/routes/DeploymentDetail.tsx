@@ -86,6 +86,7 @@ export function DeploymentDetail() {
 
   const s = status.data;
   const removing = isUninstalling(s);
+  const external = s.external;
   // A video release has one SLO per pool, edited in a dialog of its own.
   const video = isVideo(plan.data?.engine);
   // A video release's JobSLOs may come from the chart's default, with the switch
@@ -105,7 +106,10 @@ export function DeploymentDetail() {
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">{release}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-semibold">{release}</h1>
+            {s.editedInPlace && <Badge variant="muted">Edited outside swiss</Badge>}
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
             <Badge variant="outline">{namespace}</Badge>{" "}
             {plan.data ? (
@@ -120,11 +124,18 @@ export function DeploymentDetail() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {showSLO && (
-            <Button size="sm" variant="outline" onClick={openSLO}>
-              <Settings2 className="size-4" /> Configure SLO
-            </Button>
-          )}
+          {showSLO &&
+            (external ? (
+              <span title="Not deployed by swiss" className="inline-flex cursor-not-allowed">
+                <Button size="sm" variant="outline" disabled>
+                  <Settings2 className="size-4" /> Configure SLO
+                </Button>
+              </span>
+            ) : (
+              <Button size="sm" variant="outline" onClick={openSLO}>
+                <Settings2 className="size-4" /> Configure SLO
+              </Button>
+            ))}
           {/* Revisions are rows in the log now: an applied revision and the
               run that produced it are one event, and rolling back starts from
               the row that records it. */}
@@ -136,8 +147,11 @@ export function DeploymentDetail() {
             </Button>
           </Link>
           {plan.data &&
-            (removing ? (
-              <span title="This release is uninstalling; wait until its pods are gone" className="inline-flex cursor-not-allowed">
+            (removing || external ? (
+              <span
+                title={removing ? "This release is uninstalling; wait until its pods are gone" : "Not deployed by swiss"}
+                className="inline-flex cursor-not-allowed"
+              >
                 <Button size="sm" disabled>
                   <CircleArrowUp className="size-4" /> Upgrade
                 </Button>
@@ -178,7 +192,7 @@ export function DeploymentDetail() {
 
       <InstallStatus namespace={namespace} release={release} status={s} objects={objects.data?.objects} video={video} />
 
-      <ReleaseObjects namespace={namespace} release={release} onConfigureSLO={showSLO ? openSLO : undefined} video={video} />
+      <ReleaseObjects namespace={namespace} release={release} onConfigureSLO={showSLO && !external ? openSLO : undefined} video={video} />
       {video ? (
         <VideoSLODialog target={sloOpen && showSLO ? { namespace, release } : null} canEdit={!!cluster.data?.allowDeploy} onClose={() => setSloOpen(false)} />
       ) : (

@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { ChevronLeft, TriangleAlert } from "lucide-react";
-import { api, deployApi, type ApplyResult, type ApplyWith, type DiffResult, type Plan } from "@swiss/lib/api";
+import { ChevronLeft, RefreshCw, TriangleAlert } from "lucide-react";
+import { api, deployApi, type ApplyResult, type ApplyWith, type DiffResult, type Plan, type PlanRequest } from "@swiss/lib/api";
 import { Badge } from "@swiss/components/ui/badge";
+import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
+import { cn } from "@swiss/lib/utils";
 import { applyFlags, DeploySettings, EMPTY, imageOf, planRequest, reseed, siteSwitchDefaults, switchDefaults, videoForm, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
+import { useImageSlots } from "@swiss/lib/useImageSlots";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, CatalogGate, SchemaBadge, useCatalogChoice, withCatalog } from "@swiss/components/CatalogChoice";
@@ -92,7 +95,8 @@ export function Deploy() {
   const loaded = !!model.data && !profile.isPending;
   const siteDefaults = useMemo(() => siteSwitchDefaults(profile.data), [profile.data]);
   const variantValues = model.data?.variant.values;
-  const seeded = useRef<SwitchDefaults | null>(null);
+  const expectedSeed = useMemo(() => (loaded ? switchDefaults(siteDefaults, variantValues) : null), [loaded, siteDefaults, variantValues]);
+  const [seeded, setSeeded] = useState<SwitchDefaults | null>(null);
   // A video variant's own settings start from its values, once per variant;
   // leaving a video variant takes them back off, GPU tolerations included, so
   // an LLM deploy does not inherit them.
@@ -105,17 +109,15 @@ export function Deploy() {
     else if (action === "clear") setForm((f) => ({ ...f, video: EMPTY.video, tolerations: EMPTY.tolerations }));
   }, [loaded, video, variantValues]);
   useEffect(() => {
-    if (!loaded) return;
-    const next = switchDefaults(siteDefaults, variantValues);
-    const prev = seeded.current;
-    seeded.current = next;
-    if (prev && JSON.stringify(prev) === JSON.stringify(next)) return;
-    setForm((f) => reseed(f, prev ?? {}, next));
-    if (prev) {
+    if (!expectedSeed) return;
+    if (seeded && JSON.stringify(seeded) === JSON.stringify(expectedSeed)) return;
+    setForm((f) => reseed(f, seeded ?? {}, expectedSeed));
+    setSeeded(expectedSeed);
+    if (seeded) {
       setPlan(null);
       setDiff(null);
     }
-  }, [loaded, siteDefaults, variantValues]);
+  }, [expectedSeed, seeded]);
 
   // A diff is bound to the plan it was computed from, so touching the form
   // invalidates both, and the pipeline walks back to Plan rather than leaving a
@@ -131,22 +133,50 @@ export function Deploy() {
     invalidate();
   };
 
+  // Computed before the early returns so the image dry run, a hook, can use the
+  // same request the compose button sends.
+  const variantNow = model.data?.variant;
+  const chart = chartVersionChoice({
+    list: chartVersions,
+    value: chartVersion,
+    onChange: (v) => {
+      setChartVersion(v);
+      update({});
+    },
+  });
+  const cache = cacheCard(
+    profile.data?.profile,
+    variantNow,
+    { name: variantNow?.chart.name, version: chart.resolved ?? variantNow?.chart.version },
+  );
+  const requestOf = (f: Form): PlanRequest | undefined =>
+    catalog && model.data
+      ? planRequest(f, {
+          model: name,
+          version,
+          variant: variantId,
+          catalog,
+          chartVersion: chartVersion || undefined,
+          forceGpuProducts: unlistedProducts(model.data.variant.requires.gpuProduct, f.gpuProducts).length > 0,
+          cacheUnsupported: !!cache.unsupported,
+          inputs: model.data.variant.inputs,
+          siteInputs: profile.data?.profile?.inputs,
+          hf: model.data.model.source?.hf,
+          preset: presetValues(profile.data?.profile, f.preset),
+          values: model.data.variant.values,
+          siteEnv: profile.data?.profile?.extra,
+          gpuSpecs: profile.data?.profile?.nodes?.gpus,
+          gpuVendor: model.data.variant.requires.vendor,
+          video,
+        })
+      : undefined;
+  // Chart discovery runs once on open after the form is seeded, on target changes, and on manual refresh.
+  const formSeeded = !!seeded && !!expectedSeed && JSON.stringify(seeded) === JSON.stringify(expectedSeed);
+  const canDiscover = !model.isPending && !model.isPlaceholderData && !!model.data && !cluster.isPending && !profile.isPending && !!catalog && cluster.data?.allowDeploy !== false && formSeeded;
+  const discovered = useImageSlots(form, requestOf, canDiscover, profile.data?.profile?.nodes?.gpus);
+
   const planM = useMutation({
-    mutationFn: () =>
-      deployApi.plan(
-        planRequest(form, {
-              model: name,
-              version,
-              variant: variantId,
-              catalog,
-              chartVersion: chartVersion || undefined,
-              forceGpuProducts: unlistedProducts(model.data?.variant.requires.gpuProduct, form.gpuProducts).length > 0,
-              cacheUnsupported: !!cache.unsupported,
-              inputs: model.data?.variant.inputs,
-              preset: presetValues(profile.data?.profile, form.preset),
-              video,
-            })
-      ),
+    mutationFn: () => deployApi.plan(requestOf(form)!),
     // The previous plan is superseded the moment a recompose starts. Dropping
     // it here rather than on the way back means a failed compose leaves
     // nothing to act on, instead of a stale plan the error message sits behind.
@@ -171,19 +201,6 @@ export function Deploy() {
   const current = m.variants.find((v) => v.id === variant.id)?.version;
   const llm = cluster.data?.llmservice;
   const method = installMethod(picked, llm, schema);
-  const chart = chartVersionChoice({
-    list: chartVersions,
-    value: chartVersion,
-    onChange: (v) => {
-      setChartVersion(v);
-      update({});
-    },
-  });
-  const cache = cacheCard(
-    profile.data?.profile,
-    variant,
-    { name: variant.chart.name, version: chart.resolved ?? variant.chart.version },
-  );
   const inputs = inputRows(variant.inputs, profile.data?.profile, m.source?.hf ?? "", name, variant.values);
   const saves = siteSaver.remember ? siteSaves(inputs, form.inputs, siteSaver.remember) : [];
 
@@ -200,22 +217,36 @@ export function Deploy() {
     <div className="space-y-5">
       <Back name={name} catalog={catalog} />
 
-      <div>
-        <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
-          Deploy {m.displayName ?? m.name}
-          <CatalogBadge name={catalog} show={choice.several} />
-          <SchemaBadge schema={schema} />
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          <Badge variant="outline">{variant.id}</Badge>{" "}
-          <Badge variant="muted">v{variant.version}</Badge>{" "}
-          {variant.engine} · {variant.requires.gpus} GPU
-          {variant.requires.nodes && variant.requires.nodes > 1
-            ? ` × ${variant.requires.nodes} nodes`
-            : ""}{" "}
-          · chart {variant.chart.name}
-          {chartRange ? ` ${variant.chart.version}` : `-${variant.chart.version}`}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
+            Deploy {m.displayName ?? m.name}
+            <CatalogBadge name={catalog} show={choice.several} />
+            <SchemaBadge schema={schema} />
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            <Badge variant="outline">{variant.id}</Badge>{" "}
+            <Badge variant="muted">v{variant.version}</Badge>{" "}
+            {variant.engine} · {variant.requires.gpus} GPU
+            {variant.requires.nodes && variant.requires.nodes > 1
+              ? ` × ${variant.requires.nodes} nodes`
+              : ""}{" "}
+            · chart {variant.chart.name}
+            {chartRange ? ` ${variant.chart.version}` : `-${variant.chart.version}`}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          disabled={!canDiscover || discovered.fetching}
+          onClick={() => void discovered.reload()}
+          title="Re-run dry-run compose with the current settings to refresh chart defaults"
+        >
+          <RefreshCw className={cn("size-3.5", discovered.fetching && "animate-spin")} />
+          Refresh
+        </Button>
       </div>
 
       {planM.error && <ErrorState what="the request" error={planM.error} />}
@@ -285,29 +316,37 @@ export function Deploy() {
       {/* The settings are the page. Plan, diff and apply are what is done with
           them, so they sit below as tabs rather than holding the form inside
           one of them. */}
-        <DeploySettings
-          form={form}
-          onChange={update}
-          cluster={cluster.data}
-          serviceIdPlaceholder={name}
-          localPathDefault={model.data.localPath}
-          localPathPlaceholder={model.data.pathTemplate}
-          inputs={inputs}
-          remember={siteSaver.remember}
-          onRemember={siteSaver.onRemember}
-          image={imageOf(variant, model.data.imageRepository)}
-          supportedGPUs={variant?.requires.gpuProduct}
-          clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
-          gpuResources={variant?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, variant.requires.vendor) : undefined}
-          capacity={
-            variant?.requires.gpus
-              ? { ...deployCapacity(variant.requires, form, nodes.data?.nodes, profile.data?.profile?.nodes?.gpus), refreshing: nodes.isFetching, onRefresh: () => nodes.refetch() }
-              : undefined
-          }
-          cache={cache}
-          presets={profile.data?.profile?.presets}
-          video={video}
-        />
+      <DeploySettings
+        form={form}
+        onChange={update}
+        cluster={cluster.data}
+        serviceIdPlaceholder={name}
+        localPathDefault={model.data.localPath}
+        localPathPlaceholder={model.data.pathTemplate}
+        inputs={inputs}
+        remember={siteSaver.remember}
+        onRemember={siteSaver.onRemember}
+        image={imageOf(variant, model.data.imageRepository)}
+        imageMirror={profile.data?.profile?.registry?.mirror}
+        slots={discovered.slots}
+        slotsError={discovered.queryError}
+        resources={discovered.resources}
+        pd={discovered.pd}
+        nodes={nodes.data?.nodes}
+        gpuSpecs={profile.data?.profile?.nodes?.gpus}
+        gpuVendor={variant?.requires.vendor}
+        supportedGPUs={variant?.requires.gpuProduct}
+        clusterGPUs={pickableProducts(nodes.data?.nodes, variant?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
+        gpuResources={variant?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, variant.requires.vendor) : undefined}
+        capacity={
+          variant?.requires.gpus
+            ? { ...deployCapacity(variant.requires, form, nodes.data?.nodes, profile.data?.profile?.nodes?.gpus), refreshing: nodes.isFetching, onRefresh: () => nodes.refetch() }
+            : undefined
+        }
+        cache={cache}
+        presets={profile.data?.profile?.presets}
+        video={video}
+      />
 
       <Pipeline
         namespace={form.namespace || cluster.data.namespace || ""}

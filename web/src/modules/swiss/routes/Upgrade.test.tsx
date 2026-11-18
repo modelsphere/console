@@ -90,7 +90,7 @@ describe("Upgrade page", () => {
       </QueryClientProvider>,
     );
     const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-    for (const want of ["Upgrade target", "keep public", "latest (1.1.0)", "keep 0.7.1", "Catalog allows &gt;=0.7.1",
+    for (const want of ["Upgrade target", "Refresh", "keep public", "latest (1.1.0)", "keep 0.7.1", "Catalog allows &gt;=0.7.1",
       "sglang · 2 GPU", "kept"]) {
       expect(text).toContain(want);
     }

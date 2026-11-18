@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SiteProfile } from "@swiss/lib/api";
 import { fromRows, markDefault, profileErrors, toRows, withNodes } from "@/modules/inferences/profile-lib";
-import { answersText, parseAnswers } from "@swiss/lib/inputs";
+import { siteInputRows, siteInputsFromRows } from "@swiss/lib/inputs";
 
 describe("key-value rows", () => {
   it("round-trips a table and drops rows without a key", () => {
@@ -54,10 +54,13 @@ describe("nodes", () => {
 
 
 describe("input answers", () => {
-  it("maps a profile's answers to rows and back", () => {
-    const inputs = { "a.master": "mc:1", "a.port": 8000, "a.on": true };
-    expect(parseAnswers(answersText(inputs))).toEqual(inputs);
-    expect(parseAnswers(fromRows(toRows(answersText(inputs))))).toEqual(inputs);
-    expect(parseAnswers(fromRows([]))).toBeUndefined();
+  it("maps a profile's answers to rows and back, keeping list order and validating keys", () => {
+    const inputs = [{ key: "a.master", value: "mc:1" }, { key: "a.port", value: 8000 }, { key: "v.[name=x].path", value: true }];
+    expect(siteInputsFromRows(siteInputRows(inputs))).toEqual(inputs);
+    expect(siteInputsFromRows([])).toBeUndefined();
+    const p: SiteProfile = { name: "c", model: { pathTemplate: "/m" } };
+    expect(profileErrors({ ...p, inputs })).toEqual([]);
+    expect(profileErrors({ ...p, inputs: [{ key: "", value: "x" }] })).toEqual(["inputs"]);
+    expect(profileErrors({ ...p, inputs: [{ key: "a.b", value: 1 }, { key: "a.b", value: 2 }] })).toEqual(["inputs"]);
   });
 });

@@ -85,7 +85,8 @@
       "catalog": "Catalog"
     },
     "behind": "Behind catalog",
-    "untracked": "Untracked"
+    "untracked": "Untracked",
+    "editedInPlace": "Edited outside swiss"
   },
   "actions": {
     "detail": "Details",
@@ -102,6 +103,7 @@
   "disabled": {
     "readOnly": "This swissd is read-only: turn on both server.allowDeploy and rbac.allowDeploy",
     "untracked": "A release with no plan beside it cannot be upgraded here",
+    "external": "Not deployed by swiss",
     "current": "This is already the current revision",
     "sloOff": "SLO was not turned on at deploy; turn it on in an upgrade",
     "sloPending": "SLO shows once the deploy has applied",
@@ -128,6 +130,7 @@
   "detail": {
     "back": "Inference Services",
     "untracked": "Untracked: there is no plan beside this release",
+    "editedInPlace": "Edited outside swiss",
     "fields": {
       "namespace": "Namespace",
       "model": "Model",
@@ -414,6 +417,7 @@
     "titleUpgrade": "Upgrade {release}",
     "description": "Pick a model and variant, compose the plan, review what changes, then confirm.",
     "descriptionUpgrade": "Change the target or settings, compose a new plan, review what changes, then confirm.",
+    "refreshPreviewHint": "Re-run dry-run compose with current settings to refresh chart defaults",
     "sections": {
       "basic": "Basics",
       "target": "Upgrade target",
@@ -568,6 +572,34 @@
       "gpuVerified": "verified",
       "gpuUnverified": "unverified",
       "gpuForced": "{products}: unverified with this variant, deployed as forced",
+      "pdSectionTitle": "Prefill & Decode GPU affinity",
+      "pdSectionHint": "Pins GPU products per PD role (pd.prefill.affinityReplace / pd.decode.affinityReplace); empty keeps the variant's default or top-level affinity. GPU resource, container resources, tolerations, priority class and scheduler stay shared.",
+      "pdColocateTitle": "Prefill & Decode (colocated Pod)",
+      "pdColocateNote": "Both roles share one Pod, so GPU affinity and scheduler follow the settings below.",
+      "pdColocateRoleGpus": "{role}: {gpus} GPUs",
+      "pdRoleMeta": "{gpus} GPUs/pod · {replicas} replicas",
+      "pdRoleMetaMultiNode": "{gpus} GPUs/pod · {replicas} × {size} nodes",
+      "pdRolePrefill": "Prefill",
+      "pdRoleDecode": "Decode",
+      "pdGpuProducts": "GPU products",
+      "pdGpuProductsHint": "Overrides node GPU affinity (pd.{role}.affinityReplace) for {role} pods; leave empty to use the variant default or top-level affinity.",
+      "pdGpuInherit": "Any supported (or top-level default)",
+      "pdGpuFromChart": "Chart/site default: {products}",
+      "pdGpuCustomReplace": "Chart/site defines affinityReplace",
+      "pdGpuMissingLabelKey": "No node labelKey configured in site GPU profile for this resource — set pd.{role}.affinityReplace in Override YAML.",
+      "containerResources": "Resources",
+      "containerResourcesHint": "Requests and limits from chart or site defaults (including hugepages). Empty keeps the default shown in the placeholder.",
+      "resourceColName": "Resource",
+      "resourceColRequest": "Request",
+      "resourceColLimit": "Limit",
+      "resourceKeyPlaceholder": "cpu, memory, hugepages-2Mi...",
+      "resourceAdd": "Add resource",
+      "resourceReset": "Reset to default",
+      "resourceEmpty": "No container resource requests or limits defined in chart or site defaults.",
+      "resourceGpuAuto": "from GPU above",
+      "resourceGpuReserved": "GPU count is controlled by the model and GPU resource field above; remove it here.",
+      "resourceExists": "Already listed above.",
+      "resourceDuplicate": "Duplicate resource key.",
       "tolerations": "Tolerations",
       "tolerationsHint": "Lets this deploy land on tainted GPU nodes",
       "tolKey": "Key",
@@ -577,6 +609,9 @@
       "tolAdd": "Add toleration",
       "anyEffect": "Any",
       "tolAny": "Every taint",
+      "tolTaints": "Node taints",
+      "tolTaintsHint": "Taints on this cluster's nodes; picking one adds the toleration that matches it",
+      "tolTaintNodes": "on {n} nodes",
       "preset": "Preset",
       "presetHint": "Site profile values merged into this deploy's: a list keeps both sides' items, a value set here wins",
       "presetNone": "None",
@@ -595,10 +630,11 @@
       "inputRememberHint": "Every variant that declares this key, for any model, will take it",
       "inputReplaces": "replaces the site's answer {answer}",
       "inputFrom": {
-        "release": "Release",
         "site": "Site profile",
         "variant": "Variant default"
       },
+      "inputDroppedDeprecated": "No longer an input: {key} ({value})",
+      "inputDroppedBroken": "Does not match this variant: {key} ({value})",
       "inputProblem": {
         "string": "Must match {pattern}",
         "integer": "Enter a whole number",
@@ -609,6 +645,12 @@
       "imageValue": "Image (repository:tag)",
       "imageSite": "Site mirror",
       "imageCatalog": "Catalog",
+      "imageDefault": "Default",
+      "images": "Images",
+      "imagesHint": "Each row is a values path. Leave it empty to keep the image in the placeholder; a value is written on the form layer.",
+      "imageCustom": "Custom",
+      "imageInherited": "Inherited",
+      "imageSource": "Engine image source",
       "modelRoute": "Publish a route",
       "modelRouteHint": "Publishes a ModelRoute to openresty",
       "route": "Route path",
@@ -683,9 +725,11 @@
       "chartHint": "The chart's values.yaml",
       "swiss": "Overrides",
       "swissHint": "Everything this deploy sets, its layers merged; null deletes a chart default",
+      "readOnly": "Read-only",
       "edit": "edit.yaml",
-      "editHint": "The overrides as stored: applied over everything this deploy sets. Delete a line to drop that override; null deletes a chart default.",
+      "editHint": "Warning: applied directly over all layers without merging lists — only edit here if you know what you are doing (Final values is recommended). Delete a line to drop that override; null deletes a chart default.",
       "final": "Final values",
+      "recommended": "Recommended",
       "finalHint": "Edit here; a key you delete becomes null",
       "changes": "{n, plural, =0 {No changes} one {# change} other {# changes}}",
       "notLoaded": "Load chart values to see them.",
@@ -1072,6 +1116,10 @@
         "required": "Required",
         "duplicate": "Listed twice",
         "conflict": "Already names another product under this resource"
+      },
+      "input": {
+        "required": "Key is required",
+        "duplicate": "Listed twice"
       }
     }
   },

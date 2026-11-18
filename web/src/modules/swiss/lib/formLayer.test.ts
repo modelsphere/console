@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Plan } from "@swiss/lib/api";
 import { EMPTY, formFromPlan, planRequest, type Form } from "@swiss/components/DeploySettings";
 import { affinityInvalid, affinityRules, editRule, setAffinity } from "./affinity";
-import { overlay, withPreset } from "./formLayer";
+import { envBase, mergeEnv, overlay, withEnv, withPreset } from "./formLayer";
 
 const storageNet = { key: "ebof.modelsphere.io/storage-net", operator: "In", values: ["true"] };
 const gpuTerm = { matchExpressions: [{ key: "nvidia.com/gpu.product", operator: "In", values: ["B300"] }] };
@@ -78,10 +78,10 @@ describe("affinity rules", () => {
     expect((p as typeof layer).pd.decode.affinityReplace.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution).toEqual([]);
   });
 
-  it("leaves emptied top-level required terms to swissd when products are picked", () => {
+  it("sends emptied top-level required terms as [] when products are picked, for swissd to fill", () => {
     const o = {};
     setAffinity(o, drop((r) => r.scope === "affinity"), true);
-    expect(o).not.toHaveProperty("affinity");
+    expect((o as typeof layer).affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms).toEqual([]);
   });
 
   it("edits a rule as YAML, keeping a string a string", () => {
@@ -98,10 +98,10 @@ describe("affinity rules", () => {
 });
 
 describe("an upgrade rebuilds the form layer", () => {
-  it("carries every key the form has no field for", () => {
+  it("does not carry a key the form has no field for", () => {
     const got = upgrade({ extraArgs: ["--x"], pd: { prefill: { replicas: 2 } } });
-    expect(got.extraArgs).toEqual(["--x"]);
-    expect(got.pd).toEqual({ prefill: { replicas: 2 } });
+    expect(got).not.toHaveProperty("extraArgs");
+    expect(got).not.toHaveProperty("pd");
   });
 
   it("sends an edited affinity rule in its list", () => {
@@ -125,8 +125,8 @@ describe("tolerations on an upgrade", () => {
     expect((got.tolerations as unknown[])[1]).toEqual({ key: "ebof-test", operator: "Exists", effect: "NoSchedule", tolerationSeconds: 300 });
   });
 
-  it("sends an empty list once every row is removed", () => {
-    expect(upgrade({ tolerations: deployed }, (f) => ({ ...f, tolerations: [] })).tolerations).toEqual([]);
+  it("sends no list once every row is removed", () => {
+    expect(upgrade({ tolerations: deployed }, (f) => ({ ...f, tolerations: [] }))).not.toHaveProperty("tolerations");
     expect(planRequest(EMPTY, { model: "m" }).overrides!).not.toHaveProperty("tolerations");
   });
 
@@ -142,5 +142,160 @@ describe("planRequest with a preset", () => {
     const got = planRequest(f, { model: "m", preset: { tolerations: [{ key: "ebof-test", operator: "Exists" }], nodeSelector: { "ebof.modelsphere.io/storage-net": "true" } } }).overrides!;
     expect(got.tolerations).toEqual([{ key: "ebof-test", operator: "Exists" }, { key: "gpu", operator: "Exists" }]);
     expect(got.nodeSelector).toEqual({ "ebof.modelsphere.io/storage-net": "true" });
+  });
+});
+
+describe("env and pd.<role>.env merging", () => {
+  const catalogValues = {
+    env: [
+      { name: "NCCL_IB_QPS_PER_CONNECTION", value: "8" },
+      { name: "SGLANG_HOST_IP", valueFrom: { fieldRef: { fieldPath: "status.podIP" } } },
+    ],
+    pd: {
+      prefill: {
+        env: [{ name: "PYTORCH_CUDA_ALLOC_CONF", value: "expandable_segments:True" }],
+      },
+      decode: {
+        env: [
+          { name: "PYTORCH_CUDA_ALLOC_CONF", value: "expandable_segments:True" },
+          { name: "SGLANG_DISAGGREGATION_WAITING_TIMEOUT", value: "3600" },
+        ],
+      },
+    },
+  };
+
+  it("mergeEnv replaces matching names in place and appends new ones", () => {
+    const base = [
+      { name: "A", value: "1" },
+      { name: "B", valueFrom: { fieldRef: { fieldPath: "status.podIP" } } },
+    ];
+    const over = [
+      { name: "B", value: "10.0.0.1" },
+      { name: "C", valueFrom: { fieldRef: { fieldPath: "metadata.name" } } },
+    ];
+    expect(mergeEnv(base, over)).toEqual([
+      { name: "A", value: "1" },
+      { name: "B", value: "10.0.0.1" },
+      { name: "C", valueFrom: { fieldRef: { fieldPath: "metadata.name" } } },
+    ]);
+    expect(base[1]).toEqual({ name: "B", valueFrom: { fieldRef: { fieldPath: "status.podIP" } } });
+  });
+
+  it("withEnv leaves env paths unset when the layer does not touch them", () => {
+    const layer = { replicaCount: 2, pd: { decode: { replicas: 1 } } };
+    expect(withEnv(catalogValues, layer)).toBe(layer);
+  });
+
+  it("planRequest merges preset env and pd.<role>.env over catalog and site extra env", () => {
+    const preset = {
+      env: [
+        { name: "NCCL_IB_QPS_PER_CONNECTION", value: "16" },
+        { name: "NCCL_DEBUG", value: "INFO" },
+      ],
+      pd: {
+        decode: {
+          env: [{ name: "DECODE_EXTRA", value: "1" }],
+        },
+      },
+    };
+    const siteExtra = {
+      env: [{ name: "SITE_VAR", value: "site" }],
+    };
+    const req = planRequest(
+      { ...EMPTY, preset: "roce" },
+      { model: "m", preset, values: catalogValues, siteEnv: siteExtra },
+    );
+    expect(req.overrides!.env).toEqual([
+      { name: "NCCL_IB_QPS_PER_CONNECTION", value: "16" },
+      { name: "SGLANG_HOST_IP", valueFrom: { fieldRef: { fieldPath: "status.podIP" } } },
+      { name: "SITE_VAR", value: "site" },
+      { name: "NCCL_DEBUG", value: "INFO" },
+    ]);
+    expect(req.overrides!.pd).toEqual({
+      decode: {
+        env: [
+          { name: "PYTORCH_CUDA_ALLOC_CONF", value: "expandable_segments:True" },
+          { name: "SGLANG_DISAGGREGATION_WAITING_TIMEOUT", value: "3600" },
+          { name: "DECODE_EXTRA", value: "1" },
+        ],
+      },
+    });
+  });
+
+  it("planRequest passes edit.yaml untouched without merging catalog or form env into it", () => {
+    const f: Form = {
+      ...EMPTY,
+      preset: "roce",
+      edits: [
+        "env:",
+        "  - name: NCCL_DEBUG",
+        "    value: WARN",
+        "  - name: EDIT_ONLY",
+        '    value: "1"',
+      ].join("\n"),
+    };
+    const preset = {
+      env: [{ name: "NCCL_DEBUG", value: "INFO" }],
+    };
+    const req = planRequest(f, { model: "m", preset, values: catalogValues });
+    expect(req.editsYAML).toBe(f.edits);
+    expect(envBase(catalogValues, req.overrides).env).toEqual([
+      { name: "NCCL_IB_QPS_PER_CONNECTION", value: "8" },
+      { name: "SGLANG_HOST_IP", valueFrom: { fieldRef: { fieldPath: "status.podIP" } } },
+      { name: "NCCL_DEBUG", value: "INFO" },
+    ]);
+  });
+
+  it("formFromPlan preserves quoted numeric string env values in edit layer on upgrade", () => {
+    const p = {
+      release: { name: "r", namespace: "n" },
+      layers: {
+        form: {},
+        edit: {
+          env: [
+            { name: "NCCL_IB_QPS_PER_CONNECTION", value: "8" },
+            { name: "SGLANG_ENABLE_JIT_DEEPGEMM", value: "false" },
+          ],
+        },
+      },
+    } as unknown as Plan;
+    const f = formFromPlan(p);
+    expect(f.edits).toContain('value: "8"');
+    expect(f.edits).toContain('value: "false"');
+  });
+
+  it("drops pd.<role>.schedulerName and splits standalone role GPU term cleanly without breaking custom affinity rules", () => {
+    const layer = {
+      pd: {
+        prefill: {
+          schedulerName: "volcano",
+          affinityReplace: {
+            nodeAffinity: {
+              requiredDuringSchedulingIgnoredDuringExecution: {
+                nodeSelectorTerms: [{ matchExpressions: [storageNet] }, gpuTerm],
+              },
+            },
+          },
+        },
+      },
+    };
+    const f = formFromPlan(plan(layer));
+    expect(f.pd.prefill).toEqual({ gpuProducts: ["B300"] });
+    expect(f.affinity).toHaveLength(1);
+    const cleared = upgrade(layer, (x) => ({
+      ...x,
+      pd: { ...x.pd, prefill: { gpuProducts: [] } },
+    }));
+    expect(cleared.pd).toEqual({
+      prefill: {
+        affinityReplace: {
+          nodeAffinity: {
+            requiredDuringSchedulingIgnoredDuringExecution: {
+              nodeSelectorTerms: [{ matchExpressions: [storageNet] }],
+            },
+          },
+        },
+      },
+    });
   });
 });

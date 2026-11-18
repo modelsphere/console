@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AlertDescription,
+  Badge,
   Button,
   CodeBlock,
   Dialog,
@@ -18,14 +19,36 @@ import {
   TabsList,
   TabsTrigger,
 } from "@modelsphere/ui";
-import { Pencil } from "lucide-react";
-import type { HelmValues } from "@swiss/lib/api";
+import { Lock, Pencil, TriangleAlert } from "lucide-react";
+import { deployApi, type HelmValues, type PlanRequest } from "@swiss/lib/api";
 import { useT } from "@/modules/inferences/i18n";
 import { KeySearch } from "./KeySearch";
 import { YamlTextarea, type YamlTextareaHandle } from "./YamlTextarea";
 import { computedYaml, keyLines, mergeValues, overrideEdit, overridePaths, parseValues, readYaml, valuesYaml, type KeyLine, type Values } from "../override-yaml";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+export function helmValuesQueryOptions(request: PlanRequest | undefined, opened: boolean) {
+  const valuesKey = JSON.stringify(request ?? null);
+  return {
+    queryKey: ["helm-values", valuesKey] as const,
+    queryFn: (): Promise<HelmValues> => deployApi.helmValues(request!),
+    enabled: opened && !!request,
+    retry: false as const,
+    staleTime: Infinity,
+    // Dropped when the sheet closes: they last one install or upgrade.
+    gcTime: 0,
+  };
+}
+
+function useDialogOpen(onOpenChange?: (open: boolean) => void) {
+  const [open, setOpen] = useState(false);
+  const set = (next: boolean) => {
+    setOpen(next);
+    onOpenChange?.(next);
+  };
+  return [open, () => set(true), () => set(false)] as const;
+}
 
 // The Advanced section's Override YAML: a summary in the form, its editor in a dialog.
 // The chart's values and swissd's layers for the form as it stands, without
@@ -38,16 +61,16 @@ export interface HelmValuesSource {
   load: () => Promise<HelmValues | undefined>;
 }
 
-export function OverrideYaml({ value, onChange, source }: {
+export function OverrideYaml({ value, onChange, source, onOpenChange }: {
   value: string;
   onChange: (edits: string) => void;
   source?: HelmValuesSource;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const t = useT();
   const f = (k: string) => t(`deploy.fields.${k}`);
-  const [open, setOpen] = useState(false);
+  const [open, edit, close] = useDialogOpen(onOpenChange);
   const paths = overridePaths(value);
-  const edit = () => setOpen(true);
   return (
     <>
       <FloatingField
@@ -75,7 +98,29 @@ export function OverrideYaml({ value, onChange, source }: {
           className="cursor-pointer font-mono text-xs"
         />
       </FloatingField>
-      {open && <OverrideDialog value={value} source={source} onClose={() => setOpen(false)} onSave={(edits) => (onChange(edits), setOpen(false))} />}
+      {open && <OverrideDialog value={value} source={source} onClose={close} onSave={(edits) => (onChange(edits), close())} />}
+    </>
+  );
+}
+
+export function OverrideYamlButton({ value, onChange, source, disabled, onOpenChange }: {
+  value: string;
+  onChange: (edits: string) => void;
+  source?: HelmValuesSource;
+  disabled?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const t = useT();
+  const [open, edit, close] = useDialogOpen(onOpenChange);
+  const paths = overridePaths(value);
+  return (
+    <>
+      <Button variant="outline" disabled={disabled} onClick={edit}>
+        <Pencil className="size-3.5" />
+        {t("deploy.fields.edits")}
+        {!!paths?.length && <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{paths.length}</Badge>}
+      </Button>
+      {open && <OverrideDialog value={value} source={source} onClose={close} onSave={(edits) => (onChange(edits), close())} />}
     </>
   );
 }
@@ -112,19 +157,17 @@ function OverrideDialog({ value, source, onClose, onSave }: {
   const t = useT();
   const o = (k: string, params?: Record<string, string | number>) => t(`deploy.overrides.${k}`, params);
   const [draft, setDraft] = useState(value);
-  // Values read earlier for this form open the tabs straight away.
+  // Values read earlier for this form open the tabs straight away; otherwise load them on open.
   const [loaded, setLoaded] = useState(() => (source?.data ? loadedFor(source.data, value) : undefined));
   const [final, setFinal] = useState(() => loaded?.computed ?? "");
-  // Values that arrive with the dialog open, as when the form settles onto a
-  // request read before, fill the tabs with the overrides as they stand.
   useEffect(() => {
     if (loaded || !source?.data) return;
     const l = loadedFor(source.data, draft);
     if (!l) return;
     setLoaded(l);
     setFinal(l.computed);
-  }, [source?.data]);
-  const [tab, setTab] = useState<Tab>(loaded ? "final" : "edit");
+  }, [loaded, source?.data, draft]);
+  const [tab, setTab] = useState<Tab>(source ? "final" : "edit");
   // Two editors: edit.yaml is the overrides as stored, Final values the merged
   // values once the chart's are loaded. Switching tabs carries one into the other.
   const onFinal = tab === "final" && !!loaded;
@@ -149,7 +192,8 @@ function OverrideDialog({ value, source, onClose, onSave }: {
   };
   // Rebuilds the merged tabs over these overrides, with the values already read.
   const rebuild = (edits: string) => {
-    const l = loaded && loadedFor(loaded.values, edits);
+    const values = loaded?.values ?? source?.data;
+    const l = values && loadedFor(values, edits);
     if (!l) return;
     setLoaded(l);
     setFinal(l.computed);
@@ -169,10 +213,10 @@ function OverrideDialog({ value, source, onClose, onSave }: {
   const loadValues = async () => {
     const edits = overridesNow();
     if (edits === undefined || !source) return;
-    setDraft(edits);
     const values = await source.load();
     const l = values && loadedFor(values, edits);
     if (!l) return;
+    setDraft(edits);
     setLoaded(l);
     setFinal(l.computed);
     setTab("final");
@@ -216,44 +260,64 @@ function OverrideDialog({ value, source, onClose, onSave }: {
         {/* In merge order: what the chart ships, what this deploy sets over it, the overrides as stored, and the result. */}
         <Tabs value={tab} onValueChange={(v) => switchTab(v as Tab)} className="min-h-0 min-w-0 flex-1 gap-2">
           <div className="flex items-center gap-2">
+            <TabsList>
+              <TabsTrigger value="defaults" className="text-muted-foreground">
+                <Lock className="size-3 opacity-60" />
+                {o("chart")}
+                <Badge variant="secondary" className="h-4 px-1.5 text-[10px] text-muted-foreground">{o("readOnly")}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="overrides" className="text-muted-foreground">
+                <Lock className="size-3 opacity-60" />
+                {o("swiss")}
+                <Badge variant="secondary" className="h-4 px-1.5 text-[10px] text-muted-foreground">{o("readOnly")}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="edit">{o("edit")}</TabsTrigger>
+              <TabsTrigger value="final" className="text-primary data-active:text-primary">
+                {o("final")}
+                <Badge variant="info" className="h-4 px-1.5 text-[10px]">{o("recommended")}</Badge>
+              </TabsTrigger>
+            </TabsList>
             {source && (
-              <Button onClick={loadValues} disabled={source.loading || !!read.error}>
-                {source.loading ? o("loading") : o("load")}
+              <Button variant="outline" size="xs" className="ml-auto" disabled={source.loading || !!read.error} onClick={loadValues}>
+                {o(source.loading ? "loading" : "load")}
               </Button>
             )}
-            <TabsList>
-              <TabsTrigger value="defaults">{o("chart")}</TabsTrigger>
-              <TabsTrigger value="overrides">{o("swiss")}</TabsTrigger>
-              <TabsTrigger value="edit">{o("edit")}</TabsTrigger>
-              <TabsTrigger value="final">{o("final")}</TabsTrigger>
-            </TabsList>
           </div>
           <TabsContent value="defaults" className={TAB}>
             {loaded ? (
               <>
-                <p className="text-xs text-muted-foreground">{o("chartHint")}</p>
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Lock className="size-3 shrink-0" />
+                  <span>{o("chartHint")}</span>
+                </p>
                 <div ref={defaultsBox} className={TAB}>
-                  <ReadOnlyYaml language="yaml" lineNumbers value={loaded.values.defaults} downloadName="values.yaml" maxHeight="100%" className="min-h-0 flex-1" />
+                  <ReadOnlyYaml language="yaml" lineNumbers value={loaded.values.defaults} downloadName="values.yaml" maxHeight="100%" className="min-h-0 flex-1 opacity-90" />
                 </div>
               </>
             ) : (
-              <NotLoaded text={o("notLoaded")} />
+              <NotLoaded text={o(source?.loading ? "loading" : "notLoaded")} />
             )}
           </TabsContent>
           <TabsContent value="overrides" className={TAB}>
             {loaded ? (
               <>
-                <p className="text-xs text-muted-foreground">{o("swissHint")}</p>
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Lock className="size-3 shrink-0" />
+                  <span>{o("swissHint")}</span>
+                </p>
                 <div ref={overridesBox} className={TAB}>
-                  <ReadOnlyYaml language="yaml" lineNumbers value={loaded.overrides} downloadName="overrides.yaml" maxHeight="100%" className="min-h-0 flex-1" />
+                  <ReadOnlyYaml language="yaml" lineNumbers value={loaded.overrides} downloadName="overrides.yaml" maxHeight="100%" className="min-h-0 flex-1 opacity-90" />
                 </div>
               </>
             ) : (
-              <NotLoaded text={o("notLoaded")} />
+              <NotLoaded text={o(source?.loading ? "loading" : "notLoaded")} />
             )}
           </TabsContent>
           <TabsContent value="edit" className={TAB}>
-            <p className="text-xs text-muted-foreground">{o("editHint")}</p>
+            <p className="flex items-center gap-1.5 rounded-md border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-xs text-warning">
+              <TriangleAlert className="size-3.5 shrink-0" />
+              <span>{o("editHint")}</span>
+            </p>
             <YamlTextarea ref={editEditor} aria-label={o("edit")} invalid={tab === "edit" && !!read.error} value={draft} onChange={setDraft} className="min-h-0 flex-1" />
           </TabsContent>
           <TabsContent value="final" className={TAB}>
@@ -263,7 +327,7 @@ function OverrideDialog({ value, source, onClose, onSave }: {
                 <YamlTextarea ref={finalEditor} aria-label={o("final")} invalid={onFinal && !!read.error} value={final} onChange={setText} className="min-h-0 flex-1" />
               </>
             ) : (
-              <NotLoaded text={o("notLoaded")} />
+              <NotLoaded text={o(source?.loading ? "loading" : "notLoaded")} />
             )}
           </TabsContent>
         </Tabs>

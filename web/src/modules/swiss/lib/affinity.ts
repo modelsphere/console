@@ -76,8 +76,8 @@ function set(t: Tree, path: string, value: unknown) {
 // left out stays: so a list emptied of rules cannot always go as []. A role's
 // affinityReplace with no rule left goes to null, which the chart reads as
 // inherit, and empty nodeSelectorTerms, which Kubernetes refuses, take their
-// required block to null. Products picked mean swissd writes the top-level
-// terms itself.
+// required block to null. With products picked, emptied top-level terms go as
+// [], which swissd fills with the product term.
 export function setAffinity(overrides: Tree, rules: AffinityRule[], gpuPicked: boolean) {
   for (const scope of new Set(rules.map((r) => r.scope))) {
     const mine = rules.filter((r) => r.scope === scope);
@@ -88,8 +88,8 @@ export function setAffinity(overrides: Tree, rules: AffinityRule[], gpuPicked: b
     for (const list of new Set(mine.map((r) => r.list))) {
       const kept = mine.filter((r) => r.list === list && !r.drop).map((r) => r.rule);
       if (kept.length > 0) set(overrides, `${scope}.${list}`, kept);
-      else if (list !== LISTS[0]) set(overrides, `${scope}.${list}`, []);
-      else if (!(scope === "affinity" && gpuPicked)) set(overrides, `${scope}.${REQUIRED_NODE}`, null);
+      else if (list !== LISTS[0] || (scope === "affinity" && gpuPicked)) set(overrides, `${scope}.${list}`, []);
+      else set(overrides, `${scope}.${REQUIRED_NODE}`, null);
     }
   }
 }

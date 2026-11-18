@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   AlertDescription,
@@ -24,32 +24,34 @@ import {
   useAnchorNav,
   useDirty,
 } from "@modelsphere/ui";
-import { ArrowRight, FlaskConical, TriangleAlert } from "lucide-react";
+import { ArrowRight, FlaskConical, RefreshCw, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
 import { applyFlags, imageOf, reseed, siteSwitchDefaults, switchDefaults, videoForm, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
 import { videoProblem, videoSeed } from "@swiss/lib/video";
 import { EMPTY, formFromPlan, planRequest } from "../deployment-settings";
+import { useImageSlots } from "@swiss/lib/useImageSlots";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
 import { Provenance } from "@swiss/components/Provenance";
 import { DiffView } from "@swiss/components/DiffView";
 import { deployCapacity, gpuShort, pickableProducts, productChoices, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { isChartRange, movableCatalogs } from "@swiss/lib/upgrade";
-import { CHECK_MS, inputRows, inputsAnswered, siteSaves, type SiteSave } from "@swiss/lib/inputs";
+import { CHECK_MS, INPUTS_ANNOTATION, inputRows, inputsAnswered, releaseInputState, siteSaves, type SiteSave } from "@swiss/lib/inputs";
 import { affinityInvalid } from "@swiss/lib/affinity";
 import { saveSiteAnswers } from "@swiss/lib/siteAnswers";
 import { messageOf, useToast } from "@swiss/components/ui/toast";
 import { useDebounced } from "@swiss/lib/useDebounced";
 import { cacheCard } from "@swiss/lib/cache";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
+import { usePausePolling } from "@swiss/lib/polling";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
-import { SECTIONS, VIDEO_SECTIONS, chartChoice, formKind, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
+import { SECTIONS, VIDEO_SECTIONS, chartChoice, clusterTaints, formKind, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
-import type { HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
+import { OverrideYamlButton, helmValuesQueryOptions, type HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
 import { AdaptivePlanChangedError, composeAdaptivePlan, withAdaptiveConcurrency } from "../adaptive-concurrency";
-import { composeRecoveryPlan, composeRecoveryValuesRequest, RecoveryPlanChangedError } from "../recovery-compose";
+import { composeRecoveryPlan, RecoveryPlanChangedError } from "../recovery-compose";
 import { RecoveryFields } from "./RecoveryFields";
 import { mergeValues, planValues, recoveryError, recoveryInputError, recoverySettings, withRecovery } from "../recovery";
 import { readRouteOptions } from "@/modules/inferences/api";
@@ -68,6 +70,7 @@ export function DeploySheet({ target, onClose }: { target: DeployTarget | null; 
 }
 
 function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: () => void }) {
+  usePausePolling();
   const t = useT();
   const p = useModulePath();
   const navigate = useNavigate();
@@ -76,7 +79,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const upgrade = target.kind === "upgrade";
 
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
-  const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes, retry: false });
+  // One read per deploy, shared by the whole sheet: its own entry, never
+  // refetched unless asked, and dropped when the sheet closes.
+  const nodes = useQuery({ queryKey: ["deploy-nodes"], queryFn: api.nodes, retry: false, staleTime: Infinity, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false });
   // A fresh deploy's switches start from the site's defaults; a profile it
   // cannot read leaves them at EMPTY's. An upgrade starts from its own plan.
   const profile = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false });
@@ -99,7 +104,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const catalogName = moveTo || ownCatalog;
 
   const indexes = useQueries({
-    queries: catalogs.map((c) => ({ queryKey: ["catalog", c.name], queryFn: () => api.catalog(c.name), enabled: upgrade || c.name === ownCatalog })),
+    queries: catalogs.map((c) => ({ queryKey: ["catalog", c.name], queryFn: () => api.catalog(c.name), enabled: upgrade || c.name === ownCatalog, retry: false })),
   });
   const modelIn = (name?: string): CatalogModel | undefined =>
     indexes[catalogs.findIndex((c) => c.name === name)]?.data?.models.find((m) => m.name === modelName);
@@ -122,6 +127,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     queryKey: ["model", catalogName, modelName, keptVariant, version],
     queryFn: () => api.model(modelName!, { catalog: catalogName, variant: keptVariant || undefined, version: version || undefined }),
     enabled: !!modelName && !!catalogName,
+    placeholderData: keepPreviousData,
   });
   const v = entry.data?.variant;
   // A video variant (or release) shares the LLM form: it adds the video chart's own fields and drops what only an LLM chart takes.
@@ -151,30 +157,46 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   if (current.data && !seedPlan) setSeedPlan(current.data);
   const deployModel = upgrade ? "" : target.model;
   const variantValues = entry.data?.variant.values;
-  const initial = useMemo<Form>(() => (upgrade ? (seedPlan ? formFromPlan(seedPlan) : EMPTY) : { ...EMPTY, serviceId: defaultServiceId(deployModel) }), [upgrade, seedPlan, deployModel]);
+  const gpuSpecs = profile.data?.profile?.nodes?.gpus;
+  const deployForm = useMemo<Form>(
+    () => (upgrade ? EMPTY : { ...EMPTY, serviceId: defaultServiceId(deployModel) }),
+    [upgrade, deployModel],
+  );
   const initialRecovery = useMemo(() => recoverySettings(
     upgrade && seedPlan ? planValues(seedPlan) : mergeValues(entry.data?.variant.values, profile.data?.profile?.extra),
   ), [upgrade, seedPlan, entry.data?.variant.values, profile.data?.profile?.extra]);
   const [recoveryPatch, setRecoveryPatch] = useState<Partial<ReturnType<typeof recoverySettings>>>({});
   const recovery = { ...initialRecovery, ...recoveryPatch };
-  const [form, setForm] = useState<Form>(initial);
+  const [form, setForm] = useState<Form>(deployForm);
   const checkedInputs = useDebounced(form.inputs, CHECK_MS);
   const [remember, setRemember] = useState<Record<string, boolean>>({});
-  const catalogRoute = upgrade && current.data ? initial.route || initial.serviceId || target.release : undefined;
+  const [upgradeSeed, setUpgradeSeed] = useState<Form>();
+  useEffect(() => {
+    if (!upgrade || !seedPlan || !v || profile.isPending || upgradeSeed) return;
+    const seeded = formFromPlan(seedPlan, gpuSpecs, v);
+    setUpgradeSeed(seeded);
+    setForm(seeded);
+  }, [upgrade, seedPlan, v, profile.isPending, gpuSpecs, upgradeSeed]);
+  const catalogRoute = useMemo(() => {
+    if (!upgrade || !seedPlan) return undefined;
+    const base = upgradeSeed ?? formFromPlan(seedPlan);
+    return base.route || base.serviceId || target.release;
+  }, [upgrade, seedPlan, upgradeSeed, target]);
   const routeOptions = useQuery({
     queryKey: ["route-options", catalogRoute ?? ""],
     queryFn: ({ signal }) => readRouteOptions(catalogRoute, signal),
-    enabled: !upgrade || !!current.data,
+    enabled: !upgrade || !!seedPlan,
     staleTime: 30_000,
     retry: false,
   });
-  useEffect(() => setForm(initial), [initial]);
   const [seed, setSeed] = useState<SwitchDefaults | null>(null);
   // A fresh video deploy's untouched form is the video seed, not EMPTY.
-  const baseline = !upgrade && video ? videoForm(initial, variantValues) : initial;
-  const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: seed ? reseed(baseline, {}, seed) : baseline, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
+  const baseline = !upgrade && video ? videoForm(deployForm, variantValues) : deployForm;
+  const initial = upgrade ? (upgradeSeed ?? EMPTY) : (seed ? reseed(baseline, {}, seed) : baseline);
+  const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
 
   const [step, setStep] = useState<"form" | "review">("form");
+  const [yamlOpen, setYamlOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [expanded, setExpanded] = useState(OPEN);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -187,7 +209,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // The form shows only once the entry and profile have loaded, so the first
   // seed lands before any plan; a later one is another variant or version, and
   // a plan composed from the old switches goes with it.
-  const seedReady = !upgrade && !!entry.data && !profile.isPending;
+  const seedReady = !upgrade && !!entry.data && !entry.isPlaceholderData && !profile.isPending;
   const siteDefaults = useMemo(() => siteSwitchDefaults(profile.data), [profile.data]);
   useEffect(() => {
     if (!seedReady) return;
@@ -221,7 +243,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   // A product the variant does not list is one swissd takes only as forced.
   const forceGpuProducts = unlistedProducts(v?.requires.gpuProduct, form.gpuProducts).length > 0;
   const change = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
-  const inputs = inputRows(v?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", modelName ?? "", v?.values, upgrade ? current.data?.layers?.form : undefined);
+  const inputsAnnotation = upgrade ? seedPlan?.additionalAnnotations?.[INPUTS_ANNOTATION] : undefined;
+  const inputs = inputRows(v?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", modelName ?? "", v?.values, upgrade ? seedPlan?.layers?.form : undefined, inputsAnnotation);
+  const droppedInputs = upgrade && entry.data ? releaseInputState(v?.inputs ?? [], v?.values, seedPlan?.layers?.form, inputsAnnotation).dropped : [];
   // A profile swissd did not parse is not written to from here.
   const canRemember = profile.data?.yaml !== undefined && !profile.data.error && !!cluster.data?.allowDeploy;
   const saves = canRemember ? siteSaves(inputs, form.inputs, remember) : [];
@@ -229,44 +253,47 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const requestFor = (f: Form) => planRequest(
     { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
     upgrade
-      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, formLayer: seedPlan?.layers?.form, video }
-      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, inputs: v?.inputs, video },
+      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: entry.data ? (v?.inputs ?? []) : undefined, inputsAnnotation: seedPlan?.additionalAnnotations?.[INPUTS_ANNOTATION], hf: entry.data?.model.source?.hf, formLayer: seedPlan?.layers?.form, values: v?.values ?? seedPlan?.layers?.catalog, video }
+      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: v?.inputs, hf: entry.data?.model.source?.hf, values: v?.values, video },
     profile.data?.profile,
   );
-  // The chart's values and swissd's layers for this form, without the
-  // overrides, which the editor merges itself. Cached per request while the
-  // sheet is open, so saving the overrides and editing them again does not
-  // read the chart again.
+  // An upgrade waits for the profile too: it decides Monitor (planRequest).
+  const baseLoading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
+  const error = cluster.error ?? current.error ?? entry.error;
+  const nextSeed = useMemo(() => (seedReady ? switchDefaults(siteDefaults, variantValues) : null), [seedReady, siteDefaults, variantValues]);
+  const formSeeded = upgrade ? !!upgradeSeed : !!seed && !!nextSeed && JSON.stringify(seed) === JSON.stringify(nextSeed);
+  const loading = baseLoading || (!error && !formSeeded);
+  // Chart discovery (images and per-role chart defaults) runs once on open after
+  // the form is seeded, on target changes, and on manual refresh.
+  // Override YAML runs its own standalone dry-run when opened so form edits stay quiet.
+  const canDiscover = !loading && !error && !entry.isPlaceholderData && (!upgrade || !!recorded) && cluster.data?.allowDeploy !== false;
   const compositionError = (error: unknown) => {
     if (error instanceof RecoveryPlanChangedError) return new Error(t("deploy.recovery.errors.changedPlan"));
     if (error instanceof AdaptivePlanChangedError) return new Error(t("deploy.fields.adaptiveChanged"));
     return error;
   };
-  const valuesForm = { ...form, edits: "" };
   // A video route has no recovery or adaptive concurrency: its form has no routing section.
-  const valuesRequest = upgrade && !recorded ? undefined : video ? requestFor(valuesForm) : withAdaptiveConcurrency(withRecovery(requestFor(valuesForm), recovery), valuesForm, routeOptions.data);
-  const helmValues = useQuery({
-    queryKey: ["helmValues", JSON.stringify(valuesRequest ?? null)],
-    queryFn: async () => {
-      try {
-        if (video) return await deployApi.helmValues(requestFor(valuesForm));
-        const request = await composeRecoveryValuesRequest(requestFor(valuesForm), recovery, (next) => composeAdaptivePlan(next, valuesForm, routeOptions.data, deployApi.plan, catalogName), catalogName);
-        return await deployApi.helmValues(request);
-      } catch (error) {
-        throw compositionError(error);
-      }
-    },
-    enabled: false,
-    staleTime: Infinity,
-    // Dropped when the sheet closes: they last one install or upgrade.
-    gcTime: 0,
-    retry: false,
-  });
+  const routedRequest = (f: Form) => (video ? requestFor(f) : withAdaptiveConcurrency(withRecovery(requestFor(f), recovery), f, routeOptions.data));
+  const preview = useImageSlots(
+    form,
+    (f) => (canDiscover ? routedRequest(f) : undefined),
+    canDiscover,
+    gpuSpecs,
+  );
+  // Freeze the form and actions while prefill (initial seed, target variant
+  // fetch, or chart dry-run discovery for resources/PD/images) is in flight.
+  const prefilling = loading || entry.isFetching || preview.fetching;
+  const valuesRequest = canDiscover ? routedRequest({ ...form, edits: "" }) : undefined;
+  const helmValues = useQuery(helmValuesQueryOptions(valuesRequest, yamlOpen && step === "form" && canDiscover));
   const valuesSource: HelmValuesSource = {
     data: helmValues.data,
     loading: helmValues.isFetching,
-    error: helmValues.error,
-    load: async () => (valuesRequest ? (await helmValues.refetch()).data : undefined),
+    error: helmValues.error instanceof Error ? helmValues.error : helmValues.error ? new Error(String(helmValues.error)) : null,
+    load: async () => {
+      if (!valuesRequest) return undefined;
+      const res = await helmValues.refetch({ cancelRefetch: false });
+      return res.error ? undefined : res.data;
+    },
   };
   const compose = useMutation({
     mutationFn: async () => {
@@ -333,9 +360,6 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   };
 
   const readOnly = cluster.data && !cluster.data.allowDeploy;
-  // An upgrade waits for the profile too: it decides Monitor (planRequest).
-  const loading = cluster.isPending || (upgrade && current.isPending) || profile.isPending || entry.isPending;
-  const error = cluster.error ?? current.error ?? entry.error;
   const keepOption = (label: string) => ({ value: KEEP, label });
 
   const targetFields = (
@@ -475,22 +499,40 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()} dirty={dirty && step === "form"} onDiscard={onClose}>
     <SheetContent size="2xl" className="gap-0">
-      <SheetHeader className="border-b px-5 py-3.5">
-        <SheetTitle>{upgrade ? t("deploy.titleUpgrade", { release: target.release }) : t("deploy.title")}</SheetTitle>
-        <SheetDescription>{upgrade ? t("deploy.descriptionUpgrade") : t("deploy.description")}</SheetDescription>
+      <SheetHeader className="border-b py-3.5 pl-5 pr-12">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 space-y-0.5">
+            <SheetTitle>{upgrade ? t("deploy.titleUpgrade", { release: target.release }) : t("deploy.title")}</SheetTitle>
+            <SheetDescription>{upgrade ? t("deploy.descriptionUpgrade") : t("deploy.description")}</SheetDescription>
+          </div>
+          {step === "form" && canDiscover && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={prefilling}
+              onClick={() => void preview.reload()}
+              title={t("deploy.refreshPreviewHint")}
+            >
+              <RefreshCw className={cn("size-3.5", prefilling && "animate-spin")} />
+              {t("common:actions.refresh")}
+            </Button>
+          )}
+        </div>
       </SheetHeader>
 
       {step === "form" && !loading && !error && (
         <div className={cn("flex gap-1 border-b px-5 py-2", nav.scrolled && "shadow-sm")}>
           {sections.map((s) => (
-            <Button key={s} variant="ghost" size="sm" className={cn("text-muted-foreground", nav.active === s && "bg-muted text-foreground")} onClick={() => nav.go(s)}>
+            <Button key={s} variant="ghost" size="sm" disabled={prefilling} className={cn("text-muted-foreground", nav.active === s && "bg-muted text-foreground")} onClick={() => nav.go(s)}>
               {t(`deploy.sections.${upgrade && s === "basic" ? "target" : s}`)}
             </Button>
           ))}
         </div>
       )}
 
-      <SheetBody ref={step === "form" ? nav.ref : undefined} className="relative min-h-0 flex-1 space-y-4 overflow-auto bg-surface-page px-5 py-4">
+      <SheetBody ref={step === "form" ? nav.ref : undefined} className={cn("relative min-h-0 flex-1 space-y-4 overflow-auto bg-surface-page px-5 py-4", step === "form" && prefilling && !loading && "cursor-wait")}>
         {readOnly && (
           <Alert variant="warning">
             <TriangleAlert />
@@ -516,11 +558,19 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               form={form}
               onChange={change}
               upgrade={upgrade}
+              disabled={prefilling}
               submitted={submitted}
               recovery={<RecoveryFields settings={recovery} onChange={(patch) => setRecoveryPatch((previous) => ({ ...previous, ...patch }))} />}
               target={targetFields}
               cluster={cluster.data}
-              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: video ? undefined : imageOf(v, entry.data?.imageRepository), cache: video ? undefined : cache }}
+              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: video ? undefined : imageOf(v, entry.data?.imageRepository), imageMirror: profile.data?.profile?.registry?.mirror, cache: video ? undefined : cache }}
+              slots={preview.slots}
+              slotsError={preview.queryError}
+              resources={preview.resources}
+              pd={preview.pd}
+              nodes={nodes.data?.nodes}
+              gpuSpecs={gpuSpecs}
+              gpuVendor={v?.requires.vendor}
               gpuOptions={productChoices(v?.requires.gpuProduct, pickableProducts(nodes.data?.nodes, v?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource), form.gpuProducts)}
               gpuListed={v?.requires.gpuProduct}
               gpuResources={v?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, v.requires.vendor) : undefined}
@@ -535,10 +585,13 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               catalogRoute={catalogRoute}
               idPrefix={ID_PREFIX}
               helmValues={readOnly ? undefined : valuesSource}
+              onHelmValuesOpenChange={setYamlOpen}
               inputs={inputs}
+              droppedInputs={droppedInputs}
               remember={canRemember ? remember : undefined}
               onRemember={(key, on) => setRemember((r) => ({ ...r, [key]: on }))}
               presets={upgrade ? undefined : profile.data?.profile?.presets}
+              taints={clusterTaints(nodes.data?.nodes)}
               video={video}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />
@@ -569,7 +622,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
         {step === "form" ? (
           <>
             <SheetCancelButton />
-            <Button onClick={submit} disabled={!!readOnly || loading || compose.isPending || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)}>
+            <OverrideYamlButton value={form.edits} onChange={(edits) => change({ edits })} source={readOnly ? undefined : valuesSource} disabled={!!readOnly || prefilling} onOpenChange={setYamlOpen} />
+            <Button onClick={submit} disabled={!!readOnly || prefilling || compose.isPending || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity)}>
               {compose.isPending ? t("deploy.review.composing") : t("deploy.review.compose")}
             </Button>
           </>

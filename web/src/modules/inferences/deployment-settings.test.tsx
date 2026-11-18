@@ -65,4 +65,50 @@ describe("Monitor", () => {
     expect(html).toContain("models/monitor");
     expect(html).toContain("models/routes");
   });
+
+  it("merges preset and site extra env with catalog env in form overrides while leaving edit.yaml untouched", () => {
+    const profile: SiteProfile = {
+      name: "site",
+      model: { pathTemplate: "/models/{{name}}" },
+      extra: { env: [{ name: "SITE_ENV", value: "from-site" }] },
+      presets: {
+        roce: {
+          values: {
+            env: [{ name: "PRESET_ENV", value: "from-preset" }],
+            pd: { decode: { env: [{ name: "DECODE_PRESET", value: "1" }] } },
+          },
+        },
+      },
+    };
+    const values = {
+      env: [{ name: "CATALOG_ENV", value: "from-catalog" }],
+      pd: { decode: { env: [{ name: "CATALOG_DECODE", value: "0" }] } },
+    };
+    const form = {
+      ...EMPTY,
+      preset: "roce",
+      edits: "env:\n  - name: EDIT_ENV\n    value: from-edit\n",
+    };
+    const req = planRequest(form, { model: "model", values }, profile);
+    expect(req.overrides?.env).toEqual([
+      { name: "CATALOG_ENV", value: "from-catalog" },
+      { name: "SITE_ENV", value: "from-site" },
+      { name: "PRESET_ENV", value: "from-preset" },
+    ]);
+    expect(req.overrides?.pd).toEqual({
+      decode: {
+        env: [
+          { name: "CATALOG_DECODE", value: "0" },
+          { name: "DECODE_PRESET", value: "1" },
+        ],
+      },
+    });
+    expect(req.editsYAML).toBe("env:\n  - name: EDIT_ENV\n    value: from-edit");
+
+    const noPresetReq = planRequest(EMPTY, { model: "model", values }, profile);
+    expect(noPresetReq.overrides?.env).toEqual([
+      { name: "CATALOG_ENV", value: "from-catalog" },
+      { name: "SITE_ENV", value: "from-site" },
+    ]);
+  });
 });

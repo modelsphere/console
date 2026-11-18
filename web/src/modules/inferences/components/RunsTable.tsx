@@ -4,6 +4,7 @@ import { Badge, ResourceTable, type ResourceColumn } from "@modelsphere/ui";
 import type { ReactNode } from "react";
 import { formatDateTime, useModulePath } from "@/shell";
 import { api, type Run } from "@swiss/lib/api";
+import { usePollOptions } from "@swiss/lib/polling";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath } from "@/modules/inferences/lib";
 
@@ -38,10 +39,11 @@ export function RunsTable({
 }) {
   const t = useT();
   const p = useModulePath();
+  const poll = usePollOptions(20_000);
   const runs = useQuery({
     queryKey: ["runs", namespace ?? "", release ?? "", action ?? ""],
     queryFn: () => api.runs({ namespace, release, action, limit: 200 }),
-    refetchInterval: 20_000,
+    ...poll,
   });
 
   const columns: ResourceColumn<Run>[] = [

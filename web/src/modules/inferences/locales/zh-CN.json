@@ -74,7 +74,8 @@
       "catalog": "目录"
     },
     "behind": "落后目录",
-    "untracked": "未纳管"
+    "untracked": "未纳管",
+    "editedInPlace": "已在 swiss 外修改"
   },
   "actions": {
     "detail": "详情",
@@ -91,6 +92,7 @@
   "disabled": {
     "readOnly": "这个 swissd 是只读的：需要同时打开 server.allowDeploy 和 rbac.allowDeploy",
     "untracked": "没有纳管计划的 release 不能在这里升级",
+    "external": "非 swiss 部署",
     "current": "这已经是当前版本",
     "sloOff": "部署时没有开启 SLO，可在升级时打开",
     "sloPending": "部署完成后才能查看 SLO",
@@ -117,6 +119,7 @@
   "detail": {
     "back": "推理服务",
     "untracked": "未纳管：这个 release 旁没有部署计划",
+    "editedInPlace": "已在 swiss 外修改",
     "fields": {
       "namespace": "命名空间",
       "model": "模型",
@@ -403,6 +406,7 @@
     "titleUpgrade": "升级 {release}",
     "description": "选模型、选变体，生成部署计划，预览变更后再确认。",
     "descriptionUpgrade": "改目标或设置后生成新计划，预览变更后再确认。",
+    "refreshPreviewHint": "用当前设置重新执行 dry-run compose，刷新 chart 默认值",
     "sections": {
       "basic": "基本信息",
       "target": "升级目标",
@@ -557,6 +561,34 @@
       "gpuVerified": "已验证",
       "gpuUnverified": "未验证",
       "gpuForced": "{products}：未在此变体上验证，将强制部署",
+      "pdSectionTitle": "Prefill / Decode GPU 亲和",
+      "pdSectionHint": "按 PD 角色分别指定 GPU 型号亲和（pd.prefill.affinityReplace / pd.decode.affinityReplace）；留空使用变体或全局默认。GPU 资源、容器资源、容忍度、优先级与调度器仍全局共用。",
+      "pdColocateTitle": "Prefill / Decode（同 Pod 混布）",
+      "pdColocateNote": "两种角色共享同一 Pod，GPU 亲和与调度器沿用下方全局配置。",
+      "pdColocateRoleGpus": "{role}：{gpus} 卡",
+      "pdRoleMeta": "{gpus} 卡/Pod · {replicas} 副本",
+      "pdRoleMetaMultiNode": "{gpus} 卡/Pod · {replicas} × {size} 节点",
+      "pdRolePrefill": "Prefill",
+      "pdRoleDecode": "Decode",
+      "pdGpuProducts": "GPU 型号",
+      "pdGpuProductsHint": "覆盖 {role} Pod 的 GPU 亲和（pd.{role}.affinityReplace）；留空沿用变体或全局默认。",
+      "pdGpuInherit": "任意支持的型号（或全局默认）",
+      "pdGpuFromChart": "Chart/站点默认：{products}",
+      "pdGpuCustomReplace": "Chart/站点已定义 affinityReplace",
+      "pdGpuMissingLabelKey": "站点 GPU 配置中未对该资源设置节点 labelKey，请在覆盖 YAML 中配置 pd.{role}.affinityReplace。",
+      "containerResources": "容器资源",
+      "containerResourcesHint": "来自 chart 或站点默认配置的需求与上限（含大页内存）。留空则沿用占位里的默认值。",
+      "resourceColName": "资源",
+      "resourceColRequest": "需求 (Request)",
+      "resourceColLimit": "上限 (Limit)",
+      "resourceKeyPlaceholder": "cpu、memory、hugepages-2Mi...",
+      "resourceAdd": "添加资源",
+      "resourceReset": "恢复默认",
+      "resourceEmpty": "Chart 和站点默认配置未设置 CPU、内存或上限。",
+      "resourceGpuAuto": "随上方 GPU 设置",
+      "resourceGpuReserved": "GPU 数量由模型与上方 GPU 资源字段决定，请从此处移除。",
+      "resourceExists": "已在上方默认列表中。",
+      "resourceDuplicate": "资源名称重复。",
       "tolerations": "容忍",
       "tolerationsHint": "允许落到带污点的 GPU 节点",
       "tolKey": "Key",
@@ -566,6 +598,9 @@
       "tolAdd": "添加容忍",
       "anyEffect": "任意",
       "tolAny": "所有污点",
+      "tolTaints": "节点污点",
+      "tolTaintsHint": "本集群节点上的污点；选中即添加与之匹配的容忍",
+      "tolTaintNodes": "{n} 个节点",
       "preset": "预设",
       "presetHint": "站点配置中的值，合并进本次部署：列表保留两边的项，此处设置的值优先",
       "presetNone": "无",
@@ -584,10 +619,11 @@
       "inputRememberHint": "任何模型中声明了该键的变体都会采用它",
       "inputReplaces": "替换站点现有答案 {answer}",
       "inputFrom": {
-        "release": "当前发布",
         "site": "站点配置",
         "variant": "变体默认值"
       },
+      "inputDroppedDeprecated": "不再是输入项：{key}（{value}）",
+      "inputDroppedBroken": "与此变体不匹配：{key}（{value}）",
       "inputProblem": {
         "string": "需匹配 {pattern}",
         "integer": "请输入整数",
@@ -598,6 +634,12 @@
       "imageValue": "镜像（repository:tag）",
       "imageSite": "站点镜像仓库",
       "imageCatalog": "目录原始镜像",
+      "imageDefault": "默认镜像",
+      "images": "镜像",
+      "imagesHint": "每一行是一个 values 路径。留空则沿用占位里的镜像；填写的值写在 form 层。",
+      "imageCustom": "自定义",
+      "imageInherited": "沿用",
+      "imageSource": "引擎镜像来源",
       "modelRoute": "发布路由",
       "modelRouteHint": "向 openresty发布 ModelRoute",
       "route": "路由路径",
@@ -672,9 +714,11 @@
       "chartHint": "chart 自带的 values.yaml",
       "swiss": "覆盖值",
       "swissHint": "本次部署设置的全部值，各层已合并；null 表示删除 chart 默认值",
+      "readOnly": "只读",
       "edit": "edit.yaml",
-      "editHint": "保存下来的覆盖值，在本次部署的所有设置之上生效。删掉一行即去掉该覆盖；null 表示删除 chart 默认值。",
+      "editHint": "注意：直接覆盖在所有层之上生效，列表会整体替换而不会合并——仅在清楚影响时直接编辑此处（推荐在“最终 values”中编辑）。删掉一行即去掉该覆盖；null 表示删除 chart 默认值。",
       "final": "最终 values",
+      "recommended": "推荐",
       "finalHint": "在这里编辑；删除的 key 会记为 null",
       "changes": "{n, plural, =0 {没有改动} other {# 处改动}}",
       "notLoaded": "加载 chart values 后可查看。",
@@ -1061,6 +1105,10 @@
         "required": "必填",
         "duplicate": "重复填写",
         "conflict": "该值已表示此资源下的另一个型号"
+      },
+      "input": {
+        "required": "键必填",
+        "duplicate": "重复填写"
       }
     }
   },

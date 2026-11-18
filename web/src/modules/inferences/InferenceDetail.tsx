@@ -6,6 +6,7 @@ import { ArrowLeft, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api } from "@swiss/lib/api";
 import { isUninstalling } from "@swiss/lib/phase";
+import { pollOptions, usePollingPaused } from "@swiss/lib/polling";
 import { useReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { ReleaseObjects } from "@swiss/components/ReleaseObjects";
 import { Endpoint } from "@swiss/components/Endpoint";
@@ -37,13 +38,15 @@ export function InferenceDetail() {
   const [editingSLO, setEditingSLO] = useState(false);
   // Set by the deploy sheet after a first install with SLO on.
   const [sloSetup, setSloSetup] = useState(() => (location.state as { sloSetup?: boolean } | null)?.sloSetup === true);
+  const paused = usePollingPaused();
+  const poll = !upgrading && !paused;
 
   // Query keys match swiss's pages, so the two views share one cache.
   // Polling pauses while the upgrade sheet covers the page.
   const status = useQuery({
     queryKey: ["status", namespace, release],
     queryFn: () => api.status(namespace, release),
-    refetchInterval: upgrading ? false : 15_000,
+    ...pollOptions(poll, 15_000),
     enabled: !!namespace,
   });
   // A release swiss did not deploy has no plan beside it: untracked, not an error.
@@ -54,7 +57,7 @@ export function InferenceDetail() {
     enabled: !!namespace,
   });
   const cluster = useQuery({ queryKey: ["cluster"], queryFn: api.cluster });
-  const objects = useReleaseObjects(namespace, release, !upgrading);
+  const objects = useReleaseObjects(namespace, release, poll);
   const revisions = useQuery({
     queryKey: ["revisions", namespace, release],
     queryFn: () => api.revisions(namespace, release),
@@ -105,6 +108,8 @@ export function InferenceDetail() {
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
   const removing = isUninstalling(s);
   const blockedWrite = readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const external = s.external;
+  const untracked = !plan.data && plan.isError;
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
@@ -128,19 +133,19 @@ export function InferenceDetail() {
           backLabel={t("detail.back")}
           title={release}
           status={statusOf(releaseState(s), t, s.total > 0 ? `${s.ready}/${s.total}` : undefined)}
-          notice={!plan.data && plan.isError ? { tone: "warning", title: t("detail.untracked") } : undefined}
+          notice={untracked ? { tone: "warning", title: t("detail.untracked") } : s.editedInPlace ? { tone: "info", title: t("detail.editedInPlace") } : undefined}
           actions={[
             { key: "check", label: t("actions.check"), onClick: () => setTab("check") },
             {
               key: "slo",
               label: t("actions.slo"),
-              disabled: blockedWrite || (blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
+              disabled: blockedWrite || (external ? t("disabled.external") : blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
               onClick: () => setEditingSLO(true),
             },
             {
               key: "upgrade",
               label: t("actions.upgrade"),
-              disabled: blockedWrite || (!plan.data ? t("disabled.untracked") : false),
+              disabled: blockedWrite || (external ? t("disabled.external") : !plan.data ? t("disabled.untracked") : false),
               onClick: () => setUpgrading(true),
             },
             {
@@ -194,7 +199,7 @@ export function InferenceDetail() {
         )}
       </Tabs>
 
-      <SLOSheet target={sloOpen ? { namespace, release } : null} video={video} canEdit={!readOnly && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
+      <SLOSheet target={sloOpen ? { namespace, release } : null} video={video} canEdit={!readOnly && !removing && !external} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
       <DeploySheet target={upgrading ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
         target={uninstalling ? { namespace, release } : null}

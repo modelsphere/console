@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, Checkbox, DataSelect, SectionCard, cn } from "@modelsphere/ui";
 import { RefreshCw } from "lucide-react";
 import { formatDateTime } from "@/shell";
+import { usePollOptions } from "@swiss/lib/polling";
 import { useT } from "@/modules/inferences/i18n";
 import { ofRelease, warnings } from "@/modules/inferences/lib";
 import { workloadApi, type K8sEvent } from "@/modules/inferences/workload-api";
@@ -10,10 +11,11 @@ import { workloadApi, type K8sEvent } from "@/modules/inferences/workload-api";
 const ALL = "__all";
 
 export function useReleaseEvents(namespace: string, release: string, pods: readonly string[]) {
+  const poll = usePollOptions(15_000);
   const q = useQuery({
     queryKey: ["k8s-events", namespace, release],
     queryFn: () => workloadApi.events(namespace, release),
-    refetchInterval: 15_000,
+    ...poll,
     retry: false,
   });
   return { ...q, events: (q.data?.items ?? []).filter((e) => ofRelease(e.name, release, pods)) };

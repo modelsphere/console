@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
-import { ArrowRight, Check, ChevronLeft, ChevronsUpDown, TriangleAlert, Undo2 } from "lucide-react";
+import { ArrowRight, Check, ChevronLeft, ChevronsUpDown, RefreshCw, TriangleAlert, Undo2 } from "lucide-react";
 import {
   api,
   deployApi,
@@ -11,6 +11,7 @@ import {
   type ModelVariant,
   type Node,
   type Plan,
+  type PlanRequest,
   type CatalogRevision,
   type Tuning,
 } from "@swiss/lib/api";
@@ -25,12 +26,14 @@ import {
   planRequest,
   type Form,
 } from "@swiss/components/DeploySettings";
+import { useImageSlots } from "@swiss/lib/useImageSlots";
+import { planPdInfo } from "@swiss/lib/pdRoles";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
 import { CatalogBadge, SchemaBadge, releaseCatalog as catalogOfRelease } from "@swiss/components/CatalogChoice";
 import { movableCatalogs } from "@swiss/lib/upgrade";
 import { cacheCard } from "@swiss/lib/cache";
-import { CHECK_MS, inputRows, inputsAnswered, siteSaves } from "@swiss/lib/inputs";
+import { CHECK_MS, INPUTS_ANNOTATION, inputRows, inputsAnswered, releaseInputState, siteSaves } from "@swiss/lib/inputs";
 import { affinityInvalid } from "@swiss/lib/affinity";
 import { SiteSaves, useSiteSaver } from "@swiss/components/SiteSaves";
 import { useDebounced } from "@swiss/lib/useDebounced";
@@ -41,6 +44,7 @@ import { Dialog } from "@swiss/components/ui/dialog";
 import { isVideo, videoProblem } from "@swiss/lib/video";
 import { deployCapacity, gpuCount, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { Button } from "@swiss/components/ui/button";
+import { cn } from "@swiss/lib/utils";
 import { comparison, formatUplift, reportLink, sharedVersion, variantKind, workloadSummary } from "@swiss/lib/catalog";
 import { isUninstalling } from "@swiss/lib/phase";
 
@@ -142,11 +146,18 @@ export function Upgrade() {
   // rollback, from the revision being restored, which is what would come back.
   // An upgrade whose form starts empty would silently propose dropping every
   // setting.
+  const from = rollbackTo ? archived.data : current.data;
+  const seedReady =
+    !!from &&
+    !cluster.isPending &&
+    !profile.isPending &&
+    (!!rollbackTo || !catalogName || variantMissing || !entry.isPending);
+  const [seededFromPlan, setSeededFromPlan] = useState(false);
   useEffect(() => {
-    const from = rollbackTo ? archived.data : current.data;
-    if (!from) return;
-    setForm(formFromPlan(from));
-  }, [current.data, archived.data, rollbackTo]);
+    if (!seedReady || seededFromPlan) return;
+    setForm(formFromPlan(from, profile.data?.profile?.nodes?.gpus, rollbackTo ? undefined : entry.data?.variant));
+    setSeededFromPlan(true);
+  }, [seedReady, seededFromPlan, from, profile.data, rollbackTo, entry.data]);
 
   const reset = () => {
     setPlan(null);
@@ -159,26 +170,66 @@ export function Upgrade() {
     reset();
   };
 
+  // Before the early returns: the image dry run is a hook and has to see the
+  // same request compose sends. A rollback reapplies an archived plan, so it
+  // does not ask the chart what it would render.
+  const pin = entry.data?.variant;
+  const chart = chartVersionChoice({
+    running: current.data?.chart,
+    list: chartVersions,
+    value: chartVersion,
+    onChange: (v) => {
+      setChartVersion(v);
+      reset();
+    },
+  });
+  const cache = cacheCard(
+    profile.data?.profile,
+    pin,
+    { name: pin?.chart.name ?? current.data?.chart.name, version: chart.resolved ?? pin?.chart.version ?? current.data?.chart.version },
+  );
+  const requestOf = (f: Form): PlanRequest | undefined =>
+    current.data
+      ? planRequest(f, {
+          model: current.data.source.model,
+          version: version || undefined,
+          variant: variant || undefined,
+          catalog: moving ? targetCatalog : undefined,
+          chartVersion: chartVersion || undefined,
+          forceGpuProducts: unlistedProducts(keptPin?.requires.gpuProduct, f.gpuProducts).length > 0,
+          // The server carries forward anything the form does not cover, so a
+          // value set once from a flag survives the upgrade instead of being
+          // dropped by a form that never knew about it.
+          fromRelease: release,
+          cacheUnsupported: !!cache.unsupported,
+          // Until the target variant has loaded, leave the release's input writes as they are.
+          inputs: rollbackTo || !entry.data ? undefined : (entry.data.variant.inputs ?? []),
+          inputsAnnotation: rollbackTo ? undefined : current.data.additionalAnnotations?.[INPUTS_ANNOTATION],
+          siteInputs: profile.data?.profile?.inputs,
+          hf: entry.data?.model.source?.hf,
+          formLayer: current.data.layers?.form,
+          values: entry.data?.variant.values ?? current.data.layers?.catalog,
+          siteEnv: profile.data?.profile?.extra,
+          gpuSpecs: profile.data?.profile?.nodes?.gpus,
+          gpuVendor: keptPin?.requires.vendor ?? pin?.requires.vendor,
+          video,
+        })
+      : undefined;
+  // Chart discovery runs once on open after the form is seeded, on target changes, and on manual refresh.
+  // A rollback reapplies an archived plan and does not ask the chart.
+  const canDiscover =
+    !rollbackTo &&
+    seededFromPlan &&
+    !current.isPending &&
+    !!current.data &&
+    !cluster.isPending &&
+    !profile.isPending &&
+    (!catalogName || variantMissing || !entry.isPending) &&
+    cluster.data?.allowDeploy !== false;
+  const discovered = useImageSlots(form, (f) => (rollbackTo ? undefined : requestOf(f)), canDiscover, profile.data?.profile?.nodes?.gpus);
+
   const planM = useMutation({
-    mutationFn: () =>
-      deployApi.plan(
-        planRequest(form, {
-              model: current.data!.source.model,
-              version: version || undefined,
-              variant: variant || undefined,
-              catalog: moving ? targetCatalog : undefined,
-              chartVersion: chartVersion || undefined,
-              forceGpuProducts: unlistedProducts(keptPin?.requires.gpuProduct, form.gpuProducts).length > 0,
-              // The server carries forward anything the form does not cover, so a
-              // value set once from a flag survives the upgrade instead of being
-              // dropped by a form that never knew about it.
-              fromRelease: release,
-              cacheUnsupported: !!cache.unsupported,
-              inputs: entry.data?.variant.inputs,
-              formLayer: current.data!.layers?.form,
-              video,
-            })
-      ),
+    mutationFn: () => deployApi.plan(requestOf(form)!),
     // The previous plan is superseded the moment a recompose starts. Dropping
     // it here rather than on the way back means a failed compose leaves
     // nothing to act on, instead of a stale plan the error message sits behind.
@@ -230,25 +281,12 @@ export function Upgrade() {
     setPicking(false);
     reset();
   };
-  const chart = chartVersionChoice({
-    running: cur.chart,
-    list: chartVersions,
-    value: chartVersion,
-    onChange: (v) => {
-      setChartVersion(v);
-      reset();
-    },
-  });
-  const pin = entry.data?.variant;
-  const cache = cacheCard(
-    profile.data?.profile,
-    pin,
-    { name: pin?.chart.name ?? cur.chart.name, version: chart.resolved ?? pin?.chart.version ?? cur.chart.version },
-  );
   // What the pipeline acts on: a composed plan on an upgrade, the archive on a
   // rollback. Nothing else about the page differs.
   const target = rollbackTo ? (archived.data ?? null) : plan;
-  const inputs = inputRows(pin?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", current.data?.source.model ?? "", pin?.values, current.data?.layers?.form);
+  const inputsAnnotation = rollbackTo ? undefined : cur.additionalAnnotations?.[INPUTS_ANNOTATION];
+  const inputs = inputRows(pin?.inputs, profile.data?.profile, entry.data?.model.source?.hf ?? "", cur.source.model, pin?.values, cur.layers?.form, inputsAnnotation);
+  const droppedInputs = !rollbackTo && entry.data ? releaseInputState(pin?.inputs ?? [], pin?.values, cur.layers?.form, inputsAnnotation).dropped : [];
   // A rollback re-applies an archived plan: nothing typed, nothing to save.
   const remember = rollbackTo ? undefined : siteSaver.remember;
   const saves = remember ? siteSaves(inputs, form.inputs, remember) : [];
@@ -271,22 +309,38 @@ export function Upgrade() {
     <div className="space-y-5">
       <Back namespace={namespace} />
 
-      <div>
-        <h1 className="text-xl font-semibold">
-          {rollbackTo ? `Roll back ${release} to revision ${rollbackTo}` : `Upgrade ${release}`}
-        </h1>
-        <p className="mt-1 flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
-          <Badge variant="outline">{namespace}</Badge>
-          <CatalogBadge name={releaseCatalog ?? ""} show={catalogs.length > 1} />
-          <SchemaBadge schema={catalogs.find((c) => c.name === releaseCatalog)?.schema} /> {cur.source.model}
-          {cur.source.version && ` v${cur.source.version}`} · {cur.source.variant} · chart{" "}
-          {cur.chart.name}-{cur.chart.version}
-        </p>
-        {rollbackTo > 0 && (
-          <p className="mt-1 text-sm text-muted-foreground">
-            That is what is deployed now. Everything below is revision {rollbackTo}, as it ran
-            — a rollback re-applies it forward as a new revision.
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">
+            {rollbackTo ? `Roll back ${release} to revision ${rollbackTo}` : `Upgrade ${release}`}
+          </h1>
+          <p className="mt-1 flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
+            <Badge variant="outline">{namespace}</Badge>
+            <CatalogBadge name={releaseCatalog ?? ""} show={catalogs.length > 1} />
+            <SchemaBadge schema={catalogs.find((c) => c.name === releaseCatalog)?.schema} /> {cur.source.model}
+            {cur.source.version && ` v${cur.source.version}`} · {cur.source.variant} · chart{" "}
+            {cur.chart.name}-{cur.chart.version}
           </p>
+          {rollbackTo > 0 && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              That is what is deployed now. Everything below is revision {rollbackTo}, as it ran
+              — a rollback re-applies it forward as a new revision.
+            </p>
+          )}
+        </div>
+        {!rollbackTo && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            disabled={!canDiscover || discovered.fetching}
+            onClick={() => void discovered.reload()}
+            title="Re-run dry-run compose with the current settings to refresh chart defaults"
+          >
+            <RefreshCw className={cn("size-3.5", discovered.fetching && "animate-spin")} />
+            Refresh
+          </Button>
         )}
       </div>
 
@@ -471,29 +525,38 @@ export function Upgrade() {
           On a rollback it is the same form with nothing editable: the archived
           plan is re-applied as it ran, so a field that could be typed into
           would promise a change the rollback would not make. */}
-        <DeploySettings
-          form={form}
-          onChange={update}
-          cluster={cluster.data}
-          supportedGPUs={keptPin?.requires.gpuProduct}
-          clusterGPUs={pickableProducts(nodes.data?.nodes, keptPin?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
-          gpuResources={keptPin?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, keptPin.requires.vendor) : undefined}
-          capacity={
-            keptPin?.requires.gpus
-              ? { ...deployCapacity(keptPin.requires, form, nodes.data?.nodes, profile.data?.profile?.nodes?.gpus), refreshing: nodes.isFetching, onRefresh: () => nodes.refetch() }
-              : undefined
-          }
-          localPathDefault={entry.data?.localPath}
-          localPathPlaceholder={entry.data?.pathTemplate}
-          inputs={inputs}
-          remember={remember}
-          onRemember={siteSaver.onRemember}
-          image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
-          cache={cache}
-          lockIdentity
-          readOnly={rollbackTo > 0}
-          video={video}
-        />
+      <DeploySettings
+        form={form}
+        onChange={update}
+        cluster={cluster.data}
+        supportedGPUs={keptPin?.requires.gpuProduct}
+        clusterGPUs={pickableProducts(nodes.data?.nodes, keptPin?.requires.vendor, profile.data?.profile?.nodes?.gpus, form.gpuResource)}
+        gpuResources={keptPin?.requires.gpus && profile.data?.profile?.nodes?.gpus ? vendorResources(profile.data.profile.nodes.gpus, keptPin.requires.vendor) : undefined}
+        capacity={
+          keptPin?.requires.gpus
+            ? { ...deployCapacity(keptPin.requires, form, nodes.data?.nodes, profile.data?.profile?.nodes?.gpus), refreshing: nodes.isFetching, onRefresh: () => nodes.refetch() }
+            : undefined
+        }
+        localPathDefault={entry.data?.localPath}
+        localPathPlaceholder={entry.data?.pathTemplate}
+        inputs={inputs}
+        droppedInputs={droppedInputs}
+        remember={remember}
+        onRemember={siteSaver.onRemember}
+        image={imageOf(entry.data?.variant, entry.data?.imageRepository)}
+        imageMirror={profile.data?.profile?.registry?.mirror}
+        slots={rollbackTo ? undefined : discovered.slots}
+        slotsError={rollbackTo ? undefined : discovered.queryError}
+        resources={rollbackTo ? undefined : discovered.resources}
+        pd={rollbackTo ? planPdInfo(archived.data?.layers, profile.data?.profile?.nodes?.gpus) : discovered.pd}
+        nodes={nodes.data?.nodes}
+        gpuSpecs={profile.data?.profile?.nodes?.gpus}
+        gpuVendor={keptPin?.requires.vendor ?? pin?.requires.vendor}
+        cache={cache}
+        lockIdentity
+        readOnly={rollbackTo > 0}
+        video={video}
+      />
 
       <Pipeline
         namespace={namespace}
@@ -506,10 +569,7 @@ export function Upgrade() {
         onTab={setTab}
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
-        composeDisabled={
-          !rollbackTo &&
-          ((video && !!videoProblem(form.video)) || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity))
-        }
+        composeDisabled={!rollbackTo && (!seededFromPlan || (video && !!videoProblem(form.video)) || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity))}
         composeLabel={planM.isPending ? "Composing…" : plan ? "Recompose upgrade" : "Compose upgrade"}
         applyFlags={applyFlags(form)}
         onDiff={setDiff}

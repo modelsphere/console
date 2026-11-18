@@ -4,7 +4,7 @@ import { Plus, X } from "lucide-react";
 import type { RouteAuth, SiteProfile } from "@swiss/lib/api";
 import { useT } from "@/modules/inferences/i18n";
 import { fromRows, markDefault, toRows, withNodes, type Row } from "@/modules/inferences/profile-lib";
-import { answersText, parseAnswers } from "@swiss/lib/inputs";
+import { useSiteInputRows } from "@swiss/lib/useSiteInputRows";
 import { GpuTable } from "@/modules/inferences/components/GpuResources";
 import { PresetTable } from "@/modules/inferences/components/PresetTable";
 import { catalogErrors, FEATURES, featureOn, withFeature, type CatalogError } from "@swiss/lib/profile";
@@ -130,7 +130,7 @@ export function ProfileForm({
 
       {group(
         "inputs",
-        <KV label={f("inputs")} hint={f("inputsHint")} value={answersText(p.inputs)} onChange={(o) => set({ inputs: parseAnswers(o) })} />,
+        <SiteInputs label={f("inputs")} hint={f("inputsHint")} value={p.inputs} submitted={submitted} onChange={(inputs) => set({ inputs })} />,
       )}
 
       {group("presets", <PresetTable presets={p.presets} onChange={(presets) => set({ presets })} />)}
@@ -291,6 +291,54 @@ function CatalogRow({
         </div>
       )}
     </div>
+  );
+}
+
+function SiteInputs({
+  label,
+  hint,
+  value,
+  submitted,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value?: SiteProfile["inputs"];
+  submitted: boolean;
+  onChange: (v?: SiteProfile["inputs"]) => void;
+}) {
+  const t = useT();
+  const { rows, errors, add, edit, remove } = useSiteInputRows(value, onChange);
+  return (
+    <Group label={label} hint={hint}>
+      {rows.map((r, i) => {
+        const err = submitted ? errors[i] : undefined;
+        return (
+          <div key={i} className="space-y-1">
+            <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
+              <Input
+                value={r.key}
+                aria-invalid={!!err}
+                onChange={(e) => edit(i, { key: e.target.value })}
+                placeholder={t("profile.fields.key")}
+                aria-label={t("profile.fields.key")}
+                className="font-mono text-xs"
+              />
+              <Input
+                value={r.value}
+                onChange={(e) => edit(i, { value: e.target.value })}
+                placeholder={t("profile.fields.value")}
+                aria-label={t("profile.fields.value")}
+                className="font-mono text-xs"
+              />
+              <Remove onClick={() => remove(i)} />
+            </div>
+            {err && <p className="text-xs text-destructive">{t(`profile.errors.input.${err}`)}</p>}
+          </div>
+        );
+      })}
+      <Add label={t("profile.fields.add")} onClick={add} />
+    </Group>
   );
 }
 

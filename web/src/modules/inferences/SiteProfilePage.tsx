@@ -36,7 +36,7 @@ import { useT } from "@/modules/inferences/i18n";
 import { ProfileEditorBody, SaveButton, useProfileEditor } from "@/modules/inferences/components/ProfileEditor";
 import { catalogTokenKey, listSecrets } from "@/modules/inferences/catalog-write-api";
 import { markedWritable } from "@/modules/inferences/catalog-write-lib";
-import { answerText } from "@swiss/lib/inputs";
+import { answerText, siteInputList } from "@swiss/lib/inputs";
 
 export function SiteProfilePage() {
   const t = useT();
@@ -92,6 +92,7 @@ export function SiteProfilePage() {
 function ProfileView({ p }: { p: SiteProfile }) {
   const t = useT();
   const f = (k: string) => t(`profile.fields.${k}`);
+  const inputs = siteInputList(p.inputs);
   const v = (x: unknown) => (x === undefined || x === null || x === "" ? <span className="text-muted-foreground">{t("profile.unset")}</span> : String(x));
   const onOff = (on: boolean) => t(on ? "profile.on" : "profile.off");
   const unsetIs = (d: string) => <span className="text-muted-foreground">{t("profile.unsetIs", { value: d })}</span>;
@@ -166,7 +167,7 @@ function ProfileView({ p }: { p: SiteProfile }) {
         { label: f("overrides"), value: kv(p.model?.overrides) },
       ])}
       <SectionCard title={t("profile.groups.inputs")}>
-        {p.inputs && Object.keys(p.inputs).length ? (
+        {inputs.length ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -175,10 +176,10 @@ function ProfileView({ p }: { p: SiteProfile }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {Object.entries(p.inputs).map(([k, x]) => (
-                <TableRow key={k}>
-                  <TableCell className="font-mono text-xs break-all">{k}</TableCell>
-                  <TableCell className="font-mono text-xs break-all">{answerText(x)}</TableCell>
+              {inputs.map((s, i) => (
+                <TableRow key={`${s.key}-${i}`}>
+                  <TableCell className="font-mono text-xs whitespace-normal break-all">{s.key}</TableCell>
+                  <TableCell className="font-mono text-xs whitespace-normal break-all">{s.value == null ? v(undefined) : answerText(s.value)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

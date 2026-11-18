@@ -128,4 +128,30 @@ describe("mergeValues", () => {
       replicaCount: 2, image: { tag: "catalog", pullPolicy: "Always" }, probe: { port: null }, flags: ["--x"],
     });
   });
+
+  it("picks the whole modified env list into edits when edited in Final values", () => {
+    const base = parseValues([
+      "env:",
+      "  - name: CAT_A",
+      '    value: "1"',
+      "  - name: CAT_B",
+      '    value: "2"',
+    ].join("\n"));
+    const now = parseValues([
+      "env:",
+      "  - name: CAT_B",
+      '    value: "20"',
+      "  - name: EDIT_C",
+      '    value: "3"',
+    ].join("\n"));
+    expect(overrideEdit(base, {}, now)).toEqual({
+      edits: {
+        env: [
+          { name: "CAT_B", value: "20" },
+          { name: "EDIT_C", value: "3" },
+        ],
+      },
+      changes: 1,
+    });
+  });
 });
