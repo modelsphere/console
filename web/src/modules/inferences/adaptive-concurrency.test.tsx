@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EMPTY, planRequest } from "@swiss/components/DeploySettings";
 import type { Plan, PlanRequest } from "@swiss/lib/api";
-import { AdaptivePlanChangedError, composeAdaptivePlan, isAdaptiveOption, toggleAdaptive, withAdaptiveConcurrency } from "./adaptive-concurrency";
+import { AdaptivePlanChangedError, composeAdaptivePlan, composeReferencedPlan, isAdaptiveOption, toggleAdaptive, withAdaptiveConcurrency } from "./adaptive-concurrency";
 import { DeployForm } from "./components/DeployForm";
+import { RecoveryFields } from "./components/RecoveryFields";
+import { recoverySettings } from "./recovery";
 import type { RouteDirective, RouteOptions } from "./routeOptions";
 
 const directive = (key: string, needsAdaptive: boolean, group = "Adaptive concurrency"): RouteDirective => ({ key, label: key, group, needsAdaptive, kind: "number", detail: "help", fallback: "", value: null, set: false });
@@ -108,4 +110,83 @@ describe("unified adaptive concurrency settings", () => {
     await composeAdaptivePlan(active, form, options, compose);
     expect(compose).toHaveBeenCalledTimes(1);
   });
+});
+
+ describe("assigned experiment arm upgrade", () => {
+ it("disables every section except adaptive concurrency", () => {
+ const html = renderToStaticMarkup(<DeployForm form={form} adaptiveOnly upgrade onChange={() => {}} submitted={false} target={<input aria-label="version" />} defaults={{}} gpuOptions={[]} expanded={{ basic: true, resources: true, routing: true, advanced: true }} onExpand={() => {}} idPrefix="assigned-" routeOptions={options} />);
+ expect(html.match(/<fieldset disabled=""/g)).toHaveLength(5);
+ const adaptive = html.indexOf('aria-label="自适应并发"');
+ expect(adaptive).toBeGreaterThan(0);
+ expect(html.lastIndexOf("</fieldset>", adaptive)).toBeGreaterThan(html.lastIndexOf("<fieldset", adaptive));
+ expect(html).toContain("覆盖 YAML");
+ const switches = html.match(/<[^>]*role="switch"[^>]*>/g) ?? [];
+ expect(switches.length).toBeGreaterThan(3);
+ for (const control of switches) {
+  if (control.includes('aria-label="自适应并发"')) expect(control).not.toMatch(/aria-disabled="true"|\sdata-disabled=""/);
+  else expect(control).toMatch(/aria-disabled="true"|\sdata-disabled=""/);
+ }
+ });
+ });
+
+
+describe("referenced service UI protection", () => {
+ it("uses general live-plan composition and clears old dependent options", async () => {
+  const live = { ...validated, layers: { form: { modelRoute: { nginx: { values: { adaptive_cc: "true", adaptive_cc_ttl: "60", default_max: "42" } } } } } };
+  const updated = { ...live, layers: { form: { modelRoute: { nginx: { values: { adaptive_cc: "false", adaptive_cc_ttl: null, default_max: "42" } } } } } };
+  const compose = vi.fn().mockResolvedValue(updated);
+  expect(await composeReferencedPlan(live, { ...form, adaptiveCc: false }, options, compose)).toBe(updated);
+  expect(compose).toHaveBeenCalledWith({ reuseSource: true, fromRelease: live.release.name, namespace: live.release.namespace, overrides: { modelRoute: { nginx: { values: { adaptive_cc: "false", adaptive_cc_ttl: null } } } } });
+ });
+ it("allows the adaptive form layer to be created without other changes", async () => {
+  const live = { ...validated, layers: {} };
+  const updated = { ...live, layers: { form: { modelRoute: { nginx: { values: { adaptive_cc: "true" } } } } } };
+  expect(await composeReferencedPlan(live, { ...form, adaptiveCc: true }, options, vi.fn().mockResolvedValue(updated))).toBe(updated);
+ });
+ it.each([
+  { continuationGateway: { enabled: true } },
+  { storageKVOffload: { mooncake: { master: "changed.svc:50051" } } },
+  { affinity: { nodeAffinity: { requiredDuringSchedulingIgnoredDuringExecution: {} } } },
+ ])("rejects non-adaptive drift introduced by newer deployment settings: %j", async (changes) => {
+  const changed = { ...validated, layers: { ...validated.layers, form: { ...validated.layers.form, ...changes } } };
+  await expect(composeReferencedPlan(validated, form, options, vi.fn().mockResolvedValue(changed))).rejects.toBeInstanceOf(AdaptivePlanChangedError);
+ });
+ it("blocks a returned plan that changes source or ordinary values", async () => {
+  const changed = { ...validated, chart: { ...validated.chart, version: "unexpected" } };
+  await expect(composeReferencedPlan(validated, form, options, vi.fn().mockResolvedValue(changed))).rejects.toBeInstanceOf(AdaptivePlanChangedError);
+ });
+});
+
+
+describe("replica scaling controls", () => {
+ it("exposes autoscaling separately from SLO and sends a fixed replica count without YAML edits", () => {
+  const fixed = { ...form, slo: false, scaler: false, replicaCount: "2" };
+  const html = renderToStaticMarkup(<DeployForm form={fixed} onChange={() => {}} submitted={false} target={null} defaults={{}} gpuOptions={[]} expanded={{ basic: true, resources: true, routing: false, advanced: false }} onExpand={() => {}} idPrefix="fixed-" />);
+  expect(html).toContain('aria-label="自动伸缩"');
+  expect(html).toContain('aria-label="副本数"');
+  expect(html).not.toContain('aria-label="最少副本"');
+  expect(planRequest(fixed, { model: "weights" }).overrides).toMatchObject({ scaler: { enabled: false }, replicaCount: 2, sloRequirement: { enabled: false } });
+  expect(planRequest({ ...fixed, scaler: true }, { model: "weights" }).overrides).toMatchObject({ scaler: { enabled: true }, sloRequirement: { enabled: false } });
+ });
+ it("shows scaler bounds when enabled and locks them for assigned experiment arms", () => {
+  const html = renderToStaticMarkup(<DeployForm form={{ ...form, scaler: true }} adaptiveOnly upgrade onChange={() => {}} submitted={false} target={null} defaults={{}} gpuOptions={[]} expanded={{ basic: true, resources: true, routing: false, advanced: false }} onExpand={() => {}} idPrefix="scaled-" />);
+  expect(html).toContain('aria-label="最少副本"');
+  expect(html).toContain('aria-label="最多副本"');
+  const scaler = html.match(/<[^>]*role="switch"[^>]*aria-label="自动伸缩"[^>]*>/)?.[0];
+  expect(scaler).toMatch(/aria-disabled="true"|\sdata-disabled=""/);
+ });
+});
+
+
+describe("referenced arm recovery controls", () => {
+ it("locks recovery switches while leaving adaptive concurrency editable", () => {
+  const html = renderToStaticMarkup(<DeployForm form={form} adaptiveOnly upgrade onChange={() => {}} submitted={false} target={null} defaults={{}} gpuOptions={[]} expanded={{ basic: false, resources: false, routing: true, advanced: false }} onExpand={() => {}} idPrefix="recovery-" routeOptions={options} recovery={<RecoveryFields disabled settings={{ ...recoverySettings(), enabled: true }} onChange={() => {}} />} />);
+  expect(html).toContain("生成中断恢复");
+  const switches = html.match(/<[^>]*role="switch"[^>]*>/g) ?? [];
+  expect(switches.some(control => control.includes('aria-label="生成中断恢复"'))).toBe(true);
+  for (const control of switches) {
+   if (control.includes('aria-label="自适应并发"')) expect(control).not.toMatch(/aria-disabled="true"|\sdata-disabled=""/);
+   else expect(control).toMatch(/aria-disabled="true"|\sdata-disabled=""/);
+  }
+ });
 });

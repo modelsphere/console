@@ -11,6 +11,8 @@ import { Input } from "@swiss/components/ui/input";
 import { Switch } from "@swiss/components/ui/switch";
 import { messageOf, useToast } from "@swiss/components/ui/toast";
 import { ErrorState, Loading } from "@swiss/components/States";
+import type { ServicePolicySLO } from "@/extensions/types";
+import { useT } from "@/modules/inferences/i18n";
 import { cn } from "@swiss/lib/utils";
 
 const TYPES = ["avg", "p50", "p80", "p90", "p95", "p99"];
@@ -23,21 +25,25 @@ const TYPES = ["avg", "p50", "p80", "p90", "p95", "p99"];
 // stores priority as high or normal and no tier in between, a save merges so
 // only Reset clears a field, and it never creates a requirement — so with none
 // installed there is nothing here to edit.
-function useSLOForm(namespace: string, release: string, onSaved?: () => void) {
+function useSLOForm(namespace: string, release: string, onSaved?: () => void, sloPolicy?: ServicePolicySLO) {
   const qc = useQueryClient();
-  const slo = useQuery({
+  const inherited = !!sloPolicy?.inherited;
+  const sloQuery = useQuery({
     queryKey: ["slo", namespace, release],
     queryFn: () => deployApi.slo(namespace, release),
+    enabled: !inherited,
     retry: false,
   });
+  const effectiveData = inherited ? sloPolicy?.config : sloQuery.data;
+  const slo = { ...sloQuery, data: effectiveData };
   const [form, setForm] = useState<Draft | null>(null);
 
   // Wait out a refetch: a popup opened a second time starts from the cache,
   // and a draft seeded from it would save over whatever changed since.
   useEffect(() => {
-    if (!slo.data || slo.isFetching || form) return;
-    setForm(draftOf(slo.data));
-  }, [slo.data, slo.isFetching, form]);
+    if (!effectiveData || (!inherited && sloQuery.isFetching) || form) return;
+    setForm(draftOf(effectiveData));
+  }, [effectiveData, inherited, sloQuery.isFetching, form]);
 
   const written = (next: SLOConfig) => {
     qc.setQueryData(["slo", namespace, release], next);
@@ -70,7 +76,7 @@ function useSLOForm(namespace: string, release: string, onSaved?: () => void) {
   // What is stored, to compare the draft against: a save that sends the values
   // already on the object is a write nobody asked for, and on a requirement
   // parked at a tier this API cannot express it would quietly flatten it.
-  const stored = useMemo(() => (slo.data ? draftOf(slo.data) : null), [slo.data]);
+  const stored = useMemo(() => (effectiveData ? draftOf(effectiveData) : null), [effectiveData]);
   const changed = JSON.stringify(form) !== JSON.stringify(stored);
   return { slo, form, setForm, save, reset, changed, busy: save.isPending || reset.isPending };
 }
@@ -104,15 +110,19 @@ export function SLOCard({
   namespace,
   release,
   canEdit,
+  sloPolicy,
   onSaved,
 }: {
   namespace: string;
   release: string;
   canEdit: boolean;
+  sloPolicy?: ServicePolicySLO;
   onSaved?: () => void;
 }) {
-  const f = useSLOForm(namespace, release, onSaved);
+  const t = useT();
+  const f = useSLOForm(namespace, release, onSaved, sloPolicy);
   const { slo, form } = f;
+  canEdit = canEdit && sloPolicy?.canEdit !== false && !sloPolicy?.inherited;
 
   if (!form) return slo.error ? <ErrorState what="SLO" error={slo.error} /> : <Loading what="SLO" />;
 
@@ -136,6 +146,11 @@ export function SLOCard({
       </CardHeader>
 
       <CardContent className="divide-y pt-0">
+        {sloPolicy?.inherited && sloPolicy.source?.namespace && sloPolicy.source?.name && (
+          <p className="py-3 text-sm text-muted-foreground">
+            {t("slo.inherited", { source: `${sloPolicy.source.namespace}/${sloPolicy.source.name}` })}
+          </p>
+        )}
         <SLOFields f={f} canEdit={canEdit} />
       </CardContent>
     </Card>

@@ -124,8 +124,8 @@ function filesOf(plan: Plan): File[] {
     out.push({
       key: layer,
       name: `${layer}.yaml`,
-      tone: known(layer) ? TONE[layer] : "default",
-      what: known(layer) ? WHAT[layer] : "a layer this console does not know",
+      tone: known(layer) ? TONE[layer] : "warning",
+      what: known(layer) ? WHAT[layer] : "owner-defined runtime policy; read only",
       count: leafCount(tree),
       body: toYaml(tree),
     });

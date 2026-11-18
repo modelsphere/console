@@ -15,6 +15,9 @@ import { modelLine, parseTab, releaseState, sloBlocked, visibleTabs, type Tab } 
 import { statusOf } from "@/modules/inferences/components/StatusDot";
 import { DeploySheet } from "@/modules/inferences/components/DeploySheet";
 import { UninstallDialog } from "@/modules/inferences/components/UninstallDialog";
+import { extensions } from "@/extensions/registry";
+import { serviceRelationship } from "./service-relationship";
+import { ServiceRelationshipBadge } from "@/modules/inferences/components/ServiceOwnership";
 import { SLOSheet } from "@/modules/inferences/components/SLOSheet";
 import { Overview } from "@/modules/inferences/tabs/Overview";
 import { Instances } from "@/modules/inferences/tabs/Instances";
@@ -61,6 +64,12 @@ export function InferenceDetail() {
   });
 
   const s = status.data;
+  const policy = extensions.useServicePolicy?.({
+    namespace,
+    release,
+    owner: s?.assignedTo ?? s?.managedBy,
+    assigned: s?.canaryState === "referenced" || !!s?.assignedTo,
+  });
   const visible = visibleTabs({ plan: !!plan.data });
   const tab = parseTab(search.get("tab"), visible);
   const setTab = (next: Tab, pod?: string) =>
@@ -103,12 +112,17 @@ export function InferenceDetail() {
 
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
   const removing = isUninstalling(s);
-  const blockedWrite = readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const { owned, referenced, assignmentLocked, adaptiveOnly, uninstallLocked } = serviceRelationship(s, { mutable: policy?.mutable });
+  const blockedWrite = owned ? t("disabled.serviceManaged") : assignmentLocked ? t("disabled.serviceAssigned") : readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const uninstallBlocked = uninstallLocked ? t("disabled.serviceAssigned") : blockedWrite;
+  const upgradeBlocked = adaptiveOnly ? readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false : blockedWrite;
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
-  const blocked = sloBlocked(s, plan.data);
-  const sloOpen = !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
+  const sloLocked = owned || (referenced && !s.assignedTo?.verified);
+  const sloWriteBlocked = sloLocked ? (owned ? t("disabled.serviceManaged") : t("disabled.serviceAssigned")) : readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const blocked = policy?.slo?.inherited ? (s.planStatus?.phase !== "applied" ? "pending" : undefined) : sloBlocked(s, plan.data);
+  const sloOpen = !sloLocked && !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
   const closeSLO = () => {
     setEditingSLO(false);
     if (!sloSetup) return;
@@ -131,20 +145,20 @@ export function InferenceDetail() {
             {
               key: "slo",
               label: t("actions.slo"),
-              disabled: blockedWrite || (blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
+              disabled: sloWriteBlocked || (blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
               onClick: () => setEditingSLO(true),
             },
             {
               key: "upgrade",
               label: t("actions.upgrade"),
-              disabled: blockedWrite || (!plan.data ? t("disabled.untracked") : false),
+              disabled: upgradeBlocked || (!plan.data ? t("disabled.untracked") : false),
               onClick: () => setUpgrading(true),
             },
             {
               key: "uninstall",
               label: t("actions.uninstall"),
               danger: true,
-              disabled: blockedWrite || !s.exists,
+              disabled: uninstallBlocked || !s.exists,
               onClick: () => setUninstalling(true),
             },
           ]}
@@ -156,6 +170,7 @@ export function InferenceDetail() {
           ]}
           metaColumns={4}
         />
+        <ServiceRelationshipBadge service={s} />
         <PanelTabs items={visible.map((key) => ({ value: key, label: t(`tabs.${key}`), count: counts[key] }))} />
 
         <TabsContent value="overview">
@@ -177,7 +192,7 @@ export function InferenceDetail() {
           <Endpoint namespace={namespace} release={release} status={s} access={false} />
         </TabsContent>
         <TabsContent value="versions">
-          <Versions namespace={namespace} release={release} rollbackBlocked={removing ? t("disabled.uninstalling") : readOnly || !plan.data ? t("disabled.readOnly") : false} />
+          <Versions namespace={namespace} release={release} rollbackBlocked={(referenced ? t("disabled.serviceAssigned") : blockedWrite) || (!plan.data ? t("disabled.untracked") : false)} />
         </TabsContent>
         <TabsContent value="runs">
           <Runs namespace={namespace} release={release} />
@@ -191,10 +206,10 @@ export function InferenceDetail() {
         )}
       </Tabs>
 
-      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !removing} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
-      <DeploySheet target={upgrading ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
+      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !sloLocked && !removing && policy?.slo?.canEdit !== false} sloPolicy={policy?.slo} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
+      <DeploySheet target={upgrading && !owned && (!assignmentLocked || adaptiveOnly) && !removing ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
-        target={uninstalling ? { namespace, release } : null}
+        target={uninstalling && !owned && !uninstallLocked && !removing ? { namespace, release } : null}
         onClose={() => setUninstalling(false)}
         onDone={() => navigate(p(""))}
       />

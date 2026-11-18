@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -6,6 +6,8 @@ import type { Deployment, Plan, ReleaseStatus } from "@swiss/lib/api";
 import { ModuleProvider } from "@/shell/module";
 import { InferenceDetail } from "@/modules/inferences/InferenceDetail";
 import { InferenceList } from "@/modules/inferences/InferenceList";
+
+vi.mock("@/extensions/registry", () => ({ extensions: { modules: [], serviceOwners: [] } }));
 
 const module = { id: "inferences", title: "模型服务", basePath: "/inferences", pages: [] };
 const cluster = { name: "c", profile: "p", catalog: "u", version: "0", allowDeploy: true };
@@ -124,6 +126,18 @@ describe("inference detail write actions", () => {
       enabled: false,
     },
     {
+      name: "a managed service with a readable deployment plan",
+      status: release({ managedBy: { apiVersion: "example.test/v1", kind: "ServiceGroup", namespace: "models", name: "demo", uid: "parent-uid", verified: true } }),
+      label: "托管服务",
+      enabled: false,
+    },
+    {
+      name: "an arm with inconsistent ownership",
+      status: release({ managedBy: { apiVersion: "example.test/v1", kind: "ServiceGroup", namespace: "models", name: "demo", uid: "parent-uid", verified: false } }),
+      label: "归属信息不一致",
+      enabled: false,
+    },
+    {
       name: "a serving release",
       status: release(),
       label: "运行中",
@@ -159,3 +173,9 @@ describe("inference detail write actions", () => {
     });
   }
 });
+
+ it("allows verified existing arms to open SLO without allowing uninstall", () => {
+  const html=renderDetail(release({assignedTo:{apiVersion:"canary.modelsphere.dev/v1alpha1",kind:"LLMCanary",namespace:"canary",name:"experiment",uid:"parent",role:"arm",arm:"baseline",verified:true}}));
+  expect(button(html,"编辑 SLO")?.disabled).toBe(false);
+  expect(button(html,"卸载")?.disabled).toBe(true);
+ });

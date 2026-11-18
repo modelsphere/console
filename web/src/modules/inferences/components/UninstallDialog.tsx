@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ConfirmDialog } from "@modelsphere/ui";
-import { deployApi } from "@swiss/lib/api";
+import { api, deployApi } from "@swiss/lib/api";
+import { serviceRelationship } from "../service-relationship";
 import { useT } from "@/modules/inferences/i18n";
 
 export interface UninstallTarget {
@@ -23,7 +24,11 @@ export function UninstallDialog({
   // The uninstall succeeded but left its plan ConfigMap behind.
   const [planError, setPlanError] = useState("");
   const run = useMutation({
-    mutationFn: (x: UninstallTarget) => deployApi.uninstall(x.namespace, x.release),
+    mutationFn: async (x: UninstallTarget) => {
+      const relationship = serviceRelationship(await api.status(x.namespace, x.release));
+      if (relationship.owned || relationship.uninstallLocked) throw new Error(t(relationship.owned ? "disabled.serviceManaged" : "disabled.serviceAssigned"));
+      return deployApi.uninstall(x.namespace, x.release);
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["deployments"] }),
   });
 

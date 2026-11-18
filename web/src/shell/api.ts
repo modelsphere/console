@@ -79,7 +79,7 @@ export interface BackendCapability {
 }
 
 export interface Capabilities {
-  canary: BackendCapability;
+  [backend: string]: BackendCapability;
 }
 
 export interface ChangePasswordInput {

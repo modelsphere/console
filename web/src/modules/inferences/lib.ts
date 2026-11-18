@@ -69,8 +69,11 @@ export function parseTab(raw: string | null, visible: readonly Tab[]): Tab {
 // Copied from swiss's DeploymentDetail, where it is not exported.
 export function sloEnabled(plan?: Plan): boolean {
   const raw = plan?.layers?.form?.sloRequirement;
-  if (!raw || typeof raw !== "object") return false;
-  return (raw as { enabled?: boolean }).enabled === true;
+  if (raw && typeof raw === "object" && (raw as { enabled?: boolean }).enabled === true) return true;
+  return Object.values(plan?.layers ?? {}).some((layer) => {
+    const route = (layer as { modelRoute?: { slo?: { enabled?: boolean } } })?.modelRoute;
+    return route?.slo?.enabled === true;
+  });
 }
 
 // Why editing the SLO is greyed out, or undefined when it can be edited: swiss's
