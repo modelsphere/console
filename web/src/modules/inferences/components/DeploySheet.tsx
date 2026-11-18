@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -27,7 +27,8 @@ import {
 import { ArrowRight, FlaskConical, RefreshCw, TriangleAlert } from "lucide-react";
 import { useModulePath } from "@/shell";
 import { api, deployApi, type ApplyResult, type ApplyWith, type CatalogModel, type DiffResult, type Plan } from "@swiss/lib/api";
-import { applyFlags, imageOf, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
+import { applyFlags, imageOf, reseed, siteSwitchDefaults, switchDefaults, videoForm, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
+import { videoProblem, videoSeed } from "@swiss/lib/video";
 import { EMPTY, formFromPlan, planRequest } from "../deployment-settings";
 import { useImageSlots } from "@swiss/lib/useImageSlots";
 import { releaseCatalog } from "@swiss/components/CatalogChoice";
@@ -45,7 +46,7 @@ import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { usePausePolling } from "@swiss/lib/polling";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, sloEnabled } from "@/modules/inferences/lib";
-import { SECTIONS, chartChoice, clusterTaints, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
+import { SECTIONS, VIDEO_SECTIONS, chartChoice, clusterTaints, formKind, defaultServiceId, pipelineState, serviceIdError, whatMoves, type Section } from "@/modules/inferences/deploy-lib";
 import { DeployForm } from "@/modules/inferences/components/DeployForm";
 import { OverrideYamlButton, helmValuesQueryOptions, type HelmValuesSource } from "@/modules/inferences/components/OverrideYaml";
 import { ExperimentalBadge } from "@/modules/inferences/components/InstallMethodLabel";
@@ -129,6 +130,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     placeholderData: keepPreviousData,
   });
   const v = entry.data?.variant;
+  // A video variant (or release) shares the LLM form: it adds the video chart's own fields and drops what only an LLM chart takes.
+  const video = formKind(upgrade, current.data?.engine, v?.engine) === "video";
+  const sections = video ? VIDEO_SECTIONS : SECTIONS;
   const chartRange = !!v && isChartRange(v.chart.version);
   const chartList = useQuery({
     queryKey: ["chart-versions", catalogName, modelName, version, keptVariant],
@@ -152,6 +156,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const [seedPlan, setSeedPlan] = useState<Plan>();
   if (current.data && !seedPlan) setSeedPlan(current.data);
   const deployModel = upgrade ? "" : target.model;
+  const variantValues = entry.data?.variant.values;
   const gpuSpecs = profile.data?.profile?.nodes?.gpus;
   const deployForm = useMemo<Form>(
     () => (upgrade ? EMPTY : { ...EMPTY, serviceId: defaultServiceId(deployModel) }),
@@ -185,7 +190,9 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     retry: false,
   });
   const [seed, setSeed] = useState<SwitchDefaults | null>(null);
-  const initial = upgrade ? (upgradeSeed ?? EMPTY) : (seed ? reseed(deployForm, {}, seed) : deployForm);
+  // A fresh video deploy's untouched form is the video seed, not EMPTY.
+  const baseline = !upgrade && video ? videoForm(deployForm, variantValues) : deployForm;
+  const initial = upgrade ? (upgradeSeed ?? EMPTY) : (seed ? reseed(baseline, {}, seed) : baseline);
   const dirty = useDirty({ form, version, variant, moveTo, chartVersion, recovery }, { form: initial, version: upgrade ? "" : (target.version ?? ""), variant: upgrade ? "" : (target.variant ?? ""), moveTo: "", chartVersion: "", recovery: initialRecovery });
 
   const [step, setStep] = useState<"form" | "review">("form");
@@ -197,14 +204,13 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const [applied, setApplied] = useState<ApplyResult | null>(null);
   const [note, setNote] = useState("");
   const [force, setForce] = useState(false);
-  const nav = useAnchorNav({ ids: [...SECTIONS], idPrefix: ID_PREFIX, enabled: step === "form", onExpand: (id) => setExpanded((e) => ({ ...e, [id]: true })) });
+  const nav = useAnchorNav({ ids: [...sections], idPrefix: ID_PREFIX, enabled: step === "form", onExpand: (id) => setExpanded((e) => ({ ...e, [id]: true })) });
 
   // The form shows only once the entry and profile have loaded, so the first
   // seed lands before any plan; a later one is another variant or version, and
   // a plan composed from the old switches goes with it.
   const seedReady = !upgrade && !!entry.data && !entry.isPlaceholderData && !profile.isPending;
   const siteDefaults = useMemo(() => siteSwitchDefaults(profile.data), [profile.data]);
-  const variantValues = entry.data?.variant.values;
   useEffect(() => {
     if (!seedReady) return;
     const next = switchDefaults(siteDefaults, variantValues);
@@ -217,8 +223,20 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
       setStep("form");
     }
   }, [seedReady, siteDefaults, variantValues, seed]);
+  // A video variant's own fields start from its values, merged into what is
+  // typed rather than resetting it; leaving a video variant takes them back off,
+  // GPU tolerations included, so an LLM deploy does not inherit them.
+  const seededVideo = useRef<string | null>(null);
+  useEffect(() => {
+    if (!seedReady) return;
+    const { key, action } = videoSeed(seededVideo.current, video, variantValues);
+    seededVideo.current = key;
+    if (action === "seed") setForm((f) => videoForm(f, variantValues));
+    else if (action === "clear") setForm((f) => ({ ...f, video: EMPTY.video, tolerations: EMPTY.tolerations }));
+  }, [seedReady, video, variantValues]);
 
-  const release = upgrade ? target.release : form.serviceId || defaultServiceId(target.model);
+  const typedId = form.serviceId;
+  const release = upgrade ? target.release : typedId || defaultServiceId(target.model);
   const namespace = upgrade ? target.namespace : form.namespace || cluster.data?.namespace || "";
   const live = useQuery({ queryKey: ["status", namespace, release], queryFn: () => api.status(namespace, release), enabled: step === "review" && !!release && !!namespace });
 
@@ -235,8 +253,8 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   const requestFor = (f: Form) => planRequest(
     { ...f, serviceId: f.serviceId || (upgrade ? f.serviceId : defaultServiceId(target.model)) },
     upgrade
-      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: entry.data ? (v?.inputs ?? []) : undefined, inputsAnnotation: seedPlan?.additionalAnnotations?.[INPUTS_ANNOTATION], hf: entry.data?.model.source?.hf, formLayer: seedPlan?.layers?.form, values: v?.values ?? seedPlan?.layers?.catalog }
-      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: v?.inputs, hf: entry.data?.model.source?.hf, values: v?.values },
+      ? { model: recorded!.model, version: version || undefined, variant: variant || undefined, catalog: moveTo || undefined, chartVersion: chartVersion || undefined, fromRelease: target.release, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: entry.data ? (v?.inputs ?? []) : undefined, inputsAnnotation: seedPlan?.additionalAnnotations?.[INPUTS_ANNOTATION], hf: entry.data?.model.source?.hf, formLayer: seedPlan?.layers?.form, values: v?.values ?? seedPlan?.layers?.catalog, video }
+      : { model: target.model, version, variant: keptVariant, catalog: target.catalog, chartVersion: chartVersion || undefined, cacheUnsupported: !!cache.unsupported, forceGpuProducts, gpuVendor: v?.requires.vendor, inputs: v?.inputs, hf: entry.data?.model.source?.hf, values: v?.values, video },
     profile.data?.profile,
   );
   // An upgrade waits for the profile too: it decides Monitor (planRequest).
@@ -254,18 +272,18 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
     if (error instanceof AdaptivePlanChangedError) return new Error(t("deploy.fields.adaptiveChanged"));
     return error;
   };
+  // A video route has no recovery or adaptive concurrency: its form has no routing section.
+  const routedRequest = (f: Form) => (video ? requestFor(f) : withAdaptiveConcurrency(withRecovery(requestFor(f), recovery), f, routeOptions.data));
   const preview = useImageSlots(
     form,
-    (f) => (canDiscover ? withAdaptiveConcurrency(withRecovery(requestFor(f), recovery), f, routeOptions.data) : undefined),
+    (f) => (canDiscover ? routedRequest(f) : undefined),
     canDiscover,
     gpuSpecs,
   );
   // Freeze the form and actions while prefill (initial seed, target variant
   // fetch, or chart dry-run discovery for resources/PD/images) is in flight.
   const prefilling = loading || entry.isFetching || preview.fetching;
-  const valuesRequest = canDiscover
-    ? withAdaptiveConcurrency(withRecovery(requestFor({ ...form, edits: "" }), recovery), form, routeOptions.data)
-    : undefined;
+  const valuesRequest = canDiscover ? routedRequest({ ...form, edits: "" }) : undefined;
   const helmValues = useQuery(helmValuesQueryOptions(valuesRequest, yamlOpen && step === "form" && canDiscover));
   const valuesSource: HelmValuesSource = {
     data: helmValues.data,
@@ -279,6 +297,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
   };
   const compose = useMutation({
     mutationFn: async () => {
+      if (video) return deployApi.plan(requestFor(form));
       try {
         const inputError = recoveryInputError(recovery);
         if (inputError) throw new Error(t(`deploy.recovery.errors.${inputError}`));
@@ -320,16 +339,21 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
           (e) => toast.error(t("deploy.review.siteNotSaved", { error: messageOf(e) })),
         );
       onClose();
-      if (!upgrade) navigate(p(detailPath(plan!.release.name, plan!.release.namespace)), { state: { sloSetup: state.action === "install" && sloEnabled(plan!) } });
+      if (!upgrade) navigate(p(detailPath(plan!.release.name, plan!.release.namespace)), { state: { sloSetup: !video && state.action === "install" && sloEnabled(plan!) } });
     },
   });
 
   const submit = () => {
     setSubmitted(true);
     apply.reset();
-    if (!upgrade && serviceIdError(form.serviceId || defaultServiceId(target.model))) {
+    if (!upgrade && serviceIdError(typedId || defaultServiceId(target.model))) {
       setExpanded((e) => ({ ...e, basic: true }));
       nav.go("basic");
+      return;
+    }
+    if (video && videoProblem(form.video)) {
+      setExpanded((e) => ({ ...e, resources: true }));
+      nav.go("resources");
       return;
     }
     compose.mutate();
@@ -500,7 +524,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
 
       {step === "form" && !loading && !error && (
         <div className={cn("flex gap-1 border-b px-5 py-2", nav.scrolled && "shadow-sm")}>
-          {SECTIONS.map((s) => (
+          {sections.map((s) => (
             <Button key={s} variant="ghost" size="sm" disabled={prefilling} className={cn("text-muted-foreground", nav.active === s && "bg-muted text-foreground")} onClick={() => nav.go(s)}>
               {t(`deploy.sections.${upgrade && s === "basic" ? "target" : s}`)}
             </Button>
@@ -515,7 +539,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
             <AlertDescription>{t("deploy.review.readOnly")}</AlertDescription>
           </Alert>
         )}
-        {routeOptions.error && (
+        {!video && routeOptions.error && (
           <Alert variant="warning"><TriangleAlert /><AlertDescription>{t("deploy.routeOptions.error", { error: routeOptions.error.message })}</AlertDescription></Alert>
         )}
         {(error || compose.error || apply.error) && (
@@ -539,7 +563,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               recovery={<RecoveryFields settings={recovery} onChange={(patch) => setRecoveryPatch((previous) => ({ ...previous, ...patch }))} />}
               target={targetFields}
               cluster={cluster.data}
-              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: imageOf(v, entry.data?.imageRepository), imageMirror: profile.data?.profile?.registry?.mirror, cache }}
+              defaults={{ serviceId: upgrade ? undefined : defaultServiceId(target.model), localPath: entry.data?.localPath, localPathTemplate: entry.data?.pathTemplate, image: video ? undefined : imageOf(v, entry.data?.imageRepository), imageMirror: profile.data?.profile?.registry?.mirror, cache: video ? undefined : cache }}
               slots={preview.slots}
               slotsError={preview.queryError}
               resources={preview.resources}
@@ -568,6 +592,7 @@ function DeploySheetBody({ target, onClose }: { target: DeployTarget; onClose: (
               onRemember={(key, on) => setRemember((r) => ({ ...r, [key]: on }))}
               presets={upgrade ? undefined : profile.data?.profile?.presets}
               taints={clusterTaints(nodes.data?.nodes)}
+              video={video}
             />
             <div style={{ height: nav.tailSpace }} aria-hidden />
           </>

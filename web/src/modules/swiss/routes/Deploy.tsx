@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "@swiss/lib/host";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, RefreshCw, TriangleAlert } from "lucide-react";
@@ -7,7 +7,7 @@ import { Badge } from "@swiss/components/ui/badge";
 import { Button } from "@swiss/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@swiss/components/ui/card";
 import { cn } from "@swiss/lib/utils";
-import { applyFlags, DeploySettings, EMPTY, imageOf, planRequest, reseed, siteSwitchDefaults, switchDefaults, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
+import { applyFlags, DeploySettings, EMPTY, imageOf, planRequest, reseed, siteSwitchDefaults, switchDefaults, videoForm, type Form, type SwitchDefaults } from "@swiss/components/DeploySettings";
 import { useImageSlots } from "@swiss/lib/useImageSlots";
 import { Pipeline } from "@swiss/components/Pipeline";
 import { ErrorState, Loading } from "@swiss/components/States";
@@ -22,6 +22,7 @@ import { presetValues } from "@swiss/lib/formLayer";
 import { deployCapacity, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { installMethod, llmsvcBlock } from "@swiss/lib/applyWith";
 import { InstallMethodChoice } from "@swiss/components/InstallMethod";
+import { isVideo, videoProblem, videoSeed } from "@swiss/lib/video";
 
 export function Deploy() {
   const { name = "" } = useParams();
@@ -75,6 +76,8 @@ export function Deploy() {
   const [picked, setPicked] = useState<ApplyWith>();
 
   const [form, setForm] = useState<Form>({ ...EMPTY, serviceId: name });
+  // A video variant shares the form, with the video chart's own settings in it.
+  const video = isVideo(model.data?.variant.engine);
   const checkedInputs = useDebounced(form.inputs, CHECK_MS);
   const siteSaver = useSiteSaver(profile.data);
   // serviceId is the identity everything else is named after: the helm release,
@@ -94,6 +97,17 @@ export function Deploy() {
   const variantValues = model.data?.variant.values;
   const expectedSeed = useMemo(() => (loaded ? switchDefaults(siteDefaults, variantValues) : null), [loaded, siteDefaults, variantValues]);
   const [seeded, setSeeded] = useState<SwitchDefaults | null>(null);
+  // A video variant's own settings start from its values, once per variant;
+  // leaving a video variant takes them back off, GPU tolerations included, so
+  // an LLM deploy does not inherit them.
+  const seededVideo = useRef<string | null>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    const { key, action } = videoSeed(seededVideo.current, video, variantValues);
+    seededVideo.current = key;
+    if (action === "seed") setForm((f) => videoForm(f, variantValues));
+    else if (action === "clear") setForm((f) => ({ ...f, video: EMPTY.video, tolerations: EMPTY.tolerations }));
+  }, [loaded, video, variantValues]);
   useEffect(() => {
     if (!expectedSeed) return;
     if (seeded && JSON.stringify(seeded) === JSON.stringify(expectedSeed)) return;
@@ -108,12 +122,15 @@ export function Deploy() {
   // A diff is bound to the plan it was computed from, so touching the form
   // invalidates both, and the pipeline walks back to Plan rather than leaving a
   // pane open over a plan that no longer exists.
-  const update = (patch: Partial<Form>) => {
-    setForm({ ...form, ...patch });
+  const invalidate = () => {
     setPlan(null);
     setDiff(null);
     setApplied(null);
     setTab((t) => (t === "status" ? t : "plan"));
+  };
+  const update = (patch: Partial<Form>) => {
+    setForm({ ...form, ...patch });
+    invalidate();
   };
 
   // Computed before the early returns so the image dry run, a hook, can use the
@@ -150,6 +167,7 @@ export function Deploy() {
           siteEnv: profile.data?.profile?.extra,
           gpuSpecs: profile.data?.profile?.nodes?.gpus,
           gpuVendor: model.data.variant.requires.vendor,
+          video,
         })
       : undefined;
   // Chart discovery runs once on open after the form is seeded, on target changes, and on manual refresh.
@@ -327,6 +345,7 @@ export function Deploy() {
         }
         cache={cache}
         presets={profile.data?.profile?.presets}
+        video={video}
       />
 
       <Pipeline
@@ -339,7 +358,7 @@ export function Deploy() {
         onTab={setTab}
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
-        composeDisabled={!form.serviceId || !inputsAnswered(inputs, checkedInputs)}
+        composeDisabled={!form.serviceId || (video && !!videoProblem(form.video)) || !inputsAnswered(inputs, checkedInputs)}
         applyWith={method}
         applyFlags={applyFlags(form)}
         onDiff={setDiff}

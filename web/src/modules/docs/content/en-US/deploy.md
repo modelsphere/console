@@ -34,6 +34,28 @@ Most fields can stay empty and take the site profile's and chart's defaults.
 
 **Adaptive concurrency** groups the master switch, floor fraction, absolute floor, start point, idle hold, and TTFT decisions together; its internal knobs are available under **Advanced adaptive options**. Turning the switch off hides and clears the group's entered values; turning it back on does not restore them. **Default peer maximum** stays in **Capacity & failover** and still applies when adaptive concurrency is off; it also influences the static maximum used for adaptive bounds. Review the diff before confirming an upgrade.
 
+## Video models
+
+A variant whose engine is `video` (such as MiniMax H3, chart `minimax-h3`) uses the same form as an LLM: service ID, route, namespace, model path, GPU products, preset, tolerations, priority class, scheduler, inputs and the plan editor all work as above. The form adds the fields below and leaves out what only an LLM chart takes: replicas and scaler bounds (each pool has its own), route tuning, ServiceMonitor, image override and the compile cache.
+
+| Field | Notes |
+|---|---|
+| Pools | FL2VA (text and first/last frame to video) and Ref2VA (reference media to video), each on or off with its own replicas, TP size and Ulysses degree. GPUs per pod = TP × Ulysses; the form shows the total |
+| Turbo | Ref2VA only: the 8-step Turbo LoRA; off serves the base model |
+| SLO | The form's SLO switch turns on a scaler and an SLO requirement for each pool. The chart creates each SLO with a minimum of 1 replica and **no maximum, so nothing is scaled yet** |
+| Storage | The shared asset volume: its storage class must support ReadWriteMany. When the variant declares the class as an input, the site profile can answer it and the input field asks for it; otherwise empty uses the cluster default |
+| Database URL | Optional; empty uses the chart's default. On an upgrade, empty keeps the release's own |
+
+To scale a pool, open **Edit SLO** on the release once it is up. There is one section per pool:
+
+- **Bounds**: the minimum (replicas or concurrency) and the maximum (replicas). An empty maximum is autoscaling off. A save only adds or changes values, so to turn a pool's scaling off again use **Reset**: it removes the maximum and sets the priority back to normal, and keeps the minimum and the queue settings. Set the priority again after a reset if the pool had it high.
+- **Max queue depth**: queued and running tasks per replica before the pool gets another replica.
+- **Priority**: high or normal.
+
+A video release serves a job API rather than chat. Its access card shows how to submit a task (`POST /v2/video_generation`), poll it (`GET /v2/query/video_generation/<task_id>`) and download the result (`GET /v2/video_generation/<task_id>/content`, no key needed). Its **Check** runs a readiness probe of the route's `/readyz`, which answers only when the router, a server and the database behind it are all up. It is not offered in the Playground.
+
+Download links point back at H3. When the site profile names a `route.gateway`, the gateway URL for the release's route is filled in for the chart automatically. An explicit `server.config.publicBaseUrl` in the Override YAML still wins.
+
 ## Generation recovery
 
 Enable **Routing → Generation recovery** in the deploy or upgrade form. Enter the **Actual model** whose weights are deployed, such as `kimi-k3` or `glm-5.3`. This selects the continuation strategy; it is not the client-facing served name.

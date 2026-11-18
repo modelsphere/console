@@ -7,6 +7,7 @@ import {
   warnings,
   detailPath,
   installSteps,
+  videoScalerStep,
   modelLine,
   parseTab,
   releaseState,
@@ -133,6 +134,9 @@ describe("tabs", () => {
     expect(sloBlocked(status({ planStatus: { phase: "applying" } }), plan)).toBe("pending");
     expect(sloBlocked(status({ planStatus: { phase: "applied" } }), { layers: {} } as unknown as Plan)).toBe("off");
     expect(sloBlocked(status({ planStatus: { phase: "applied" } }))).toBe("off");
+    // The release's own SLO objects decide, when known: a chart default is SLO on without the form naming it.
+    expect(sloBlocked(status({ planStatus: { phase: "applied" } }), { layers: {} } as unknown as Plan, true)).toBeUndefined();
+    expect(sloBlocked(status({ planStatus: { phase: "applied" } }), plan, false)).toBe("off");
   });
 });
 
@@ -340,5 +344,26 @@ describe("defaultContainer", () => {
     expect(defaultContainer([{ name: "init", init: true, state: "terminated" }, { name: "engine", state: "waiting" }, { name: "side", state: "running" }])).toBe("side");
     expect(defaultContainer([{ name: "init", init: true, state: "running" }, { name: "engine", state: "waiting" }])).toBe("engine");
     expect(defaultContainer([])).toBe("");
+  });
+});
+
+describe("videoScalerStep", () => {
+  const obj = (kind: string, name: string, spec: object, status?: object) => ({ ref: { kind, name }, live: { spec, status } }) as unknown as ObjectResult;
+  const slo = (pool: string, max?: number) => obj("JobSLORequirement", `h3-${pool}`, { serviceId: `h3-${pool}`, ...(max ? { maximumDeployment: { type: "replicas", value: max } } : {}) });
+  const unavailable = { conditions: [{ type: "DecisionAvailable", status: "False", reason: "DecisionUnavailable", message: "no decision" }] };
+  const steady = { currentReplicas: 1, desiredReplicas: 1, conditions: [{ type: "DecisionAvailable", status: "True", reason: "DecisionReceived" }] };
+  const scaler = (pool: string, status: object) => obj("LLMScaler", `h3-${pool}`, { customProvider: { serviceId: `h3-${pool}` } }, status);
+
+  it("is off when no pool has a maximum, though each scaler reports no decision", () => {
+    expect(videoScalerStep([slo("fl2va"), slo("ref2va"), scaler("fl2va", unavailable), scaler("ref2va", unavailable)])).toMatchObject({ state: "off", detail: "unmanaged" });
+  });
+
+  it("reads only the scaled pools, the worst of them", () => {
+    expect(videoScalerStep([slo("fl2va"), slo("ref2va", 2), scaler("fl2va", unavailable), scaler("ref2va", steady)])).toMatchObject({ state: "ok", detail: "steady" });
+    expect(videoScalerStep([slo("fl2va", 2), slo("ref2va", 2), scaler("fl2va", unavailable), scaler("ref2va", steady)]).state).toBe("bad");
+  });
+
+  it("has no scaler step without scalers", () => {
+    expect(videoScalerStep([slo("fl2va")])).toMatchObject({ state: "off", detail: "none" });
   });
 });

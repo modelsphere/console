@@ -41,6 +41,7 @@ import { chartVersionChoice, Select, TargetRow } from "@swiss/components/ChartVe
 import { CatalogModelDiff } from "@swiss/components/CatalogModelDiff";
 import { VariantCard } from "@swiss/components/VariantCard";
 import { Dialog } from "@swiss/components/ui/dialog";
+import { isVideo, videoProblem } from "@swiss/lib/video";
 import { deployCapacity, gpuCount, pickableProducts, unlistedProducts, vendorResources } from "@swiss/lib/gpu";
 import { Button } from "@swiss/components/ui/button";
 import { cn } from "@swiss/lib/utils";
@@ -133,6 +134,8 @@ export function Upgrade() {
 
   const [form, setForm] = useState<Form>(EMPTY);
   const checkedInputs = useDebounced(form.inputs, CHECK_MS);
+  // A video release shares the form, with the video chart's own settings in it.
+  const video = isVideo(current.data?.engine);
   const siteSaver = useSiteSaver(profile.data);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [diff, setDiff] = useState<DiffResult | null>(null);
@@ -209,6 +212,7 @@ export function Upgrade() {
           siteEnv: profile.data?.profile?.extra,
           gpuSpecs: profile.data?.profile?.nodes?.gpus,
           gpuVendor: keptPin?.requires.vendor ?? pin?.requires.vendor,
+          video,
         })
       : undefined;
   // Chart discovery runs once on open after the form is seeded, on target changes, and on manual refresh.
@@ -551,6 +555,7 @@ export function Upgrade() {
         cache={cache}
         lockIdentity
         readOnly={rollbackTo > 0}
+        video={video}
       />
 
       <Pipeline
@@ -564,7 +569,7 @@ export function Upgrade() {
         onTab={setTab}
         onCompose={() => planM.mutate()}
         composing={planM.isPending}
-        composeDisabled={!rollbackTo && (!seededFromPlan || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity))}
+        composeDisabled={!rollbackTo && (!seededFromPlan || (video && !!videoProblem(form.video)) || !inputsAnswered(inputs, checkedInputs) || affinityInvalid(form.affinity))}
         composeLabel={planM.isPending ? "Composing…" : plan ? "Recompose upgrade" : "Compose upgrade"}
         applyFlags={applyFlags(form)}
         onDiff={setDiff}
