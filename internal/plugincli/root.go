@@ -16,6 +16,7 @@ import (
 
 	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
 	"github.com/modelsphere/console/internal/pluginpackage"
+	"github.com/modelsphere/console/internal/version"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -42,7 +43,7 @@ func New() *cobra.Command {
 		LogWriter:   os.Stderr,
 		Timeout:     5 * time.Minute,
 	}
-	root := &cobra.Command{Use: "modelsphere", Short: "ModelSphere platform tools", SilenceUsage: true, SilenceErrors: true}
+	root := &cobra.Command{Use: "modelsphere", Short: "ModelSphere platform tools", Version: version.Version, SilenceUsage: true, SilenceErrors: true}
 	root.PersistentFlags().StringVar(&options.ConfigPath, "config", "", "ModelSphere config file")
 	root.PersistentFlags().StringVar(&options.Kubeconfig, "kubeconfig", options.Kubeconfig, "Kubernetes config file")
 	root.PersistentFlags().StringVar(&options.Context, "context", options.Context, "Kubernetes context")

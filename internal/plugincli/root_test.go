@@ -11,9 +11,23 @@ import (
 	"time"
 
 	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
+	"github.com/modelsphere/console/internal/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	sigyaml "sigs.k8s.io/yaml"
 )
+
+func TestRootReportsVersion(t *testing.T) {
+	command := New()
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetArgs([]string{"--version"})
+	if err := command.Execute(); err != nil {
+		t.Fatalf("--version: %v", err)
+	}
+	if got, want := strings.TrimSpace(output.String()), "modelsphere version "+version.Version; got != want {
+		t.Fatalf("--version printed %q, want %q", got, want)
+	}
+}
 
 func TestInstallOutcomeReportsChartManagedRegistration(t *testing.T) {
 	identity := pluginapi.PluginIdentity{Group: "modelsphere.dev", Name: "my-plugin"}

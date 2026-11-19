@@ -95,6 +95,9 @@ modelsphere plugin registration <chart-or-package> [flags]
 modelsphere plugin uninstall [group/name] [flags]
 ```
 
+`modelsphere --version` prints the release version, the same value as the
+Console Chart's `appVersion`.
+
 | Command | Purpose |
 | --- | --- |
 | `validate` | checks `Chart.yaml`, `plugin.yaml` and the declared `frontend/<entry>` in a chart directory or `.tgz` |
