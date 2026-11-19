@@ -263,8 +263,21 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// reservedPrefixes are console's own API; a backend there would shadow them.
-var reservedPrefixes = []string{"/api/iam", "/api/me", "/api/router"}
+// reservedPrefixes are console's own API; a backend or plugin route there
+// would shadow the native handler.
+var reservedPrefixes = []string{"/api/iam", "/api/me", "/api/router", "/api/capabilities"}
+
+// ReservedAPIPrefix reports whether prefix belongs to a Console API. Both
+// configured backends and registered plugin routes are rejected there, so an
+// installed chart cannot answer /api/iam or /api/me on Console's behalf.
+func ReservedAPIPrefix(prefix string) bool {
+	for _, reserved := range reservedPrefixes {
+		if prefix == reserved || strings.HasPrefix(prefix, reserved+"/") {
+			return true
+		}
+	}
+	return false
+}
 
 func validateBackend(b Backend) error {
 	// Only /api/* passes the auth middleware's guard; anything else is served
@@ -275,10 +288,8 @@ func validateBackend(b Backend) error {
 	if strings.HasSuffix(b.Prefix, "/") {
 		return fmt.Errorf("prefix %q must not have a trailing slash", b.Prefix)
 	}
-	for _, r := range reservedPrefixes {
-		if b.Prefix == r || strings.HasPrefix(b.Prefix, r+"/") {
-			return fmt.Errorf("prefix %q is reserved by console", b.Prefix)
-		}
+	if ReservedAPIPrefix(b.Prefix) {
+		return fmt.Errorf("prefix %q is reserved by console", b.Prefix)
 	}
 	switch {
 	case b.URL == "" && b.Gateway == nil:

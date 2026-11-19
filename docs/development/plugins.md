@@ -252,6 +252,7 @@ spec:
 Registration requires every `ReverseProxy` in the release to satisfy:
 
 - `matcher.path` starts with `/api/` and ends with `/` before the trailing `*`;
+- `matcher.path` is neither `/api/*` nor under Console's own API (`/api/iam`, `/api/me`, `/api/router`, `/api/capabilities`), because plugin routes match before the native mux;
 - `directives.authProxy: true`;
 - `upstream.scheme` is `http` or `https`, `host` is non-empty, `port` is 1–65535.
 
@@ -491,6 +492,7 @@ argument it lists registrations and asks for a selection.
 | `Degraded`: `Chart plugin metadata does not match registration identity` | CR name decoded to a different `group`/`name` than `plugin.yaml` | rename the CR or fix `plugin.yaml` |
 | `Degraded`: `frontend entry missing from installed Chart` | build output was never copied into `frontend/` | rebuild, copy, reinstall |
 | `Degraded`: `plugin ReverseProxy must authenticate an /api/ prefix` | matcher path or `authProxy` is wrong | fix the template, upgrade |
+| `Degraded`: `plugin ReverseProxy prefix … is reserved by console` | the route overlaps Console's own API | move it under the plugin's own `/api/` prefix |
 | no sidebar entry, no status message | bundle threw during registration | open the browser console; the loader logs the plugin and the error |
 | pages 404 but the menu exists | route pattern not registered or mistyped | check `routes` keys; `[id]`/`[...rest]` only |
 | `Unsupported SDK route` | segment syntax other than `[param]`/`[...rest]` | rewrite the pattern |

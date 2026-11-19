@@ -128,6 +128,12 @@ func readRoutes(manifest string) ([]Route, error) {
 		if !strings.HasPrefix(prefix, "/api/") || !strings.HasSuffix(prefix, "/") || !route.Spec.Directives.AuthProxy {
 			return nil, fmt.Errorf("plugin ReverseProxy must authenticate an /api/ prefix")
 		}
+		// Match runs before the native mux, so /api and Console's own API would
+		// answer for handlers they do not own.
+		routePrefix := strings.TrimSuffix(prefix, "/")
+		if routePrefix == "/api" || config.ReservedAPIPrefix(routePrefix) {
+			return nil, fmt.Errorf("plugin ReverseProxy prefix %q is reserved by console", prefix)
+		}
 		if (route.Spec.Upstream.Scheme != "http" && route.Spec.Upstream.Scheme != "https") || route.Spec.Upstream.Host == "" || route.Spec.Upstream.Port < 1 || route.Spec.Upstream.Port > 65535 {
 			return nil, fmt.Errorf("invalid plugin ReverseProxy upstream")
 		}
