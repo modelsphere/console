@@ -63,7 +63,7 @@ chart + plugin.yaml  --helm--> Helm release (runtime workloads)
 
 `plugin.yaml` defines the identity as `group/name`; both are DNS-1123
 subdomains. The CR name is that identity with `--` between the two parts, so a
-plugin `modelsphere.dev/canary` registers as `modelsphere.dev--canary`. If a part
+plugin `modelsphere.dev/my-plugin` registers as `modelsphere.dev--my-plugin`. If a part
 itself contains `--` or starts with `x-`, it is base32-escaped with an `x-` prefix
 so the split stays unambiguous. Console parses the CR name back and rejects one
 that does not round-trip.
@@ -88,16 +88,16 @@ version is what `spec.version` pins.
 apiVersion: modelsphere.dev/v1alpha1
 kind: Plugin
 metadata:
-  name: modelsphere.dev--canary
+  name: modelsphere.dev--my-plugin
 spec:
   type: helm
   scope: platform
   enabled: true
   version: 0.4.0
   chart:
-    name: canary
-    namespace: canary-modelsphere-system
-    releaseName: canary
+    name: my-plugin
+    namespace: my-plugin-system
+    releaseName: my-plugin
 ```
 
 | Field | Meaning |
@@ -159,15 +159,15 @@ installed chart.
 ```json
 [
   {
-    "id": "canary",
+    "id": "my-plugin",
     "group": "modelsphere.dev",
     "version": "0.4.0",
-    "entry": "/plugins/modelsphere.dev--canary/index.umd.js",
-    "styles": ["/plugins/modelsphere.dev--canary/index.css"],
+    "entry": "/plugins/modelsphere.dev--my-plugin/index.umd.js",
+    "styles": ["/plugins/modelsphere.dev--my-plugin/index.css"],
     "backend": {
-      "name": "canary",
-      "prefix": "/api/canary",
-      "writePermission": "canary.write"
+      "name": "my-plugin",
+      "prefix": "/api/my-plugin",
+      "writePermission": "my-plugin.write"
     }
   }
 ]
@@ -237,15 +237,15 @@ path.
 apiVersion: iam.theriseunion.io/v1alpha1
 kind: ReverseProxy
 metadata:
-  name: canary
-  namespace: canary-system
+  name: my-plugin
+  namespace: my-plugin-system
 spec:
   matcher:
     method: "*"
-    path: /api/canary/*
+    path: /api/my-plugin/*
   upstream:
     scheme: http
-    host: canary-canaryd.canary-system.svc
+    host: my-plugin.my-plugin-system.svc
     port: 8080
   directives:
     authProxy: true
