@@ -136,7 +136,7 @@ Runtime plugins use `@modelsphere/plugin-sdk`, maintained in `web/packages/plugi
 
 Deployment uses the built bundle from the release's `frontend/` directory. Console watches Plugin CRs through an informer; enabling, disabling or deleting a CR changes the menu, routes and assets without a Console restart. Open tabs keep their registry until refreshed. A plugin with a backend is gated by `get` on `backends/<name>`; pages are never write-gated by the host, so the plugin hides its own mutations.
 
-See the [architecture](development/plugin-architecture.md), [authoring and deployment guide](development/plugins.md) and [design](plans/2026-11-05-global-sdk-design.md).
+See the [architecture](development/plugin-architecture.md) and [authoring and deployment guide](development/plugins.md).
 
 ### i18n
 
