@@ -139,3 +139,55 @@ func testSwissProvider() capabilityProvider {
 		}},
 	}
 }
+
+func TestNeedsSwissBuiltinSkipsAConfiguredPlugin(t *testing.T) {
+	plugin := testSwissProvider()
+	plugin.Kind = pluginProviderKind
+	platform := platformCapabilityProvider(consoleValues{}, "console-system")
+	swiss := func(from *pluginapi.PluginCapabilitySource, version string) []pluginapi.PluginCapabilityBinding {
+		return []pluginapi.PluginCapabilityBinding{{Capability: capabilitySwissGateway, Version: version, From: from}}
+	}
+	for _, test := range []struct {
+		name      string
+		bindings  []pluginapi.PluginCapabilityBinding
+		providers []capabilityProvider
+		want      bool
+	}{
+		{
+			name:      "an installed plugin answers the unpinned binding",
+			bindings:  swiss(nil, ""),
+			providers: []capabilityProvider{platform, plugin},
+			want:      false,
+		},
+		{
+			name:      "no plugin declares the capability",
+			bindings:  swiss(nil, ""),
+			providers: []capabilityProvider{platform},
+			want:      true,
+		},
+		{
+			name:      "the binding pins the platform",
+			bindings:  swiss(&pluginapi.PluginCapabilitySource{Kind: platformProviderKind}, ""),
+			providers: []capabilityProvider{platform, plugin},
+			want:      true,
+		},
+		{
+			name:      "the plugin declares another capability version",
+			bindings:  swiss(nil, "v2"),
+			providers: []capabilityProvider{platform, plugin},
+			want:      true,
+		},
+		{
+			name:      "no binding asks for the swiss gateway",
+			bindings:  []pluginapi.PluginCapabilityBinding{{Capability: capabilityImagePullSecrets}},
+			providers: []capabilityProvider{platform},
+			want:      false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := needsSwissBuiltin(test.bindings, test.providers); got != test.want {
+				t.Fatalf("needsSwissBuiltin() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}

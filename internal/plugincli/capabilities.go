@@ -76,13 +76,6 @@ func installConsumedCapabilities(ctx context.Context, runner Runner, manifest pl
 // plugin that declares a capability this package binds to.
 func capabilityProviders(ctx context.Context, runner Runner, bindings []pluginapi.PluginCapabilityBinding, console consoleValues, consoleNamespace string) ([]capabilityProvider, error) {
 	providers := []capabilityProvider{platformCapabilityProvider(console, consoleNamespace)}
-	if bindsPlatformCapability(bindings, capabilitySwissGateway) {
-		provider, err := swissCapabilityProvider(console)
-		if err != nil {
-			return nil, err
-		}
-		providers = append(providers, provider)
-	}
 	registrations, err := runner.Registrations(ctx)
 	if err != nil {
 		return nil, err
@@ -96,7 +89,51 @@ func capabilityProviders(ctx context.Context, runner Runner, bindings []pluginap
 			providers = append(providers, provider)
 		}
 	}
+	// Built-in swiss is validated only when no installed plugin answers the
+	// binding: externalSwiss.url may be unset on a Console whose gateway comes
+	// from a plugin.
+	if needsSwissBuiltin(bindings, providers) {
+		provider, err := swissCapabilityProvider(console)
+		if err != nil {
+			return nil, err
+		}
+		providers = append(providers, provider)
+	}
 	return preferPluginProviders(providers), nil
+}
+
+// needsSwissBuiltin reports whether some binding still needs the built-in
+// swiss provider, and is written to be safe with no swiss binding at all.
+func needsSwissBuiltin(bindings []pluginapi.PluginCapabilityBinding, providers []capabilityProvider) bool {
+	builtin := capabilityProvider{Kind: platformProviderKind, Group: platformProviderGroup, Name: swissProviderName}
+	for _, binding := range bindings {
+		if binding.Capability != capabilitySwissGateway || !sourceAccepts(binding.From, builtin) {
+			continue
+		}
+		if !answeredByPlugin(binding, providers) {
+			return true
+		}
+	}
+	return false
+}
+
+// answeredByPlugin reports whether an installed plugin satisfies the binding
+// on capability and version, so the built-in does not have to be configured.
+func answeredByPlugin(binding pluginapi.PluginCapabilityBinding, providers []capabilityProvider) bool {
+	for _, provider := range providers {
+		if provider.Kind != pluginProviderKind || !sourceAccepts(binding.From, provider) {
+			continue
+		}
+		for _, declaration := range provider.Declarations {
+			if declaration.Capability != binding.Capability {
+				continue
+			}
+			if binding.Version == "" || declaration.Version == binding.Version {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // platformCapabilityProvider publishes what the Console release itself owns:
@@ -240,22 +277,6 @@ func declaresAnyCapability(declarations []pluginapi.PluginCapability, bindings [
 				return true
 			}
 		}
-	}
-	return false
-}
-
-// bindsPlatformCapability reports whether any binding accepts a built-in
-// provider for this capability, so a plugin-only binding does not require the
-// platform to be configured for it.
-func bindsPlatformCapability(bindings []pluginapi.PluginCapabilityBinding, capability string) bool {
-	for _, binding := range bindings {
-		if binding.Capability != capability {
-			continue
-		}
-		if binding.From != nil && binding.From.Kind != "" && !strings.EqualFold(binding.From.Kind, platformProviderKind) {
-			continue
-		}
-		return true
 	}
 	return false
 }
