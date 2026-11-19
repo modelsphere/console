@@ -15,7 +15,15 @@ class Asset {
 }
 function browser(installed: InstalledPlugin[], execute: (asset: Asset) => void) {
   const assets: Asset[] = [];
-  vi.stubGlobal("window", globalThis);
+  const listeners = new Set<(event: Event) => void>();
+  const win = {
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    addEventListener(type: string, listener: (event: Event) => void) { if (type === "error") listeners.add(listener); },
+    removeEventListener(type: string, listener: (event: Event) => void) { if (type === "error") listeners.delete(listener); },
+    dispatchEvent(event: Event) { listeners.forEach((listener) => listener(event)); return true; },
+  };
+  vi.stubGlobal("window", win);
   vi.stubGlobal("HTMLScriptElement", Asset);
   vi.stubGlobal("document", { createElement: () => new Asset(), head: { append(asset: Asset) { assets.push(asset); queueMicrotask(() => execute(asset)); } } });
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => installed }));
@@ -121,6 +129,19 @@ describe("configured SDK plugins", () => {
     const result=await loadPlugins([builtin]);
     expect(result.modules.map(module=>module.id)).toEqual(["core","example"]);
     expect(result.errors[0]).toMatch(/broken/);
+  });
+  it("rolls back an entry that throws after registering", async () => {
+    const assets = browser([example()], (asset) => {
+      register();
+      const failure = new Event("error");
+      Object.assign(failure, { message: "entry exploded", filename: asset.src });
+      window.dispatchEvent(failure);
+      asset.onload?.();
+    });
+    const result = await loadPlugins([builtin]);
+    expect(result.modules).toEqual([builtin]);
+    expect(result.errors[0]).toMatch(/entry exploded/);
+    expect(assets[0].remove).toHaveBeenCalled();
   });
   it("bounds stalled resource loading", async () => {
     vi.useFakeTimers();browser([example()],()=>{});

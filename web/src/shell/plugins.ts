@@ -18,6 +18,23 @@ function loadAsset(asset: HTMLScriptElement | HTMLLinkElement): Promise<void> {
   });
 }
 
+// A classic script that throws still fires load, so the error surfaces through
+// window's error event; without this the entry would commit partially.
+function watchScriptErrors(script: HTMLScriptElement): { stop: () => void; check: () => void } {
+  let thrown: Error | undefined;
+  const onError = (event: ErrorEvent) => {
+    if (script.src && event.filename !== script.src) return;
+    thrown = event.error instanceof Error ? event.error : new Error(event.message || `Plugin entry ${script.src} failed`);
+  };
+  window.addEventListener("error", onError);
+  return {
+    stop: () => window.removeEventListener("error", onError),
+    check: () => {
+      if (thrown) throw thrown;
+    },
+  };
+}
+
 async function loadEntryAssets(plugin: InstalledPlugin, assets: HTMLElement[]) {
   for (const href of plugin.styles ?? []) {
     const link = document.createElement("link");
@@ -29,7 +46,13 @@ async function loadEntryAssets(plugin: InstalledPlugin, assets: HTMLElement[]) {
   const script = document.createElement("script");
   script.src = plugin.entry;
   assets.push(script);
-  await loadAsset(script);
+  const errors = watchScriptErrors(script);
+  try {
+    await loadAsset(script);
+  } finally {
+    errors.stop();
+  }
+  errors.check();
 }
 
 async function loadEntry(plugin: InstalledPlugin, modules: ConsoleModule[], runtime: ReturnType<typeof createGlobalHost>) {
