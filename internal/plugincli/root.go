@@ -503,8 +503,25 @@ func runInstall(ctx context.Context, output io.Writer, options *Options, flags *
 	if err := runner.UpgradePlugin(ctx, resolved.pluginRelease, input, resolved.pluginNamespace, resolved.values, resolved.wait, options.Timeout); err != nil {
 		return fmt.Errorf("install plugin runtime: %w", err)
 	}
-	_, err = fmt.Fprintf(output, "Installed runtime: %s/%s %s\nRegistration is separate: create a Plugin CR to load it in Console.\n", artifact.Manifest.Group, artifact.Manifest.Name, artifact.Manifest.Version)
+	registrations, listErr := runner.Registrations(ctx)
+	identity := pluginapi.PluginIdentity{Group: artifact.Manifest.Group, Name: artifact.Manifest.Name}
+	_, err = fmt.Fprintf(output, "Installed runtime: %s/%s %s\n%s\n", artifact.Manifest.Group, artifact.Manifest.Name, artifact.Manifest.Version, installOutcome(identity, registrations, listErr))
 	return err
+}
+
+// installOutcome reports whether the Chart registered itself. A Chart that ships
+// the Plugin CR needs no follow-up; one that does not still needs the separate
+// registration step, so the message must not claim otherwise.
+func installOutcome(identity pluginapi.PluginIdentity, registrations []pluginapi.Plugin, listErr error) string {
+	if listErr != nil {
+		return "Registration is separate: create a Plugin CR to load it in Console."
+	}
+	for _, registration := range registrations {
+		if registered, ok := pluginapi.ParsePluginResourceName(registration.Name); ok && registered == identity {
+			return "Registered: Console serves the plugin."
+		}
+	}
+	return "Registration is separate: create a Plugin CR to load it in Console."
 }
 
 func prepareInstall(ctx context.Context, options *Options, flags *lifecycleFlags, input string) (pluginpackage.Artifact, lifecycleFlags, Runner, error) {

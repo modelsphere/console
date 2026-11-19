@@ -3,6 +3,7 @@ package plugincli
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,8 +11,32 @@ import (
 	"time"
 
 	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	sigyaml "sigs.k8s.io/yaml"
 )
+
+func TestInstallOutcomeReportsChartManagedRegistration(t *testing.T) {
+	identity := pluginapi.PluginIdentity{Group: "modelsphere.dev", Name: "my-plugin"}
+	registered := []pluginapi.Plugin{{ObjectMeta: metav1.ObjectMeta{Name: "modelsphere.dev--my-plugin"}}}
+	cases := []struct {
+		name          string
+		registrations []pluginapi.Plugin
+		listErr       error
+		want          string
+	}{
+		{"chart registered itself", registered, nil, "Registered: Console serves the plugin."},
+		{"runtime installed without a registration", nil, nil, "Registration is separate: create a Plugin CR to load it in Console."},
+		{"another plugin is registered", []pluginapi.Plugin{{ObjectMeta: metav1.ObjectMeta{Name: "modelsphere.dev--other"}}}, nil, "Registration is separate: create a Plugin CR to load it in Console."},
+		{"listing failed", nil, errors.New("forbidden"), "Registration is separate: create a Plugin CR to load it in Console."},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if got := installOutcome(identity, test.registrations, test.listErr); got != test.want {
+				t.Fatalf("installOutcome() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
 
 func TestForcePackagePreservesOldPackageWhenGeneratedArchiveIsInvalid(t *testing.T) {
 	directory := t.TempDir()
