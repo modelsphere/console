@@ -10,12 +10,12 @@ name: package
 #   version            chart version and appVersion; default <appVersion>-git<sha7>
 #   image_repository   image the packaged chart points at; default ghcr.io/<owner>/console
 #   image_tag          image tag written into the chart; default the version above
-#   chart_repository   OCI target for the chart, e.g. oci://quanzhenglong.com/edge/charts;
+#   chart_repository   OCI target for the chart, e.g. oci://registry.example.com/team/charts;
 #                      empty pushes to oci://ghcr.io/<owner>/charts when the image goes there
 #   platforms          build platforms; default linux/amd64,linux/arm64
 #   push               build the image and push image + chart; default false
 #
-# GHCR uses the workflow token. Any other registry (quanzhenglong.com, swr, Harbor)
+# GHCR uses the workflow token. Any other registry (an internal Harbor, a cloud
 # needs the REGISTRY_USERNAME and REGISTRY_PASSWORD repository secrets; without them
 # the run fails in the Version step, before it builds anything.
 #
@@ -43,7 +43,7 @@ on:
         required: false
         default: ""
       chart_repository:
-        description: "OCI target for the chart, e.g. oci://quanzhenglong.com/edge/charts; empty: GHCR when the image goes there, else no chart push"
+        description: "OCI target for the chart, e.g. oci://registry.example.com/team/charts; empty: GHCR when the image goes there, else no chart push"
         type: string
         required: false
         default: ""
