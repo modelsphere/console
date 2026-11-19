@@ -52,6 +52,28 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  plugin-sdk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/packages/plugin-sdk
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/packages/plugin-sdk/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm test
+      - run: pnpm run build
+
   gate:
     runs-on: ubuntu-latest
     steps:

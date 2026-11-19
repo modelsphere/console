@@ -88,6 +88,7 @@ export interface Deployment {
   // names no route.
   route?: string;
   backend?: ApplyWith;
+  uid?: string;
   // An LLMService swiss did not write.
   external?: boolean;
   // An LLMService swiss wrote was edited outside swiss.

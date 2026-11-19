@@ -13,6 +13,8 @@ import { Endpoint } from "@swiss/components/Endpoint";
 import { Provenance } from "@swiss/components/Provenance";
 import { useT } from "@/modules/inferences/i18n";
 import { modelLine, parseTab, releaseState, sloBlocked, visibleTabs, type Tab } from "@/modules/inferences/lib";
+import { evaluateResourceAction } from "@/extensions/registry";
+import { ResourceExtensionSurface } from "@/extensions/surface";
 import { statusOf } from "@/modules/inferences/components/StatusDot";
 import { DeploySheet } from "@/modules/inferences/components/DeploySheet";
 import { UninstallDialog } from "@/modules/inferences/components/UninstallDialog";
@@ -106,14 +108,18 @@ export function InferenceDetail() {
 
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
   const removing = isUninstalling(s);
-  const blockedWrite = readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const resourceKey = `${namespace}/${release}`;
+  const actionBlocked = (action: string) => evaluateResourceAction("inference-service", resourceKey, s, action);
+  const blockedWrite = actionBlocked("uninstall") || (readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false);
+  const upgradeBlocked = actionBlocked("upgrade") || (readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false);
+  const sloBlockedByExtension = actionBlocked("slo");
   const external = s.external;
   const untracked = !plan.data && plan.isError;
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
   const blocked = sloBlocked(s, plan.data);
-  const sloOpen = !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
+  const sloOpen = !sloBlockedByExtension && !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
   const closeSLO = () => {
     setEditingSLO(false);
     if (!sloSetup) return;
@@ -136,13 +142,13 @@ export function InferenceDetail() {
             {
               key: "slo",
               label: t("actions.slo"),
-              disabled: blockedWrite || (external ? t("disabled.external") : blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
+              disabled: sloBlockedByExtension || blockedWrite || (external ? t("disabled.external") : blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
               onClick: () => setEditingSLO(true),
             },
             {
               key: "upgrade",
               label: t("actions.upgrade"),
-              disabled: blockedWrite || (external ? t("disabled.external") : !plan.data ? t("disabled.untracked") : false),
+              disabled: upgradeBlocked || (external ? t("disabled.external") : !plan.data ? t("disabled.untracked") : false),
               onClick: () => setUpgrading(true),
             },
             {
@@ -161,6 +167,7 @@ export function InferenceDetail() {
           ]}
           metaColumns={4}
         />
+        <ResourceExtensionSurface resourceType="inference-service" resourceKey={resourceKey} resource={s} placement="resource.header" />
         <PanelTabs items={visible.map((key) => ({ value: key, label: t(`tabs.${key}`), count: counts[key] }))} />
 
         <TabsContent value="overview">
@@ -182,7 +189,7 @@ export function InferenceDetail() {
           <Endpoint namespace={namespace} release={release} status={s} access={false} />
         </TabsContent>
         <TabsContent value="versions">
-          <Versions namespace={namespace} release={release} rollbackBlocked={removing ? t("disabled.uninstalling") : readOnly || !plan.data ? t("disabled.readOnly") : false} />
+          <Versions namespace={namespace} release={release} rollbackBlocked={actionBlocked("rollback") || (removing ? t("disabled.uninstalling") : readOnly || !plan.data ? t("disabled.readOnly") : false)} />
         </TabsContent>
         <TabsContent value="runs">
           <Runs namespace={namespace} release={release} />
@@ -196,10 +203,10 @@ export function InferenceDetail() {
         )}
       </Tabs>
 
-      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!readOnly && !removing && !external} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
-      <DeploySheet target={upgrading ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
+      <SLOSheet target={sloOpen ? { namespace, release } : null} canEdit={!sloBlockedByExtension && !readOnly && !removing && !external} setup={sloSetup} waiting={blocked === "pending"} onClose={closeSLO} />
+      <DeploySheet target={upgrading && !upgradeBlocked && !removing ? { kind: "upgrade", namespace, release } : null} onClose={() => setUpgrading(false)} />
       <UninstallDialog
-        target={uninstalling ? { namespace, release } : null}
+        target={uninstalling && !blockedWrite && !removing ? { namespace, release } : null}
         onClose={() => setUninstalling(false)}
         onDone={() => navigate(p(""))}
       />

@@ -28,6 +28,12 @@ type Config struct {
 	Origin string `yaml:"-"`
 }
 
+// ConfiguredBackends returns the declared backends as a copy, so callers can
+// append plugin routes from the cluster without mutating the loaded config.
+func (c *Config) ConfiguredBackends() []Backend {
+	return append([]Backend(nil), c.Backends...)
+}
+
 // Router is /v1, the endpoint programs call models through with API keys admins
 // issue. Empty Secret leaves it, and key management, off.
 type Router struct {
@@ -107,6 +113,8 @@ type Backend struct {
 	// names, so a cluster that keeps the console and the gateway in one
 	// namespace can still take a copied key through a Secret volume.
 	APIKeyEnv string `yaml:"apiKeyEnv,omitempty"`
+	// WritePermission is an optional permission required in addition to backend update access.
+	WritePermission string `yaml:"writePermission,omitempty"`
 }
 
 // Gateway is an inference entrypoint resolved from the cluster at startup and
@@ -230,7 +238,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("%s: server.auth.jwtSecret is required -- it signs every token, or set server.auth.disabled to run without a login", c.origin())
 	}
 	names, prefixes := map[string]bool{}, map[string]bool{}
-	for i, b := range c.Backends {
+	for i, b := range c.ConfiguredBackends() {
 		if b.Name == "" || b.Prefix == "" {
 			return fmt.Errorf("%s: backends[%d] needs name and prefix", c.origin(), i)
 		}
@@ -255,8 +263,21 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// reservedPrefixes are console's own API; a backend there would shadow them.
-var reservedPrefixes = []string{"/api/iam", "/api/me", "/api/router"}
+// reservedPrefixes are console's own API; a backend or plugin route there
+// would shadow the native handler.
+var reservedPrefixes = []string{"/api/iam", "/api/me", "/api/router", "/api/capabilities"}
+
+// ReservedAPIPrefix reports whether prefix belongs to a Console API. Both
+// configured backends and registered plugin routes are rejected there, so an
+// installed chart cannot answer /api/iam or /api/me on Console's behalf.
+func ReservedAPIPrefix(prefix string) bool {
+	for _, reserved := range reservedPrefixes {
+		if prefix == reserved || strings.HasPrefix(prefix, reserved+"/") {
+			return true
+		}
+	}
+	return false
+}
 
 func validateBackend(b Backend) error {
 	// Only /api/* passes the auth middleware's guard; anything else is served
@@ -267,10 +288,8 @@ func validateBackend(b Backend) error {
 	if strings.HasSuffix(b.Prefix, "/") {
 		return fmt.Errorf("prefix %q must not have a trailing slash", b.Prefix)
 	}
-	for _, r := range reservedPrefixes {
-		if b.Prefix == r || strings.HasPrefix(b.Prefix, r+"/") {
-			return fmt.Errorf("prefix %q is reserved by console", b.Prefix)
-		}
+	if ReservedAPIPrefix(b.Prefix) {
+		return fmt.Errorf("prefix %q is reserved by console", b.Prefix)
 	}
 	switch {
 	case b.URL == "" && b.Gateway == nil:

@@ -6,7 +6,7 @@ import { pageKey } from "@/shell/i18n";
 // pages; the shell owns everything around them: login, layout, sidebar, route
 // guards, the query client and the session on every request.
 //
-// Plugging a module in or out is one line in src/modules/index.ts.
+// Built-ins register in src/modules/index.ts; configured plugins register through the ModelSphere SDK host.
 export interface ModuleOverviewProps {
   session?: ReactNode;
 }
@@ -20,6 +20,7 @@ export interface ConsoleModule {
   // Every page mounts below this path, e.g. "/swiss". No trailing slash.
   basePath: string;
   pages: ModulePage[];
+  capability?: string;
   // "flush": pages draw Rise Global's skeleton themselves -- a PageBanner edge to
   // edge, then their own p-4 body. Default "padded": the shell insets the page.
   frame?: "padded" | "flush";
@@ -34,6 +35,7 @@ export interface ModulePage {
   // UI permission (a Role's uiPermissions entry). Guards the route and hides the
   // menu entry. Omit for pages every logged-in user may see.
   permission?: string;
+  requiresWrite?: boolean;
   // Present means the page gets a sidebar entry. label is Chinese; other
   // languages: "{module id}:menu.{pageKey(path)}".
   menu?: { label: string; icon: LucideIcon };
@@ -61,7 +63,7 @@ export function useModulePath(): (path: string) => string {
   return (path) => joinPath(module.basePath, path);
 }
 
-const RESERVED = new Set(["/login", "/change-password", "/api", "/oauth"]);
+const RESERVED = new Set(["/login", "/change-password", "/api", "/oauth", "/plugins", "/assets"]);
 // A module's id is its i18n namespace; these belong to the shell.
 const RESERVED_IDS = new Set(["common", "shell", "ui"]);
 

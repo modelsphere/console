@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { IntlMessageFormat } from "intl-messageformat";
-import { DEFAULT_LOCALE, LOCALES, getT, i18n, navLabel, pageKey, readLocale, registerI18n, setLocale, tNodes } from "@/shell/i18n";
+import { DEFAULT_LOCALE, LOCALES, getT, i18n, navLabel, pageKey, readLocale, registerI18n, setLocale, subscribeLocale, tNodes } from "@/shell/i18n";
 import { modules } from "@/modules";
 import { navGroups } from "@/shell/module";
 
@@ -56,6 +56,23 @@ describe("tNodes", () => {
     registerI18n("nodetest", { "zh-CN": { hi: "与 {model} 对话，共 {n} 轮" } });
     const html = renderToStaticMarkup(<>{tNodes(getT("nodetest"), "hi", { model: <b>qwen</b> }, { n: 2 })}</>);
     expect(html).toBe("与 <b>qwen</b> 对话，共 2 轮");
+  });
+});
+
+describe("subscribeLocale", () => {
+  it("notifies when a bundle arrives after the first render", () => {
+    let hits = 0;
+    const stop = subscribeLocale(() => hits++);
+    registerI18n("late.bundle", { "en-US": { menu: { late: "Late" } } });
+    stop();
+    expect(hits).toBeGreaterThan(0);
+  });
+
+  it("stops notifying once unsubscribed", () => {
+    let hits = 0;
+    subscribeLocale(() => hits++)();
+    registerI18n("late.after", { "en-US": { menu: { late: "Late" } } });
+    expect(hits).toBe(0);
   });
 });
 

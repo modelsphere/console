@@ -95,7 +95,7 @@ unchanged. Moving either one moves both.
 
 ## Modules
 
-The console is a shell plus compile-time modules. A module is a feature area
+The console is a shell plus built-in and installed runtime modules. A module is a feature area
 (iam, inferences, playground, router, docs, later container management); the shell owns everything
 around it.
 
@@ -132,9 +132,11 @@ Rules:
 - `validateModules` rejects duplicate ids/basePaths, shell-reserved paths and ids (`common`, `shell`: they are i18n namespaces) and pages declared twice at startup.
 - Text goes through `useT()` (see "i18n"); the declaration's `title` and menu labels stay Chinese.
 
-Deliberately not built: runtime loading, micro-frontends, cross-module slots. The
-earlier Cordis design (branch `docs/console-plugin-design`) is parked; revisit it
-when one of those is actually needed.
+Runtime plugins use `@modelsphere/plugin-sdk`, maintained in `web/packages/plugin-sdk`. A `modelsphere.dev/v1alpha1` Plugin CR registers an installed Helm release; Console reads its `plugin.yaml` and the release's `frontend/` files. SDK registration supplies the menu, components and internal routes. `/plugins/index.json` returns descriptors, and `/plugins/<cr-name>/*` serves the release's assets without Console credentials. Registration validates identity and collisions before adding a module. No CR adds no external module.
+
+Deployment uses the built bundle from the release's `frontend/` directory. Console watches Plugin CRs through an informer; enabling, disabling or deleting a CR changes the menu, routes and assets without a Console restart. Open tabs keep their registry until refreshed. A plugin with a backend is gated by `get` on `backends/<name>`; pages are never write-gated by the host, so the plugin hides its own mutations.
+
+See the [architecture](development/plugin-architecture.md) and [authoring and deployment guide](development/plugins.md).
 
 ### i18n
 
