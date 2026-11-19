@@ -11,12 +11,12 @@ import {
   splitImageRef,
 } from './create-instance'
 
-const REF = '10.126.126.53:30016/team/app:v2'
+const REF = 'registry.example.com:5000/team/app:v2'
 
 describe('splitImageRef', () => {
   it('splits a full reference with a port in the registry host', () => {
     expect(splitImageRef(REF)).toEqual({
-      registry: '10.126.126.53:30016',
+      registry: 'registry.example.com:5000',
       repository: 'team/app',
       tag: 'v2',
     })
