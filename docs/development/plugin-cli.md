@@ -25,9 +25,9 @@ plugin package/validate
 
 | Actor | Does | Does not |
 | --- | --- | --- |
-| `plugin install` | validates the package, resolves `consumes` bindings, installs or upgrades the plugin release | change Console's Helm values, upgrade Console, create the CR |
+| `plugin install` | validates the package, resolves `consumes` bindings, installs or upgrades the plugin release | change Console's Helm values, upgrade Console |
 | `plugin registration` | writes the `Plugin` CR for a package and a release | run `kubectl apply` |
-| user / GitOps | creates, disables and deletes the CR | hand-edit resources inside an installed release |
+| user / GitOps | owns a CR that the Chart does not ship, and disables a plugin through the Chart value | hand-edit resources inside an installed release |
 | Console | watches CRs, reads the installed release's `plugin.yaml` and `frontend/`, serves assets and backend routes | install or modify a plugin release |
 
 Console only observes installed releases, so installing and registering are
@@ -155,7 +155,14 @@ the new archive first and then replaces the old one atomically.
 modelsphere -v=2 --timeout 10m plugin install ./dist/my-plugin-0.1.0.tgz
 ```
 
-Expected output:
+Expected output when the Chart ships the `Plugin` CR:
+
+```text
+Installed runtime: modelsphere.dev/my-plugin 0.1.0
+Registered: Console serves the plugin.
+```
+
+A Chart without the CR prints the follow-up step instead:
 
 ```text
 Installed runtime: modelsphere.dev/my-plugin 0.1.0
@@ -182,8 +189,14 @@ constraint on the provider's product version.
 
 ## 6. Register the plugin
 
-`registration` only writes a declaration; it does not read CRs from the
-cluster (it does discover the Console release):
+A Chart that ships the `Plugin` CR registers itself: the CR is part of the
+release, created on install and removed on uninstall, and `install` reports
+`Registered`. This is the recommended package layout; see
+[plugins.md](plugins.md#10-register) for the template.
+
+For a Chart without the CR, `registration` writes the declaration. It does not
+apply it and does not read CRs from the cluster (it does discover the Console
+release):
 
 ```sh
 modelsphere plugin registration ./dist/my-plugin-0.1.0.tgz \
@@ -276,7 +289,17 @@ gets 403. A `ReverseProxy` whose matcher path does not start with `/api/`, whose
 
 ## 8. Disable and restore
 
-Disabling keeps both the release and the CR:
+Disabling keeps both the release and the CR. Flip the Chart value so the next
+upgrade keeps it, then upgrade:
+
+```sh
+helm --kubeconfig "$KUBECONFIG" --kube-context "$KUBE_CONTEXT" \
+  upgrade my-plugin ./dist/my-plugin-0.1.0.tgz \
+  --namespace "$CONSOLE_NAMESPACE" --reuse-values \
+  --set registration.active=false
+```
+
+For a CR the Chart does not own, a patch is enough:
 
 ```sh
 kubectl --kubeconfig "$KUBECONFIG" --context "$KUBE_CONTEXT" \

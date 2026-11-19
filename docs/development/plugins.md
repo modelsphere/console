@@ -397,12 +397,16 @@ an unknown `plugin.yaml` field, or an invalid `ReverseProxy`. `package` wraps
 frontend, so build and copy first.
 
 `install` runs `helm upgrade --install --atomic --wait` with every `consumes`
-binding resolved, then prints:
+binding resolved, then reads the registrations and reports what it found:
 
 ```
 Installed runtime: modelsphere.dev/my-plugin 0.1.0
-Registration is separate: create a Plugin CR to load it in Console.
+Registered: Console serves the plugin.
 ```
+
+A Chart that does not create the `Plugin` CR prints
+`Registration is separate: create a Plugin CR to load it in Console.` instead;
+see [Register](#10-register).
 
 | Flag | Meaning |
 | --- | --- |
@@ -416,29 +420,38 @@ Registration is separate: create a Plugin CR to load it in Console.
 
 ## 10. Register
 
-```sh
-modelsphere plugin registration ./dist/my-plugin-0.1.0.tgz | kubectl apply -f -
-```
-
-This prints a cluster-scoped `Plugin`:
+Registration belongs to the release. The Chart creates the `Plugin` CR, so
+installing registers the plugin and uninstalling removes the registration with
+the runtime. Add this template to the plugin's `templates/`:
 
 ```yaml
+{{- $plugin := fromYaml (.Files.Get "plugin.yaml") -}}
 apiVersion: modelsphere.dev/v1alpha1
 kind: Plugin
 metadata:
-  name: modelsphere.dev--my-plugin
+  name: {{ printf "%s--%s" $plugin.group $plugin.name | quote }}
 spec:
   type: helm
   scope: platform
   enabled: true
-  version: 0.1.0
+  version: {{ .Chart.Version | quote }}
   chart:
-    name: my-plugin
-    namespace: my-plugin-system
-    releaseName: my-plugin
+    name: {{ .Chart.Name }}
+    namespace: {{ .Release.Namespace }}
+    releaseName: {{ .Release.Name }}
 ```
 
-Apply it, then read the status:
+- `plugin.yaml` supplies the identity, so the CR and the Chart cannot disagree.
+- `.Chart.Version` is the pinned release version. This removes the most common
+  `Degraded` cause, a pin that no longer matches the installed Chart.
+- The CRD comes from the Console Chart. On a cluster without it, or to keep a
+  plugin out of Console on purpose, gate the template with a values key such as
+  `registration.enabled` and install with it off.
+- `spec.enabled` should be a Chart value too, e.g. `registration.active`. A
+  `kubectl patch` would be reverted by the next upgrade; disable with
+  `helm upgrade --set registration.active=false`.
+
+Then read the status:
 
 ```sh
 kubectl get plugin modelsphere.dev--my-plugin -o yaml
@@ -446,7 +459,15 @@ kubectl get plugin modelsphere.dev--my-plugin -o yaml
 
 `status.phase` becomes `Installed` when the release, its chart files and its
 routes all pass. Otherwise it is `Degraded` and `status.message` names the first
-failed check; the plugin is not served.
+failed check; the plugin is not served. Console writes the status through the
+CR's status subresource, so Helm upgrades do not disturb it.
+
+A Chart that does not ship the CR—an older package, or a CR kept in Git—still
+has the separate step:
+
+```sh
+modelsphere plugin registration ./dist/my-plugin-0.1.0.tgz | kubectl apply -f -
+```
 
 `enabled: false` unloads the plugin without uninstalling it. Deleting the CR
 unloads it too; the release and its IAM resources stay until you uninstall.
@@ -473,8 +494,10 @@ production entry and does not disable authentication.
    version changed), rebuild the frontend, and copy it under `frontend/`.
 2. Run `modelsphere plugin install` again. The CLI upgrades the release with
    `--atomic`; a failed upgrade rolls back.
-3. If the CR pins `spec.version`, update it to the new chart version. A pinned
-   version that no longer matches leaves the plugin `Degraded` until you do.
+3. A Chart-managed CR follows the release, because `spec.version` is
+   `.Chart.Version`; nothing else to edit. A CR managed outside the Chart pins
+   the version by hand, and a pin that no longer matches leaves the plugin
+   `Degraded` until it is updated.
 
 ```sh
 modelsphere plugin uninstall modelsphere.dev/my-plugin --yes --wait

@@ -19,9 +19,10 @@ modelsphere plugin install
   -> plugin Helm release
 ```
 
-Registration is separate. The Plugin CR references the installed release by Chart
-name, version, namespace and release name; it carries no host credentials and
-does not duplicate the platform values.
+The Plugin CR references the installed release by Chart name, version, namespace
+and release name; it carries no host credentials and does not duplicate the
+platform values. The recommended package ships the CR in the Chart, so
+installing and uninstalling move the registration with the runtime.
 
 ## Host Configuration
 

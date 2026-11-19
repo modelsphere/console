@@ -84,6 +84,12 @@ version is what `spec.version` pins.
 
 `Plugin` is cluster-scoped (`modelsphere.dev/v1alpha1`).
 
+The recommended package ships this CR in the plugin Chart, so the release
+creates it on install and removes it on uninstall, `spec.version` is
+`.Chart.Version`, and `spec.enabled` is a Chart value. Console writes only the
+status subresource, so upgrades leave `status` intact. A CR created outside the
+Chart behaves the same but must be kept in sync by hand.
+
 ```yaml
 apiVersion: modelsphere.dev/v1alpha1
 kind: Plugin
