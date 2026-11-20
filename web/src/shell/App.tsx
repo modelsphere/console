@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/shell/auth";
 import { PermissionGuard, PermissionsProvider } from "@/shell/permissions";
 import { Layout } from "@/shell/Layout";
-import { ModuleProvider, joinPath, validateModules, type ConsoleModule } from "@/shell/module";
+import { ModuleProvider, pagePath, validateModules, type ConsoleModule } from "@/shell/module";
 import { Login } from "@/shell/pages/Login";
 import { Home } from "@/shell/pages/Home";
 import { useT } from "@/shell/i18n";
@@ -69,10 +69,10 @@ export function App({ modules, pluginErrors = [] }: { modules: ConsoleModule[]; 
                   {modules.flatMap((m) =>
                     m.pages.map((p) => (
                       <Route
-                        key={`${m.id}:${p.path}`}
-                        path={joinPath(m.basePath, p.path)}
+                        key={`${m.id}:${pagePath(m, p)}`}
+                        path={pagePath(m, p)}
                         element={
-                          <ModuleProvider module={m}>
+                          <ModuleProvider module={m} basePath={p.basePath}>
                             <div className={m.frame === "flush" ? "h-full" : "p-6"}>
                               <ModulePageContent module={m} page={p} />
                             </div>

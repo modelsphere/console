@@ -95,6 +95,57 @@ unchanged. Moving either one moves both.
 
 ## Modules
 
+### SDK menu compatibility
+
+The Global menu declaration is the shared plugin contract. Console adapts its
+navigation to that declaration rather than redefining `menus` as one entry.
+
+```text
+menus[] -> all menu pages, including hidden route mappings
+routes  -> additional pages, merged with matching menu paths
+               |
+               v
+ConsoleModule -> permission filtering -> parent/group/order aggregation -> sidebar
+```
+
+| Declaration | Console mapping |
+|---|---|
+| `name`, `title`, `path` | menu identity/i18n key, label, absolute same-origin page path; query/hash paths fail explicitly |
+| component | explicit route first, then kebab-case `name` to PascalCase component; raw key fallback for existing Console plugins |
+| `hidden` | suppress navigation, retain route and permission checks |
+| `authKey` | page permission and sidebar filtering; backend authorization remains independent |
+| `parent` | contribute to the installed target module's sidebar, without changing route/component ownership |
+| `group`, `order` | merge equal group titles within a sidebar, sort entries using Global's default order 999 |
+| `scope`, `requiredScope` | platform only; other contexts fail registration explicitly |
+| `children` | recursive menu tree; sibling ordering, expandable branches and active-ancestor expansion |
+
+Modules may mount below Global's three-segment `/{group}/{version}/{resource}`
+namespace, such as `/rise.io/v1/example`, or the existing Console `/{id}` root.
+One plugin may own multiple namespaces while retaining one module identity.
+Relative detail routes use the first top-level menu's namespace; absolute routes
+retain theirs. Every namespace is checked against reserved paths and other
+modules. An index without an explicit page redirects to the first visible,
+permitted, static own menu in that namespace; selecting that default never discards other menus. Menu permissions
+also apply to their descendant detail routes unless a more-specific menu
+declares a different permission.
+
+Only the most-specific visible menu is active, including on descendant detail
+routes. A contribution's `parent` changes sidebar ownership, not component,
+route, permission or translation ownership; when the target is unavailable,
+the menu is not reassigned to its source plugin's sidebar.
+
+Children inherit sidebar ownership and the nearest ancestor's permission unless
+they declare an override. Hidden or denied parents suppress their navigation
+subtree, not its route registrations. Detail routes use their closest menu's
+permission regardless of namespace. Icons use Lucide's official dynamic catalog;
+unknown names fail registration, omitted names use `puzzle`.
+
+Presentation modes change host chrome, not the plugin contract: minimal, classic
+and mixed-nav all render the same navigation tree and guarded routes. The adapter
+does not create a Global Dock or boss/console viewport control plane;
+`scopes[].viewport` is not interpreted as a Console layout preference.
+See [the adaptation design](development/plugin-navigation-design.md).
+
 The console is a shell plus built-in and installed runtime modules. A module is a feature area
 (iam, inferences, playground, router, docs, later container management); the shell owns everything
 around it.

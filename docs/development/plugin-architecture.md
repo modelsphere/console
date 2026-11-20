@@ -212,12 +212,21 @@ Navigation comes from the registration, not from `plugin.yaml`:
 
 | Rule | Behavior |
 | --- | --- |
-| one visible menu | the first menu without `hidden: true` becomes the module: title, base path, icon, sidebar entry |
-| all other menus | ignored for navigation; they do not create sidebar entries |
-| `routes` | every pattern becomes a page under the module base path; the menu path is not duplicated |
+| `menus[]` | every menu creates a page mapping; visible and permitted entries appear in the sidebar |
+| module namespaces | Global `/{group}/{version}/{resource}` or Console `/{id}`; one plugin may own several, all checked for conflicts |
+| component mapping | explicit route first, then kebab-case menu name to PascalCase; raw component key remains a legacy fallback |
+| `routes` | relative keys use the first menu's namespace; absolute keys retain theirs; matching menu routes merge |
+| `hidden`, `authKey` | hidden menus retain routes; permission keys guard both navigation and direct page access, including descendant details |
+| `parent`, `group`, `order` | contribute to the target sidebar, merge equal group titles, sort by Global default order 999 |
+| `children` | recursive navigation; child ownership/permission inherit unless overridden; hidden or denied parents hide the navigation subtree |
+| default page | each namespace index without its own page redirects to its first visible, permitted static own menu |
+| unsupported context | non-platform `scope`/`requiredScope` and query/hash menu paths fail explicitly |
 | route patterns | literal segments, `[param]` → `:param`, `[...rest]` → `*`; anything else throws |
-| icons | `boxes`, `flask-conical`, `puzzle`; any other name fails the plugin |
-| one module per plugin | the module id is `plugin.yaml` `name`; a duplicate id or base path fails `validateModules` |
+| icons | installed Lucide dynamic catalog, including aliases; missing names use `puzzle`, unknown names fail registration |
+| one module per plugin | the module id is `plugin.yaml` `name`; duplicate IDs and overlapping namespaces fail `validateModules` |
+
+Host presentation modes share this adapter: choosing a different layout changes
+chrome, not plugin navigation, permissions, routes or interactions.
 
 A plugin with a backend inherits a capability check: the sidebar hides the
 module unless the user has `get` on `backends/<name>`, and a direct URL shows

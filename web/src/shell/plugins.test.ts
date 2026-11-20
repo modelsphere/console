@@ -124,6 +124,25 @@ describe("configured SDK plugins", () => {
     browser([example()],asset=>{register("example","/core");asset.onload?.();});
     expect((await loadPlugins([builtin])).errors[0]).toMatch(/already taken/);
   });
+  it("rolls back a secondary namespace collision and still loads the next plugin", async () => {
+    const assets = browser([example("collision"), example()], asset => {
+      if (asset.src.includes("collision")) {
+        const sdk = window.__MODELSPHERE_SDK__;
+        sdk.registerPlugin({ name: "collision", version: "1", menus: [
+          { name: "home", path: "/collision" }, { name: "extra", path: "/core/list" },
+        ] });
+        sdk.registerPluginComponent("collision", "Home", () => null);
+        sdk.registerPluginComponent("collision", "Extra", () => null);
+        sdk.registerDataExtension("collision", { id: "rolled-back", resourceType: "test", load: () => ({}) });
+      } else register();
+      asset.onload?.();
+    });
+    const result = await loadPlugins([builtin]);
+    expect(result.modules.map(module => module.id)).toEqual(["core", "example"]);
+    expect(result.errors[0]).toMatch(/already taken|overlap/);
+    expect(assets[0].remove).toHaveBeenCalled();
+    expect(extensions.data).toEqual([]);
+  });
   it("continues after an entry asset fails", async () => {
     browser([example("broken"),example()],asset=>{if(asset.src.includes("broken"))asset.onerror?.();else{register();asset.onload?.();}});
     const result=await loadPlugins([builtin]);

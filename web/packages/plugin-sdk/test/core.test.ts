@@ -357,6 +357,19 @@ describe('typed events', () => {
 })
 
 describe('registration contract validation', () => {
+  it('preserves scope visibility restrictions and recursive menus across the host bridge', async () => {
+    const { registerPlugin } = installHost()
+    const createPlugin = await loadCreatePlugin()
+    const child = { name: 'child', path: '/other/child', scope: 'platform' as const, requiredScope: ['platform' as const] }
+    createPlugin({
+      ...baseDefinition,
+      menus: [{ name: 'parent', path: '/example/parent', scope: 'platform', requiredScope: ['platform'], children: [child] }],
+    })
+    expect(registerPlugin).toHaveBeenCalledWith(expect.objectContaining({ menus: [expect.objectContaining({
+      requiredScope: ['platform'], children: [child],
+    })] }))
+  })
+
   it('reports the plugin name and nested menu field path', async () => {
     const { registerPlugin } = installHost()
     const createPlugin = await loadCreatePlugin()

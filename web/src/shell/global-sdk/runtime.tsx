@@ -1,7 +1,5 @@
 import * as React from "react";
-import { useLocation, useParams } from "react-router";
-import { Boxes, FlaskConical, Puzzle } from "lucide-react";
-import { type ConsoleModule, type ModulePage } from "@/shell/module";
+import { buildModule, type Definition } from "./navigation";
 import {
   registerActionExtension,
   registerDataExtension,
@@ -24,8 +22,6 @@ export interface InstalledPlugin {
   backend?: { name: string; prefix: string; writePermission?: string };
 }
 
-interface SDKMenu { name: string; path: string; title?: string; icon?: string; authKey?: string; hidden?: boolean }
-interface Definition { name: string; version: string; displayName?: string; icon?: string; menus?: SDKMenu[] }
 type PluginComponent = React.ComponentType<any>;
 interface DataDefinition extends Omit<ResourceDataExtension, "plugin"> {}
 interface VisibilityDefinition extends Omit<ResourceVisibilityExtension, "plugin"> {}
@@ -42,47 +38,6 @@ interface Registration {
   actions: ActionDefinition[];
   cleanups: (() => void)[];
   error?: Error;
-}
-
-function RoutePage({ component: Component }: { component: PluginComponent }) {
-  return <Component params={useParams()} locationSearch={useLocation().search} />;
-}
-
-function routePath(pattern: string): string {
-  const normalized = pattern.replace(/^\//, "").replace(/\[\.\.\.([\w-]+)\]/g, "*").replace(/\[([\w-]+)\]/g, ":$1");
-  if (!normalized || normalized.split("/").some((part) => !/^(?:[\w-]+|:[\w-]+|\*)$/.test(part))) {
-    throw new Error(`Unsupported SDK route "${pattern}"`);
-  }
-  return normalized;
-}
-
-function buildModule(registration: Registration): ConsoleModule {
-  const { plugin, definition, components, routes, error } = registration;
-  if (error) throw error;
-  if (!definition) throw new Error("Entry did not register a ModelSphere SDK plugin");
-  const declared = definition.menus?.find((menu) => !menu.hidden);
-  const menu = declared ? {
-    title: definition.displayName ?? declared.title ?? declared.name,
-    label: declared.title ?? declared.name,
-    path: declared.path,
-    component: declared.name,
-    icon: declared.icon || definition.icon,
-    capability: plugin.backend?.name,
-    requiresWrite: false,
-  } : undefined;
-  if (!menu) throw new Error("Entry did not register a menu");
-  const component = routes[menu.path] ?? components[menu.component];
-  if (!component) throw new Error(`Menu component "${menu.component}" was not registered`);
-  const icons = { boxes: Boxes, "flask-conical": FlaskConical, puzzle: Puzzle };
-  if (menu.icon && !(menu.icon in icons)) throw new Error(`Unsupported menu icon "${menu.icon}"`);
-  const pages: ModulePage[] = [{ path: "", element: <RoutePage component={component} />, requiresWrite: menu.requiresWrite,
-    menu: { label: menu.label, icon: icons[menu.icon as keyof typeof icons] ?? Puzzle } }];
-  for (const [pattern, route] of Object.entries(routes)) {
-    if (pattern === menu.path) continue;
-    const path = routePath(pattern);
-    pages.push({ path, element: <RoutePage component={route} /> });
-  }
-  return { id: plugin.id, title: menu.title, basePath: menu.path, capability: menu.capability, frame: "flush", pages };
 }
 
 function registerExtensions(registration: Registration): void {

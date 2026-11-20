@@ -414,6 +414,7 @@ function registerDefinition(sdk: RiseHostSDK, def: PluginDefinition): void {
     group: m.group || '',
     order: m.order ?? 999,
     authKey: m.authKey || '',
+    requiredScope: m.requiredScope,
     hidden: m.hidden || false,
     children: m.children || [],
   }))

@@ -156,28 +156,41 @@ chart cannot drift.
 
 | Rule | Result |
 | --- | --- |
-| at least one menu | required; a plugin with no visible menu fails with `Entry did not register a menu` |
-| the first menu without `hidden: true` | becomes the module: title, base path, icon, sidebar entry |
-| any further menus | ignored for navigation; they create no sidebar entry |
+| at least one menu mapping | required; hidden menu mappings are allowed and retain their routes |
+| `menus[]` | all entries are registered; `hidden` and `authKey` control sidebar visibility |
+| component mapping | explicit route, then `menu.name` kebab-case to PascalCase; legacy raw-key fallback remains |
+| `parent`, `group`, `order` | contribute to the installed target sidebar, merge group titles, order entries with default 999 |
 | `scope: "platform"` | the only scope this Console currently serves |
-| `icon` | `boxes`, `flask-conical` or `puzzle`; absent means `puzzle`, any other name fails the plugin |
-| duplicate module id or base path | registration fails with a validation error |
+| `children` | retain nested navigation, sibling ordering and expandable branches; child ownership and permissions inherit unless overridden |
+| unsupported declarations | non-platform scope/requiredScope and query/hash menu paths report explicit errors |
+| `icon` | any name in the installed Lucide dynamic catalog; absent means `puzzle`, unknown names fail registration |
+| duplicate module id or overlapping namespace | registration fails with a validation error |
 
-Every plugin has exactly one module, so a plugin that only contributes
-extensions still registers one menu. It can reuse the base path of the page it
-annotates or expose a single page of its own.
+Every plugin has exactly one module identity but may own multiple route namespaces.
+A plugin that only contributes extensions still registers a menu mapping.
+None of its namespaces may overlap a builtin or another plugin. A `parent`
+contribution changes sidebar placement, not the route/component owner.
+Host presentation modes share these behaviors; no mode-specific plugin bundle is needed.
 
-`title` is rendered as given. The bundle registers once per page load, so pick
-the string the product wants shown; Console's own interface switches language
-independently of plugin menus.
+`title` is the source label. Menu translations use the plugin's i18n namespace
+and a camelCase key derived from `menu.name`; missing translations fall back to
+the declared title. Group titles remain merge keys across contributors.
 
 ### Routes
 
-Route keys are matched as follows. The key equal to the menu path supplies the
-module's index page (a component named after the menu also works); every other
-key is a page under the module base path. `[id]` becomes `:id` and `[...rest]`
-becomes `*`; any other segment syntax throws. With the example above,
-`reports/[id]` renders at `/my-plugin/reports/:id`.
+Menu paths and route keys are normalized before matching; a matching route
+provides the menu's component without registering a duplicate page. Global paths
+use `/{group}/{version}/{resource}` as their namespace; existing Console paths use
+`/{id}`. Relative detail routes mount below the first top-level menu's namespace;
+absolute route keys keep their own namespace. `[id]` becomes
+`:id` and `[...rest]` becomes `*`; unsupported segment syntax throws. With the
+example above, `reports/[id]` renders at `/my-plugin/reports/:id`.
+
+Each namespace's missing index page redirects to its first visible, permitted,
+static own menu in order. Parameterized routes are never redirect targets.
+Hidden or denied ancestors hide their navigation subtree, while child routes
+remain registered with their own guards. Detail routes inherit their nearest
+menu's `authKey`; backend authorization remains independent.
 
 ### Data and permissions
 
