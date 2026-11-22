@@ -157,6 +157,11 @@ type PluginObservedDelivery struct {
 // PluginMeta holds metadata extracted from plugin.yaml embedded in the Helm chart.
 // Navigation, slots, and console sections are registered at runtime by the JS bundle.
 type PluginMeta struct {
+	// ImageContract identifies the image values convention used by the Chart.
+	// +optional
+	// +kubebuilder:validation:Enum=v1
+	ImageContract string `json:"imageContract,omitempty"`
+
 	// Depends declares plugin names and version constraints from plugin.yaml.
 	// Disable checks match names only; they do not solve version constraints.
 	// +optional

@@ -149,6 +149,22 @@ describe("configured SDK plugins", () => {
     expect(result.modules.map(module=>module.id)).toEqual(["core","example"]);
     expect(result.errors[0]).toMatch(/broken/);
   });
+  it("keeps invalid application declarations out of the launcher without blocking the next plugin", async () => {
+    const assets = browser([example("broken"), example()], asset => {
+      if (asset.src.includes("broken")) {
+        const sdk = window.__MODELSPHERE_SDK__;
+        sdk.registerPlugin({ name: "broken", version: "1", scopes: [{ scope: "platform", path: "/outside" }], menus: [{ name: "home", path: "/broken" }] });
+        sdk.registerPluginComponent("broken", "Home", () => null);
+      } else register();
+      asset.onload?.();
+    });
+    const result = await loadPlugins([builtin]);
+    expect(result.modules.map(module => module.id)).toEqual(["core", "example"]);
+    expect(result.modules[1].navigation).toMatchObject({ provider: "modelsphere.dev/example", scopes: [], menus: ["Example"] });
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatch(/Application path/);
+    expect(assets[0].remove).toHaveBeenCalled();
+  });
   it("rolls back an entry that throws after registering", async () => {
     const assets = browser([example()], (asset) => {
       register();

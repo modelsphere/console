@@ -20,6 +20,16 @@ function render(path: string, board = false, collapsed = false): string {
 }
 
 describe("recursive sidebar", () => {
+  it("uses stable group ids when a composition shares namespace and title across groups", () => {
+    const groups = ["first", "second"].map(id => ({ id: `app/${id}`, title: "Resources", ns: "app", paths: [`/${id}`],
+      items: [{ to: `/${id}`, label: id, ns: "app", key: id, icon: Boxes, end: true }],
+    }));
+    const html = renderToStaticMarkup(<MemoryRouter initialEntries={["/second"]}><Sidebar groups={groups} collapsed={false} /></MemoryRouter>);
+    expect(html.match(/aria-expanded="true"/g)).toHaveLength(1);
+    expect(html.match(/aria-expanded="false"/g)).toHaveLength(1);
+    expect(html).toContain('aria-current="page"');
+  });
+
   it.each([false, true])("opens the complete active ancestry with board=%s", board => {
     const html = render("/billing/runs/42", board);
     expect(html).toContain('aria-label="Tools" aria-expanded="true"');

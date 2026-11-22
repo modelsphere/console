@@ -13,10 +13,10 @@ import { createRegistration } from "./runtime";
 
 let currentUser: Me | null = null;
 
-function useSDKPermissions() {
+function useSDKPermissions(scope: { scope: string; value: string }) {
   const { has } = usePermissions();
   const { loading } = useAuth();
-  return { hasPermission: has, loading };
+  return { hasPermission: has, loading, scopeType: scope.scope, scopeValue: scope.value };
 }
 
 export function GlobalSDKSession() {
@@ -33,13 +33,16 @@ function navigate(path: string) {
 
 export function createGlobalHost() {
   const registration = createRegistration();
+  const getScope = () => registration.getScope(window.location.pathname);
   const host = {
     VERSION: "1.0.1", React, ReactJSXRuntime, ReactJSXDevRuntime, ...registration.sdk, apiClient, navigate, ui,
     business: { console: { Router, Query, i18n, apiFetch, useAuth, usePermissions } },
-    ScopeContext: { scope: "platform", cluster: "", workspace: "", project: "" },
-    scope: "platform", scopeValue: "global",
-    getScope: () => ({ scope: "platform", value: "global", full: "platform/global" }),
-    usePermissions: useSDKPermissions,
+    get ScopeContext() { const context = getScope(); return { scope: context.scope, cluster: context.scope === "cluster" ? context.value : "", workspace: "", project: "" }; },
+    get scope() { return getScope().scope; },
+    get scopeValue() { return getScope().value; },
+    getScope,
+    getCanonicalPathname: () => window.location.pathname,
+    usePermissions: () => { Router.useLocation(); return useSDKPermissions(getScope()); },
     get(name: string) {
       if (name !== "auth") throw new Error(`Unsupported SDK namespace "${name}"`);
       return {

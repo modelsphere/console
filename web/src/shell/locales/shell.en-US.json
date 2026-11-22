@@ -1,4 +1,9 @@
 {
+  "applications": {
+    "title": "Applications",
+    "description": "Switch applications to see their menus and pages."
+  },
+  "scope": { "console": "Console" },
   "plugins": {
     "failed": "Some plugins failed to load. Expand for details."
   },

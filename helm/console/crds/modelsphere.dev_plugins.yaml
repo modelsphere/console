@@ -353,6 +353,12 @@ spec:
                   group:
                     description: Group is the API group (e.g., "rise.io").
                     type: string
+                  imageContract:
+                    description: ImageContract identifies the image values convention
+                      used by the Chart.
+                    enum:
+                    - v1
+                    type: string
                   name:
                     description: Name is the plugin identifier.
                     type: string

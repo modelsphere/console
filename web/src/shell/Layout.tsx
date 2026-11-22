@@ -1,5 +1,5 @@
 import { Fragment, useState, type ReactNode } from "react";
-import { NavLink } from "react-router";
+import { NavLink, useLocation } from "react-router";
 import {
   Avatar,
   AvatarFallback,
@@ -19,8 +19,11 @@ import { ChangePasswordDialog } from "@/shell/ChangePasswordDialog";
 import { PreferencesPanel } from "@/shell/PreferencesPanel";
 import { useLayout } from "@/shell/preferences";
 import { userMenuIdentity, userMenuState } from "@/shell/user-menu";
-import { navGroups, topbarItems, type ConsoleModule, type NavItem } from "@/shell/module";
+import { topbarItems, type ConsoleModule, type NavItem } from "@/shell/module";
 import { Sidebar } from "./Sidebar";
+import { ApplicationLauncher } from "./ApplicationLauncher";
+import type { ApplicationItem } from "./applications";
+import { applicationNavigation } from "./application-navigation";
 import { LOCALES, navLabel, useLocale, useT } from "@/shell/i18n";
 
 // The console shell in Rise Global's layouts, picked in the preferences panel.
@@ -38,9 +41,10 @@ export function Layout({ modules, children }: { modules: ConsoleModule[]; childr
   const { has } = usePermissions();
   const t = useT("shell");
   const layout = useLayout();
+  const { pathname } = useLocation();
   const [collapsed, setCollapsed] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const [prefsOpen, setPrefsOpen] = useState(false);
-  const groups = navGroups(modules, has);
+  const { groups, applications, activeID } = applicationNavigation(modules, has, pathname);
   const links = topbarItems(modules, has);
   const toggle = () => setCollapsed((c) => !c);
   const page = <main className="relative min-h-0 min-w-0 flex-1 overflow-auto bg-surface-page">{children}</main>;
@@ -50,17 +54,17 @@ export function Layout({ modules, children }: { modules: ConsoleModule[]; childr
       <div className="flex h-screen bg-[var(--shell-canvas)] [background-image:var(--shell-canvas-image)]">
         <aside className={`shrink-0 overflow-y-auto transition-[width] duration-200 ${collapsed ? "w-16" : "w-64"}`}>
           <nav className={collapsed ? "px-1 pb-1 pt-4" : "p-4"}>
-            <Sidebar groups={groups} collapsed={collapsed} board />
+            <Sidebar key={activeID} groups={groups} collapsed={collapsed} board />
           </nav>
         </aside>
         <div className="m-2 ml-0 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-card shadow-[0_1px_3px_0_rgb(0_0_0/0.1),0_1px_2px_-1px_rgb(0_0_0/0.1)]">
-          <TopBar tone="light" links={links} collapse={{ collapsed, toggle }} onPreferences={() => setPrefsOpen(true)} />
+          <TopBar tone="light" links={links} applications={applications} collapse={{ collapsed, toggle }} onPreferences={() => setPrefsOpen(true)} />
           {page}
         </div>
       </div>
     ) : (
       <div className={`flex h-screen flex-col ${layout === "classic" ? "bg-[var(--shell-classic-canvas)]" : "bg-background"}`}>
-        <TopBar tone="dark" links={links} onPreferences={() => setPrefsOpen(true)} />
+        <TopBar tone="dark" links={links} applications={applications} onPreferences={() => setPrefsOpen(true)} />
         <div className="flex min-h-0 flex-1">
           <aside
             className={`flex shrink-0 flex-col bg-[var(--shell-sidebar)] transition-[width] duration-300 ${collapsed ? "w-16" : "w-64"} ${
@@ -69,7 +73,7 @@ export function Layout({ modules, children }: { modules: ConsoleModule[]; childr
           >
             <div className="flex-1 overflow-y-auto">
               <nav className={collapsed ? "px-1 pb-1 pt-4" : "p-4"}>
-                <Sidebar groups={groups} collapsed={collapsed} />
+                <Sidebar key={activeID} groups={groups} collapsed={collapsed} />
               </nav>
             </div>
             <div className="border-t border-border p-2">
@@ -126,11 +130,13 @@ const TONE = {
 function TopBar({
   tone,
   links,
+  applications,
   collapse,
   onPreferences,
 }: {
   tone: "light" | "dark";
   links: NavItem[];
+  applications: ApplicationItem[];
   collapse?: { collapsed: boolean; toggle: () => void };
   onPreferences: () => void;
 }) {
@@ -143,13 +149,13 @@ function TopBar({
   const t = TONE[tone];
 
   return (
-    <header className={`flex h-14 shrink-0 items-center gap-3 px-4 ${t.bar}`}>
+    <header className={`flex h-14 shrink-0 items-center gap-2 px-2 sm:gap-3 sm:px-4 ${t.bar}`}>
       {collapse && (
         <button
           type="button"
           onClick={collapse.toggle}
           aria-label={tr(collapse.collapsed ? "layout.expandSidebar" : "layout.collapseSidebar")}
-          className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${t.icon}`}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors ${t.icon}`}
         >
           <PanelLeft className="h-4 w-4" />
         </button>
@@ -158,6 +164,7 @@ function TopBar({
         <Boxes className={`h-[26px] w-[26px] shrink-0 ${t.logo}`} />
         <span className="hidden text-sm font-semibold sm:inline">ModelSphere</span>
       </NavLink>
+      <ApplicationLauncher items={applications} className={t.icon} />
 
       <div className="ml-auto flex items-center gap-1">
         {links.map((item) => {

@@ -3,7 +3,6 @@ package pluginregistry
 import (
 	"context"
 	"fmt"
-	"io"
 	"strings"
 
 	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
@@ -14,7 +13,6 @@ import (
 	"helm.sh/helm/v3/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
 	typedcore "k8s.io/client-go/kubernetes/typed/core/v1"
 	sigyaml "sigs.k8s.io/yaml"
@@ -84,13 +82,16 @@ func (r *Registry) load(ctx context.Context, plugin *pluginapi.Plugin) (*Entry, 
 	if meta.Group != identity.Group || meta.Name != identity.Name || meta.APIVersion != "v1" {
 		return nil, fmt.Errorf("Chart plugin metadata does not match registration identity")
 	}
+	if meta.ImageContract != "" && meta.ImageContract != "v1" {
+		return nil, fmt.Errorf("unsupported plugin imageContract %q", meta.ImageContract)
+	}
 	if meta.Frontend.Type != "component" || meta.Frontend.Runtime != "remote" || !config.ValidPluginAsset(meta.Frontend.Entry) {
 		return nil, fmt.Errorf("plugin requires a remote component frontend")
 	}
 	if len(entry.Files[meta.Frontend.Entry]) == 0 {
 		return nil, fmt.Errorf("frontend entry missing from installed Chart")
 	}
-	entry.Routes, err = readRoutes(installed.Manifest)
+	entry.Routes, err = readRoutes(installed.Manifest, meta)
 	if err != nil {
 		return nil, err
 	}
@@ -100,43 +101,3 @@ func (r *Registry) load(ctx context.Context, plugin *pluginapi.Plugin) (*Entry, 
 
 // Route uses Global's ReverseProxy fields independently of the Plugin schema.
 type Route = iam.ReverseProxy
-
-func readRoutes(manifest string) ([]Route, error) {
-	decoder := yaml.NewYAMLOrJSONDecoder(strings.NewReader(manifest), 4096)
-	routes := []Route{}
-	for {
-		var obj map[string]any
-		err := decoder.Decode(&obj)
-		if err == io.EOF {
-			return routes, nil
-		}
-		if err != nil {
-			return nil, fmt.Errorf("parse installed release resources: %w", err)
-		}
-		if obj["kind"] != "ReverseProxy" || obj["apiVersion"] != iam.Group+"/"+iam.Version {
-			continue
-		}
-		data, err := sigyaml.Marshal(obj)
-		if err != nil {
-			return nil, err
-		}
-		var route Route
-		if err := sigyaml.Unmarshal(data, &route); err != nil {
-			return nil, err
-		}
-		prefix := strings.TrimSuffix(route.Spec.Matcher.Path, "*")
-		if !strings.HasPrefix(prefix, "/api/") || !strings.HasSuffix(prefix, "/") || !route.Spec.Directives.AuthProxy {
-			return nil, fmt.Errorf("plugin ReverseProxy must authenticate an /api/ prefix")
-		}
-		// Match runs before the native mux, so /api and Console's own API would
-		// answer for handlers they do not own.
-		routePrefix := strings.TrimSuffix(prefix, "/")
-		if routePrefix == "/api" || config.ReservedAPIPrefix(routePrefix) {
-			return nil, fmt.Errorf("plugin ReverseProxy prefix %q is reserved by console", prefix)
-		}
-		if (route.Spec.Upstream.Scheme != "http" && route.Spec.Upstream.Scheme != "https") || route.Spec.Upstream.Host == "" || route.Spec.Upstream.Port < 1 || route.Spec.Upstream.Port > 65535 {
-			return nil, fmt.Errorf("invalid plugin ReverseProxy upstream")
-		}
-		routes = append(routes, route)
-	}
-}

@@ -8,13 +8,14 @@ Complete the existing platform menu contract without changing plugin declaration
 SDK menus (recursive) + routes
     -> validated pages with their own mount namespaces
     -> namespace/collision validation
+    -> shared entry registry + host/SDK navigation compositions
     -> permission-filtered navigation tree
     -> expandable sidebar + guarded routes
 ```
 
 | Concern | Decision |
 | --- | --- |
-| Plugin identity | One ConsoleModule per plugin; registration, capabilities and translations retain that identity |
+| Plugin identity | One ConsoleModule per provider; registration, capabilities and translations retain that identity, not sidebar grouping |
 | Host presentation modes | Layout choices change chrome only; the same compiled menu tree, routes, permissions and interactions serve every mode |
 | Multiple namespaces | A page may override its module's basePath; routing and sidebar links use the same pagePath helper |
 | Relative routes | Resolve under the first top-level menu's namespace, independent of other menus; absolute routes keep their namespace |
@@ -34,7 +35,8 @@ SDK menus (recursive) + routes
 - Absolute detail routes inherit the closest menu permission in their own namespace.
 - Preserve hidden route mappings and reject duplicate normalized parameter patterns.
 - No HTTP API, CRD, chart value or plugin SDK declaration is added.
-- Non-platform scopes and viewport adaptation remain outside this change.
+- Platform and current-cluster contexts share navigation compilation; scope alone does not create an independent application.
+- The [composition design](single-cluster-applications-design.md) defines the host composition, legacy defaults and named applications.
 
 ## Alternatives
 

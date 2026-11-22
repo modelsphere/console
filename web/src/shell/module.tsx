@@ -1,6 +1,7 @@
 import { createContext, useContext, type ComponentType, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-export { activeGroupTitle, activeNavItem, flattenNavItems, navGroups, routeSpecificity, topbarItems } from "./module-navigation";
+import type { ModuleNavigation } from "./navigation-types";
+export { activeGroupKey, activeGroupTitle, activeNavItem, flattenNavItems, navGroups, routeSpecificity, topbarItems } from "./module-navigation";
 
 // A module is one feature area of the console (iam, swiss, …). It declares its
 // pages; the shell owns everything around them: login, layout, sidebar, route
@@ -14,12 +15,12 @@ export interface ModuleOverviewProps {
 export interface ConsoleModule {
   // Stable id: used as the React key and in logs. Lowercase, no spaces.
   id: string;
-  // Sidebar group heading, in Chinese. Other languages: "{id}:group.{title}"
-  // in the module's strings (see navLabel in shell/i18n.ts).
+  // Default navigation title; compositions may place entries under other groups.
   title: string;
   // Every page mounts below this path, e.g. "/swiss". No trailing slash.
   basePath: string;
   pages: ModulePage[];
+  navigation?: ModuleNavigation;
   capability?: string;
   // "flush": pages draw Rise Global's skeleton themselves -- a PageBanner edge to
   // edge, then their own p-4 body. Default "padded": the shell insets the page.
@@ -39,7 +40,7 @@ export interface ModulePage {
   permission?: string;
   requiresWrite?: boolean;
   // Hidden entries retain route/ownership metadata without appearing in navigation.
-  menu?: { label: string; icon: LucideIcon; key?: string; parent?: string; treeParent?: string; group?: string; order?: number; hidden?: boolean };
+  menu?: { label: string; icon: LucideIcon; key?: string; scope?: string; parent?: string; treeParent?: string; group?: string; order?: number; hidden?: boolean };
   // Also link the page from the top bar; an object overrides its menu label.
   topbar?: boolean | { label: string };
 }
@@ -119,6 +120,7 @@ export interface NavItem {
 }
 
 export interface NavGroup {
+  id?: string;
   title?: string;
   ns?: string;
   // The module's mount point: every page below it belongs to this group, menu

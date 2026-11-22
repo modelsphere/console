@@ -5,6 +5,7 @@ import { pagePath, routeSpecificity, type ConsoleModule, type ModulePage } from 
 import { menuIcon } from "./icons";
 import { absoluteRoute, pathNamespace, relativePath, routePath } from "./navigation-paths";
 import type { InstalledPlugin } from "./runtime";
+import { buildScopeDeclarations, type SDKScopeDeclaration } from "./scope-declarations";
 
 export interface SDKMenu {
   name: string;
@@ -27,7 +28,8 @@ export interface Definition {
   displayName?: string;
   icon?: string;
   menus?: SDKMenu[];
-  scopes?: { scope: string; viewport?: string; path?: string }[];
+  entries?: (SDKMenu & { viewports?: string[] })[];
+  scopes?: SDKScopeDeclaration[];
 }
 
 type PageComponent = ComponentType<any>;
@@ -43,8 +45,8 @@ interface CompiledMenu extends SDKMenu {
   treeParent?: string;
 }
 
-function RoutePage({ component: Component }: { component: PageComponent }) {
-  return <Component params={useParams()} locationSearch={useLocation().search} />;
+function RoutePage({ component: Component, routeKey }: { component: PageComponent; routeKey: string }) {
+  return <Component key={routeKey} params={useParams()} locationSearch={useLocation().search} />;
 }
 
 function MenuLanding({ basePath, menus }: { basePath: string; menus: SDKMenu[] }) {
@@ -78,8 +80,8 @@ function validateMenu(menu: SDKMenu): void {
   if (menu.requiredScope !== undefined && !Array.isArray(menu.requiredScope)) throw new Error(`Invalid requiredScope for menu "${menu.name}"`);
   if (menu.children !== undefined && !Array.isArray(menu.children)) throw new Error(`Invalid children for menu "${menu.name}"`);
   routePath(menu.path);
-  if (menu.scope !== undefined && menu.scope !== "platform") throw new Error(`Unsupported menu scope "${menu.scope}": Console supports platform only`);
-  if (menu.requiredScope?.some(scope => scope !== "platform")) throw new Error(`Unsupported requiredScope for menu "${menu.name}": Console supports platform only`);
+  if (menu.scope !== undefined && menu.scope !== "platform" && menu.scope !== "cluster") throw new Error(`Unsupported menu scope "${menu.scope}": Console supports platform and current cluster only`);
+  if (menu.requiredScope?.some(scope => scope !== "platform" && scope !== "cluster")) throw new Error(`Unsupported requiredScope for menu "${menu.name}": Console supports platform and current cluster only`);
   if (menu.order !== undefined && !Number.isFinite(menu.order)) throw new Error(`Invalid order for menu "${menu.name}"`);
 }
 
@@ -88,6 +90,7 @@ function compileMenus(menus: SDKMenu[], parent?: CompiledMenu, ancestors = new S
     validateMenu(menu);
     if (ancestors.has(menu)) throw new Error(`Cyclic children for menu "${menu.name}"`);
     const compiled: CompiledMenu = { ...menu, path: "/" + routePath(menu.path), children: undefined,
+      scope: menu.scope ?? parent?.scope,
       treeParent: parent?.path, parent: menu.parent ?? parent?.parent,
       authKey: menu.authKey ?? parent?.authKey, hidden: menu.hidden || parent?.hidden };
     return [compiled, ...compileMenus(menu.children ?? [], compiled, new Set([...ancestors, menu]))];
@@ -101,15 +104,19 @@ function menuComponent(menu: SDKMenu, path: string, registration: NavigationRegi
   return component;
 }
 
+function menuMetadata(menu: CompiledMenu, definition?: Definition): NonNullable<ModulePage["menu"]> {
+  return { label: menu.title ?? menu.name, icon: menuIcon(menu.icon || definition?.icon),
+    key: menu.name.split("-").map((part, index) => index ? part.charAt(0).toUpperCase() + part.slice(1) : part).join(""),
+    scope: menu.scope, parent: menu.parent, treeParent: menu.treeParent, group: menu.group, order: menu.order ?? 999, hidden: menu.hidden };
+}
+
 function menuPage(menu: CompiledMenu, primary: string, registration: NavigationRegistration): ModulePage {
   const basePath = pathNamespace(menu.path);
   return {
     path: relativePath(menu.path, basePath), ...(basePath === primary ? {} : { basePath }),
-    element: <RoutePage component={menuComponent(menu, menu.path, registration)} />,
+    element: <RoutePage component={menuComponent(menu, menu.path, registration)} routeKey={menu.path} />,
     permission: menu.authKey, requiresWrite: false,
-    menu: { label: menu.title ?? menu.name, icon: menuIcon(menu.icon || registration.definition?.icon),
-      key: menu.name.split("-").map((part, index) => index ? part.charAt(0).toUpperCase() + part.slice(1) : part).join(""),
-      parent: menu.parent, treeParent: menu.treeParent, group: menu.group, order: menu.order ?? 999, hidden: menu.hidden },
+    menu: menuMetadata(menu, registration.definition),
   };
 }
 
@@ -138,7 +145,7 @@ function addRoutes(pages: ModulePage[], registration: NavigationRegistration, ba
       .sort((left, right) => routeSpecificity(pagePath(module, right)) - routeSpecificity(pagePath(module, left)))[0];
     const mount = mounts[path];
     pages.push({ path: relativePath(path, mount), ...(mount === basePath ? {} : { basePath: mount }),
-      element: <RoutePage component={component} />, permission: owner?.permission });
+      element: <RoutePage component={component} routeKey={path} />, permission: owner?.permission });
   }
 }
 
@@ -154,20 +161,53 @@ export function buildModule(registration: NavigationRegistration): ConsoleModule
   const { plugin, definition, error } = registration;
   if (error) throw error;
   if (!definition) throw new Error("Entry did not register a ModelSphere SDK plugin");
-  if (!definition.menus?.length) throw new Error("Entry did not register a menu");
-  if (!Array.isArray(definition.menus)) throw new Error("SDK menus must be an array");
-  const menus = compileMenus(definition.menus);
-  if (new Set(menus.map(menu => menu.name)).size !== menus.length) throw new Error("SDK menu name declared twice");
+  if (definition.entries !== undefined && !Array.isArray(definition.entries)) throw new Error("SDK entries must be an array");
+  if (definition.menus !== undefined && !Array.isArray(definition.menus)) throw new Error("SDK menus must be an array");
+  const entryMenus = businessMenus(definition.entries ?? []);
+  const sourceMenus = [...entryMenus, ...(definition.menus ?? [])];
+  if (!sourceMenus.length) throw new Error("Entry did not register a menu");
+  const menus = compileMenus(sourceMenus);
+  const entries = compileMenus([...(definition.entries ?? []), ...(definition.menus ?? [])]);
+  if (new Set(entries.map(menu => menu.name)).size !== entries.length) throw new Error("SDK menu name declared twice");
   const identities = menus.map(menu => menu.path.replace(/:[\w-]+/g, ":param"));
   if (new Set(identities).size !== menus.length) throw new Error("SDK menu path declared twice");
-  if (definition.scopes !== undefined && !Array.isArray(definition.scopes)) throw new Error("SDK scopes must be an array");
-  if (definition.scopes?.some(scope => !scope || scope.scope !== "platform")) throw new Error("Unsupported scopes: Console supports platform only");
+  const scopes = buildScopeDeclarations(definition, menus);
   const basePath = pathNamespace(menus[0].path);
   const normalized = normalizedRoutes(registration.routes, basePath, [...new Set(menus.map(menu => pathNamespace(menu.path)))]);
   const navigation = { ...registration, routes: normalized.routes };
   const pages = menus.map(menu => menuPage(menu, basePath, navigation));
   addRoutes(pages, navigation, basePath, normalized.mounts);
-  addLandings(pages, basePath, definition.menus);
+  if (entryMenus.length) addBusinessRoutes(pages, entryMenus, basePath, navigation);
+  addLandings(pages, basePath, sourceMenus);
   return { id: plugin.id, title: definition.displayName ?? definition.name, basePath,
-    capability: plugin.backend?.name, frame: "flush", pages };
+    capability: plugin.backend?.name, frame: "flush", pages, navigation: {
+      provider: `${plugin.group ?? "modelsphere.dev"}/${plugin.id}`, scopes,
+      entries: entries.map(menu => ({ name: menu.name, path: menu.path, menu: menuMetadata(menu, definition) })),
+      menus: compileMenus(definition.menus ?? []).map(menu => menu.name),
+    } };
+}
+
+function businessMenus(entries: SDKMenu[]): SDKMenu[] {
+  const paths = new Map<string, SDKMenu>();
+  const names = new Set<string>();
+  for (const entry of entries) {
+    validateMenu(entry);
+    if (names.has(entry.name)) throw new Error(`SDK business entry "${entry.name}" declared twice`);
+    names.add(entry.name);
+    const previous = paths.get(entry.path);
+    if (previous && (previous.authKey !== entry.authKey || previous.scope !== entry.scope)) throw new Error(`Conflicting business entries for "${entry.path}"`);
+    if (!previous) paths.set(entry.path, entry);
+  }
+  return [...paths.values()];
+}
+
+function addBusinessRoutes(pages: ModulePage[], menus: SDKMenu[], basePath: string, registration: NavigationRegistration): void {
+  for (const menu of menus) {
+    if (/[:*\[]/.test(menu.path)) continue;
+    const path = menu.path + "/*";
+    if (pages.some(page => pagePath({ basePath }, page) === path)) continue;
+    const mount = pathNamespace(menu.path);
+    pages.push({ path: relativePath(path, mount), ...(mount === basePath ? {} : { basePath: mount }),
+      element: <RoutePage component={menuComponent(menu, menu.path, registration)} routeKey={path} />, permission: menu.authKey });
+  }
 }

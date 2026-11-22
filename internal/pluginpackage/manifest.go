@@ -22,15 +22,16 @@ var (
 // It describes what the package is; the runtime (Deployments, API routes,
 // IAM) lives in the Chart templates, not here.
 type Manifest struct {
-	APIVersion  string              `yaml:"apiVersion"`
-	Group       string              `yaml:"group"`
-	Name        string              `yaml:"name"`
-	Version     string              `yaml:"version"`
-	DisplayName string              `yaml:"displayName"`
-	Description string              `yaml:"description"`
-	Provides    []Capability        `yaml:"provides,omitempty"`
-	Consumes    []CapabilityBinding `yaml:"consumes,omitempty"`
-	Frontend    Frontend            `yaml:"frontend"`
+	APIVersion    string              `yaml:"apiVersion"`
+	Group         string              `yaml:"group"`
+	Name          string              `yaml:"name"`
+	Version       string              `yaml:"version"`
+	DisplayName   string              `yaml:"displayName"`
+	Description   string              `yaml:"description"`
+	ImageContract string              `yaml:"imageContract,omitempty"`
+	Provides      []Capability        `yaml:"provides,omitempty"`
+	Consumes      []CapabilityBinding `yaml:"consumes,omitempty"`
+	Frontend      Frontend            `yaml:"frontend"`
 }
 
 // Capability declarations are shared with the Plugin CR metadata, so the
@@ -49,6 +50,9 @@ type Frontend struct {
 
 // Validate checks the package metadata before Helm or Kubernetes are invoked.
 func (m Manifest) Validate() error {
+	if m.ImageContract != "" && m.ImageContract != "v1" {
+		return fmt.Errorf("imageContract must be v1 when declared")
+	}
 	if m.APIVersion != "v1" {
 		return fmt.Errorf("apiVersion must be %q", "v1")
 	}

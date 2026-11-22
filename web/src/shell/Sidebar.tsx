@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useId, useState } from "react";
 import { NavLink, useLocation } from "react-router";
 import { ChevronRight } from "lucide-react";
-import { activeGroupTitle, activeNavItem, flattenNavItems, type NavGroup, type NavItem } from "./module";
+import { activeGroupKey, activeNavItem, flattenNavItems, type NavGroup, type NavItem } from "./module";
 import { navLabel, useT } from "./i18n";
 
 // Global's menu item. On the minimal board it is 14px/500 with 10px vertical
@@ -15,9 +15,10 @@ const ITEM_ACTIVE = "bg-primary/10 text-primary";
 // group that holds the current page.
 export function Sidebar({ groups, collapsed, board = false }: { groups: NavGroup[]; collapsed: boolean; board?: boolean }) {
   const { pathname } = useLocation();
-  const activeGroup = activeGroupTitle(groups, pathname);
+  const activeGroup = activeGroupKey(groups, pathname);
   const activeItem = activeNavItem(groups.flatMap(group => group.items), pathname);
-  const [open, setOpen] = useState<string | undefined>(activeGroup ?? groups.find((g) => g.title)?.title);
+  const firstGroup = groups.find(group => group.title);
+  const [open, setOpen] = useState<string | undefined>(activeGroup ?? firstGroup?.id ?? firstGroup?.title);
   const shown = open ?? activeGroup;
   // Navigating into another module (a link, the back button) opens its group.
   useEffect(() => {
@@ -42,8 +43,8 @@ export function Sidebar({ groups, collapsed, board = false }: { groups: NavGroup
             <SidebarItems items={group.items} activeItem={activeItem} board={board} />
           </div>
         ) : (
-          <SidebarGroup key={group.ns ?? group.title} group={group} board={board} active={group.title === activeGroup}
-            expanded={shown === group.title} activeItem={activeItem} onToggle={() => setOpen(shown === group.title ? "" : group.title)} />
+          <SidebarGroup key={group.id ?? group.title} group={group} board={board} active={(group.id ?? group.title) === activeGroup}
+            expanded={shown === (group.id ?? group.title)} activeItem={activeItem} onToggle={() => setOpen(shown === (group.id ?? group.title) ? "" : group.id ?? group.title)} />
         ),
       )}
     </div>

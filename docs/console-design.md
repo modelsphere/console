@@ -105,7 +105,9 @@ menus[] -> all menu pages, including hidden route mappings
 routes  -> additional pages, merged with matching menu paths
                |
                v
-ConsoleModule -> permission filtering -> parent/group/order aggregation -> sidebar
+built-in pages + SDK menus/entries -> shared entry registry
+                                          |
+Console composition + SDK compositions -> reference resolution -> permissions -> sidebar/application switcher
 ```
 
 | Declaration | Console mapping |
@@ -114,9 +116,9 @@ ConsoleModule -> permission filtering -> parent/group/order aggregation -> sideb
 | component | explicit route first, then kebab-case `name` to PascalCase component; raw key fallback for existing Console plugins |
 | `hidden` | suppress navigation, retain route and permission checks |
 | `authKey` | page permission and sidebar filtering; backend authorization remains independent |
-| `parent` | contribute to the installed target module's sidebar, without changing route/component ownership |
+| `parent` | legacy default contribution to a Console group; explicit compositions organize entries independently of module ownership |
 | `group`, `order` | merge equal group titles within a sidebar, sort entries using Global's default order 999 |
-| `scope`, `requiredScope` | platform only; other contexts fail registration explicitly |
+| `scope`, `requiredScope` | platform or the current cluster; other contexts fail registration explicitly |
 | `children` | recursive menu tree; sibling ordering, expandable branches and active-ancestor expansion |
 
 Modules may mount below Global's three-segment `/{group}/{version}/{resource}`
@@ -141,10 +143,18 @@ permission regardless of namespace. Icons use Lucide's official dynamic catalog;
 unknown names fail registration, omitted names use `puzzle`.
 
 Presentation modes change host chrome, not the plugin contract: minimal, classic
-and mixed-nav all render the same navigation tree and guarded routes. The adapter
+and mixed-nav all render the same active-application navigation and guarded routes. The adapter
 does not create a Global Dock or boss/console viewport control plane;
 `scopes[].viewport` is not interpreted as a Console layout preference.
-See [the adaptation design](development/plugin-navigation-design.md).
+Navigation is no longer a module-per-sidebar structure. Providers own pages;
+compositions own groups and reference ordering. `web/src/shell/console-navigation.ts`
+is the central Console composition, and Global composition plugins use the same
+registry and resolver. Legacy menus, including North Star/Canary, default to
+Console; business entries require placement. Only named compositions create
+independent applications, such as Dashboard. Provider scopes describe execution
+context, not application identity.
+See [the adaptation design](development/plugin-navigation-design.md) and
+[composition design](development/single-cluster-applications-design.md).
 
 The console is a shell plus built-in and installed runtime modules. A module is a feature area
 (iam, inferences, playground, router, docs, later container management); the shell owns everything
@@ -154,7 +164,7 @@ around it.
 |---|---|
 | shell (`web/src/shell/`) | login, password reset, layout, sidebar, route guards, query client, session on every request |
 | module (`web/src/modules/<id>/`) | its pages, its API client, its overview cards |
-| `web/src/modules/index.ts` | which modules are installed, in sidebar order — plug in/out = one line |
+| `web/src/modules/index.ts` | which built-in feature providers are installed; presentation order belongs to `web/src/shell/console-navigation.ts` |
 
 A module exports one declaration (`ConsoleModule`, `web/src/shell/module.tsx`):
 
@@ -179,7 +189,7 @@ Rules:
 - The first home overview receives shell-owned session content through `ModuleOverviewProps.session`; it places this below cluster information, or renders it alone when inference viewing is forbidden. Without overview modules, Home renders the session itself.
 - Links go through `useModulePath()`: `p("catalog")` → `/inferences/catalog`. A leading `/` is still relative to the module.
 - API calls go through `apiFetch` (drop-in `fetch` with the session) or `request<T>` (JSON helper).
-- The sidebar opens the group of the module the current path is mounted under (`activeGroupTitle`), so a page with no menu entry -- a detail page -- still keeps its module's group open.
+- The sidebar opens the resolved composition group for the current path (`activeGroupKey`); detail pages retain their entry placement, and translated titles do not define group identity.
 - `validateModules` rejects duplicate ids/basePaths, shell-reserved paths and ids (`common`, `shell`: they are i18n namespaces) and pages declared twice at startup.
 - Text goes through `useT()` (see "i18n"); the declaration's `title` and menu labels stay Chinese.
 
@@ -748,9 +758,26 @@ generates the TypeScript client from it, replacing the hand-written types in
 
 ## Rise Global target
 
-Not in scope now. The module contract keeps the door open: pages take no props
-from the shell, links and fetches go through shell functions, and backend
-requests carry the same headers Global's apiserver sets.
+Console adapts supported plugin declarations to its own shell, rather than
+reproducing Global's behavior. The module contract keeps pages independent of
+the shell; links and fetches go through host functions, and backend requests
+carry authenticated identity headers.
+
+### Single-cluster applications
+
+The open-source target is the cluster Console already connects to, with no
+cluster management, selection or cross-cluster gateway. The rollout is tracked
+in [#145](https://github.com/modelsphere/console/issues/145) and the
+[single-cluster application design](development/single-cluster-applications-design.md).
+
+| Concern | Current decision |
+| --- | --- |
+| Application launcher | Shared lightweight dialog in all layouts; no separate dock or Global viewport policy |
+| Metadata | Provider scopes describe context; navigation compositions supply application titles, icons, referenced groups and landing paths |
+| Access | Select only registered visible static menus after permissions and backend capability filtering |
+| Application context | URL-derived active application; Console return entry; refresh and history preserve context without stored selection |
+| Navigation | Build the active composition directly from the shared registry; retain route guards and all three appearance layouts |
+| Dashboard status | Original Charts install and original resource lists/details work through current-cluster context, business-entry composition and existing-authorized backend proxies |
 
 ## Known debt
 

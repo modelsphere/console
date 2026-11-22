@@ -220,13 +220,28 @@ Navigation comes from the registration, not from `plugin.yaml`:
 | `parent`, `group`, `order` | contribute to the target sidebar, merge equal group titles, sort by Global default order 999 |
 | `children` | recursive navigation; child ownership/permission inherit unless overridden; hidden or denied parents hide the navigation subtree |
 | default page | each namespace index without its own page redirects to its first visible, permitted static own menu |
-| unsupported context | non-platform `scope`/`requiredScope` and query/hash menu paths fail explicitly |
+| context | platform or current cluster; other `scope`/`requiredScope` values and query/hash menu paths fail explicitly |
 | route patterns | literal segments, `[param]` → `:param`, `[...rest]` → `*`; anything else throws |
 | icons | installed Lucide dynamic catalog, including aliases; missing names use `puzzle`, unknown names fail registration |
 | one module per plugin | the module id is `plugin.yaml` `name`; duplicate IDs and overlapping namespaces fail `validateModules` |
+| provider entries | stable provider/name references; route deduplication preserves every alias; no automatic menu placement |
+| navigation compositions | ordered groups of provider/entry references build a named application; provider scopes alone never create applications |
+| Console composition | `web/src/shell/console-navigation.ts` orders built-in and plugin references; legacy menus default to Console |
 
 Host presentation modes share this adapter: choosing a different layout changes
 chrome, not plugin navigation, permissions, routes or interactions.
+
+The shared entry registry resolves both Console's host composition and published
+Global navigation compositions. It does not rewrite provider pages or infer
+applications from module identity. Explicit references control ordering;
+remaining legacy additions retain sibling and group order.
+
+Application targets are accessible static referenced pages, filtered by current
+UI permissions, hidden/denied ancestors and backend capabilities. A denied
+landing falls back to the first accessible reference; empty applications are
+omitted. Console is the return entry. Specific registered Console paths take
+precedence over an application's ancestor path, preserving refresh and browser
+history without stored selection. Group ids are independent of translations.
 
 A plugin with a backend inherits a capability check: the sidebar hides the
 module unless the user has `get` on `backends/<name>`, and a direct URL shows

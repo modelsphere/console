@@ -48,8 +48,11 @@ func (s *Server) pluginIndex() []pluginManifest {
 			}
 		}
 		sort.Strings(manifest.Styles)
-		if len(entry.Routes) > 0 {
-			manifest.Backend = &pluginBackendManifest{Name: meta.Name, Prefix: strings.TrimSuffix(entry.Routes[0].Spec.Matcher.Path, "/*"), WritePermission: meta.Name + ".write"}
+		for _, route := range entry.Routes {
+			if !route.Spec.Directives.SkipAuthentication {
+				manifest.Backend = &pluginBackendManifest{Name: meta.Name, Prefix: strings.TrimSuffix(route.Spec.Matcher.Path, "/*"), WritePermission: meta.Name + ".write"}
+				break
+			}
 		}
 		plugins = append(plugins, manifest)
 	}

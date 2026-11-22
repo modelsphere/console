@@ -1,5 +1,7 @@
 import * as React from "react";
 import { buildModule, type Definition } from "./navigation";
+import { compositionModule, type NavigationComposition } from "./composition";
+import { scopeForPath } from "./scope";
 import {
   registerActionExtension,
   registerDataExtension,
@@ -30,6 +32,7 @@ interface ActionDefinition extends Omit<ResourceActionExtension, "plugin"> {}
 interface Registration {
   plugin: InstalledPlugin;
   definition?: Definition;
+  composition?: NavigationComposition;
   components: Record<string, PluginComponent>;
   routes: Record<string, PluginComponent>;
   data: DataDefinition[];
@@ -59,7 +62,7 @@ function registerExtensions(registration: Registration): void {
 
 export function createRegistration() {
   let current: Registration | undefined;
-  const installed = new Map<string, Record<string, PluginComponent>>();
+  const installed = new Map<string, Registration>();
   function record(name: string, action: (registration: Registration) => void) {
     if (!current) throw new Error("SDK registration is only available while an entry loads");
     try {
@@ -70,8 +73,15 @@ export function createRegistration() {
   const sdk = {
     registerPlugin(definition: Definition) {
       record(definition.name, (registration) => {
-        if (registration.definition) throw new Error("Entry registered more than one plugin");
+        if (registration.definition || registration.composition) throw new Error("Entry registered more than one plugin");
         registration.definition = definition;
+      });
+    },
+    registerNavigationComposition(composition: NavigationComposition) {
+      record(composition.name, (registration) => {
+        if (registration.definition || registration.composition) throw new Error("Entry registered more than one plugin");
+        compositionModule(composition);
+        registration.composition = composition;
       });
     },
     registerPluginComponent(name: string, key: string, component: unknown) {
@@ -114,7 +124,7 @@ export function createRegistration() {
         registration.actions.push(extension);
       });
     },
-    getPluginComponents: (name: string) => current?.plugin.id === name ? current.components : installed.get(name) ?? {},
+    getPluginComponents: (name: string) => current?.plugin.id === name ? current.components : installed.get(name)?.components ?? {},
     registerSlot(slot?: { plugin?: string; target?: string; resourceType?: string; placement?: string }) {
       if (!current || !slot) return;
       const { resourceType, placement, target } = slot;
@@ -133,11 +143,13 @@ export function createRegistration() {
     begin(plugin: InstalledPlugin) { current = { plugin, components: {}, routes: {}, data: [], visibility: [], presentations: [], actions: [], cleanups: [] }; },
     finish() {
       if (!current) throw new Error("No SDK entry is loading");
-      const module = buildModule(current);
+      if (current.error) throw current.error;
+      const module = current.composition ? compositionModule(current.composition, `${current.plugin.group ?? "modelsphere.dev"}/${current.plugin.id}`) : buildModule(current);
       registerExtensions(current);
       return module;
     },
-    commit() { if (current) installed.set(current.plugin.id, current.components); },
+    commit() { if (current) installed.set(current.plugin.id, current); },
+    getScope(path: string) { return scopeForPath(path, [...installed.values()].flatMap(registration => registration.definition ? [registration.definition] : [])); },
     rollback() { current?.cleanups.splice(0).reverse().forEach((cleanup) => cleanup()); },
     end() { current = undefined; },
   };

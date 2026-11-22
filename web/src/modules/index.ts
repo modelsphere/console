@@ -1,4 +1,4 @@
-// The installed modules, in sidebar order. Add or remove a line to plug one in or out.
+// Installed feature providers; shell/console-navigation.ts owns presentation order.
 import type { ConsoleModule } from "@/shell";
 import { docsModule } from "@/modules/docs";
 import { iamModule } from "@/modules/iam";

@@ -176,6 +176,44 @@ Host presentation modes share these behaviors; no mode-specific plugin bundle is
 and a camelCase key derived from `menu.name`; missing translations fall back to
 the declared title. Group titles remain merge keys across contributors.
 
+### Navigation compositions and applications
+
+Providers own functionality; compositions own navigation. Installing a plugin does not imply a separate application.
+
+| Declaration | Console behavior |
+| --- | --- |
+| `menus` | Legacy default placement inside Console, including `parent/group/order/children` |
+| `entries` | Reusable business pages registered by stable provider/name identity; no automatic menu placement |
+| provider `scopes` | Context/title/icon metadata; not an application declaration |
+| `registerNavigationComposition` | Ordered groups of provider/entry references; supplies a named application's navigation |
+| host composition | `web/src/shell/console-navigation.ts`; the same group/reference model orders Console's built-in and plugin entries |
+
+```tsx
+groups: [{
+  name: "model-operations",
+  title: "Model operations",
+  menus: [
+    { provider: "console/inferences", entry: "index" },
+    { provider: "example.io/experiments", entry: "experiments" },
+  ],
+}],
+```
+
+- Change group/reference array order to reorder menus without changing plugin bundles or module load order.
+- Unreferenced legacy menus keep their default Console placement. North Star/Canary therefore integrates into Console, not a separate application.
+- References never override page components, permissions, backend checks or translation ownership. Missing providers and denied/hidden ancestors produce no menu.
+- Multiple entry names may reference the same route; preserve names, render the route only once. Host references take precedence over named compositions, then legacy defaults.
+- Applications without an accessible static referenced page are omitted. A denied declared landing falls back to the first accessible static reference in the same context.
+- The most-specific URL selects the application, including a Console page nested under an application's route. Refresh and browser history need no saved application selection.
+- Application switching is independent of minimal, classic and mixed-nav appearance layouts. Console is the return entry when a named application exists.
+- Application titles use the composition's `{name}:scope.{scope}` translation; group headings use stable ids independent of their translated labels.
+
+Cluster declarations use Console's current cluster, exposed as `cluster/current`.
+Authenticated `/clusters/{value}/oapis/` aliases do not select another cluster.
+`imageContract: v1` is accepted; RoleTemplate CRDs support Chart installation only,
+not authorization aggregation. See the [single-cluster design](single-cluster-applications-design.md)
+for the unchanged original Dashboard Charts and browser verification.
+
 ### Routes
 
 Menu paths and route keys are normalized before matching; a matching route

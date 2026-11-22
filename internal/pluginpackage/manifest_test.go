@@ -13,6 +13,18 @@ func TestManifestAcceptsV1RemoteComponent(t *testing.T) {
 	}
 }
 
+func TestManifestImageContract(t *testing.T) {
+	manifest := validManifest()
+	manifest.ImageContract = "v1"
+	if err := manifest.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	manifest.ImageContract = "v2"
+	if err := manifest.Validate(); err == nil || !strings.Contains(err.Error(), "imageContract") {
+		t.Fatalf("unsupported image contract: %v", err)
+	}
+}
+
 func TestManifestRejectsUnsupportedShapes(t *testing.T) {
 	for _, test := range []struct {
 		name   string
