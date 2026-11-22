@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ModelSphere CLI 交互与 Global 插件身份</title>
+    <style>
+      :root {
+        --ink: #172033;
+        --muted: #687589;
+        --line: #dbe2ea;
+        --paper: #ffffff;
+        --soft: #f4f7fa;
+        --blue: #1559bf;
+        --blue-soft: #e9f1ff;
+        --green: #0a8d68;
+        --green-soft: #e6f7f0;
+        --amber: #9a5b00;
+        --amber-soft: #fff4dd;
+        --terminal: #111b2b;
+        --terminal-muted: #9dacbf;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #eef2f6;
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+      code { color: #124eaa; }
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 68px;
+        padding: 0 42px;
+        background: var(--paper);
+        border-bottom: 1px solid var(--line);
+      }
+      .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; }
+      .mark {
+        display: grid;
+        width: 32px;
+        height: 32px;
+        place-items: center;
+        background: #172b49;
+        border-radius: 7px;
+        color: #fff;
+      }
+      .topbar-note { color: var(--muted); font-size: 13px; }
+      main { width: min(1080px, 100%); margin: 0 auto; padding: 42px 28px 68px; }
+      .breadcrumb { color: var(--muted); font-size: 13px; }
+      .breadcrumb strong { color: var(--ink); }
+      h1 { max-width: 800px; margin: 23px 0 12px; font-size: clamp(30px, 5vw, 50px); line-height: 1.08; }
+      .lead { max-width: 780px; color: #56657a; font-size: 17px; line-height: 1.65; }
+      .thesis {
+        display: grid;
+        grid-template-columns: 1.2fr .8fr;
+        gap: 18px;
+        margin-top: 28px;
+      }
+      .thesis-main, .thesis-side, .section, .data-card {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        min-width: 0;
+      }
+      .thesis-main { padding: 22px 24px; }
+      .thesis-label, .section-label {
+        margin-bottom: 10px;
+        color: var(--blue);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: .1em;
+        text-transform: uppercase;
+      }
+      .thesis-command {
+        display: block;
+        overflow: auto;
+        padding: 13px 15px;
+        background: var(--terminal);
+        border-radius: 6px;
+        color: #d9e6fb;
+        font-size: 14px;
+        line-height: 1.55;
+        white-space: nowrap;
+      }
+      .thesis-main p { margin-top: 13px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+      .thesis-side { padding: 22px 24px; background: var(--blue-soft); border-color: #cbdcf8; }
+      .thesis-side strong { display: block; margin-bottom: 8px; font-size: 15px; }
+      .thesis-side p { color: #365b90; font-size: 13px; line-height: 1.6; }
+      .section { margin-top: 22px; padding: 28px; }
+      .section h2 { margin: 0; font-size: 23px; line-height: 1.25; }
+      .section-intro { margin-top: 8px; color: var(--muted); line-height: 1.55; }
+      .terminal {
+        overflow: hidden;
+        margin-top: 20px;
+        background: var(--terminal);
+        border-radius: 7px;
+        box-shadow: 0 10px 25px rgba(17, 27, 43, .13);
+      }
+      .terminal-head {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 34px;
+        padding: 0 14px;
+        background: #1a273b;
+        color: var(--terminal-muted);
+        font-size: 12px;
+      }
+      .terminal-head i { width: 8px; height: 8px; border-radius: 50%; background: #718198; }
+      pre { margin: 0; padding: 20px; color: #dbe5f5; font-size: 13px; line-height: 1.75; white-space: pre-wrap; }
+      .prompt { color: #79d6b5; }
+      .answer { color: #fff; }
+      .comment { color: var(--terminal-muted); }
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 28px;
+        margin-top: 24px;
+      }
+      .flow-node {
+        position: relative;
+        min-height: 142px;
+        padding: 17px;
+        background: var(--soft);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+      }
+      .flow-node:not(:last-child)::after {
+        position: absolute;
+        top: 62px;
+        right: -25px;
+        width: 20px;
+        height: 1px;
+        background: #9aabc1;
+        content: "";
+      }
+      .flow-number {
+        display: inline-grid;
+        width: 25px;
+        height: 25px;
+        place-items: center;
+        margin-bottom: 13px;
+        background: var(--blue);
+        border-radius: 50%;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .flow-node h3 { margin: 0 0 7px; font-size: 14px; }
+      .flow-node p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+      .data-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-top: 20px;
+      }
+      .data-card { padding: 18px; }
+      .data-card.package { border-top: 3px solid var(--blue); }
+      .data-card.host { border-top: 3px solid var(--green); }
+      .data-card.user { border-top: 3px solid var(--amber); }
+      .data-card.runtime { border-top: 3px solid #7b5ac7; }
+      .data-card h3 { margin: 0 0 12px; font-size: 15px; }
+      .data-card ul { display: grid; gap: 9px; margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+      .data-card li::marker { color: var(--blue); }
+      .data-card.user li::marker { color: var(--amber); }
+      .data-card.host li::marker { color: var(--green); }
+      .data-card.runtime li::marker { color: #7b5ac7; }
+      table { width: 100%; margin-top: 20px; border-collapse: collapse; font-size: 13px; }
+      th, td { padding: 13px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+      th { background: var(--soft); color: #4d5b70; font-size: 12px; font-weight: 800; }
+      td:first-child { width: 22%; color: var(--ink); font-weight: 720; }
+      td:nth-child(2) { width: 22%; color: #46566d; font-weight: 650; }
+      td:last-child { color: var(--muted); line-height: 1.5; }
+      .compare {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-top: 20px;
+      }
+      .compare-box { padding: 18px; border-radius: 7px; }
+      .compare-box.current { background: #fff4f1; border: 1px solid #f1c8bd; }
+      .compare-box.target { background: var(--green-soft); border: 1px solid #b8e3d2; }
+      .compare-box h3 { margin: 0 0 10px; font-size: 14px; }
+      .compare-box pre { padding: 0; background: transparent; color: #435269; font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
+      .compare-box.target pre { color: #23674f; }
+      .callout {
+        margin-top: 20px;
+        padding: 16px 18px;
+        background: var(--amber-soft);
+        border-left: 3px solid #e4a029;
+        color: #704500;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      .contract {
+        display: grid;
+        gap: 10px;
+        margin-top: 20px;
+      }
+      .contract-row {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        gap: 18px;
+        padding: 14px 16px;
+        background: var(--soft);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      .contract-row strong { font-size: 13px; }
+      .contract-row span { color: var(--muted); font-size: 13px; line-height: 1.5; }
+      details { margin-top: 19px; }
+      summary { color: var(--blue); cursor: pointer; font-size: 13px; font-weight: 750; }
+      .footer { margin-top: 28px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+      @media (max-width: 850px) {
+        .topbar { padding: 0 22px; }
+        main { padding: 30px 18px 50px; }
+        .thesis, .compare, .data-grid { grid-template-columns: 1fr; }
+        .flow { grid-template-columns: 1fr; gap: 12px; }
+        .flow-node { min-height: auto; }
+        .flow-node:not(:last-child)::after { top: auto; right: auto; bottom: -8px; left: 24px; width: 1px; height: 8px; }
+      }
+      @media (max-width: 540px) {
+        .topbar-note { display: none; }
+        .section { padding: 20px 17px; }
+        .contract-row { grid-template-columns: 1fr; gap: 7px; }
+        th, td { padding: 10px 7px; }
+        td:first-child, td:nth-child(2) { width: auto; }
+        table { display: block; overflow-x: auto; font-size: 12px; }
+        .terminal pre { overflow-x: auto; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><span class="mark">M</span><span>ModelSphere</span></div>
+      <span class="topbar-note">Global-compatible CLI lifecycle · Console host integration</span>
+    </header>
+
+    <main>
+      <div class="breadcrumb">Plugin / <strong>CLI 交互与数据流</strong></div>
+      <h1>安装插件，只输入插件</h1>
+      <p class="lead">Console 是宿主，插件包是输入。借鉴 Global，插件用 <code>group/name</code> 唯一定位；宿主目标、当前注册表和已有 Helm 状态由 CLI 自动发现和读取，不能要求用户把宿主内部数据重新输入一遍。</p>
+
+      <div class="thesis">
+        <section class="thesis-main">
+          <div class="thesis-label">日常安装命令</div>
+          <code class="thesis-command">modelsphere plugin install ./canaryd-0.3.0.tgz</code>
+          <p>用户只提供插件包路径。只有当前 context 找不到 Console，或发现多个 Console 无法判断时，CLI 才请求额外选择。</p>
+        </section>
+        <aside class="thesis-side">
+          <strong>为后续融合保留同一条路径</strong>
+          <p>插件包沿用 Global 的身份和元数据；ModelSphere 只补宿主发现、Console 注册和 CLI 生命周期，不再创造第二套插件包语义。</p>
+        </aside>
+      </div>
+
+      <section class="section">
+        <div class="section-label">Target interaction</div>
+        <h2>安装时的 CLI 交互</h2>
+        <p class="section-intro">交互只在存在歧义或缺少必要数据时提问，默认流程不出现 Console 参数表单。</p>
+        <div class="terminal">
+          <div class="terminal-head"><i></i><i></i><i></i><span>modelsphere · install</span></div>
+          <pre><span class="prompt">$ modelsphere plugin install ./canaryd-0.3.0.tgz</span>
+
+<span class="comment">读取插件包 ........................................ ok</span>
+<span class="comment">读取当前 Kubernetes context ...................... kubernetes-admin@kubernetes</span>
+<span class="comment">发现 Console ..................................... modelsphere-console / console-system</span>
+<span class="comment">读取宿主当前配置 .................................. 3 plugins, 2 backends</span>
+<span class="comment">读取插件 release 状态 ............................. canary not installed</span>
+
+插件：modelsphere.dev/canary 0.4.0
+目标：modelsphere-console / console-system
+将执行：部署插件 Helm release + 注册 Console plugin
+
+<span class="prompt">? 继续安装？ [Y/n]</span> <span class="answer">Y</span>
+<span class="comment">校验 package manifest ............................ ok</span>
+<span class="comment">部署 frontend/backend Services ................... ok</span>
+<span class="comment">更新 Console plugin registry ..................... ok</span>
+<span class="comment">验证 /plugins/index.json ........................ ok</span>
+
+Installed: modelsphere.dev/canary 0.4.0</pre>
+        </div>
+        <details>
+          <summary>只有多个宿主时，才增加一次目标选择</summary>
+          <div class="terminal">
+            <pre><span class="comment">发现 2 个 Console：</span>
+1. modelsphere-console / console-system
+2. modelsphere-console-dev / console-dev
+
+<span class="prompt">? 选择安装目标 [1-2]</span> <span class="answer">1</span></pre>
+          </div>
+        </details>
+      </section>
+
+      <section class="section">
+        <div class="section-label">Discovery</div>
+        <h2>先列出插件，再决定卸载谁</h2>
+        <p class="section-intro">用户不需要记住 release 名称。CLI 从宿主的 Plugin 注册表读取稳定身份，再关联 Helm release；列表同时给出可用于卸载的完整标识。</p>
+        <div class="terminal">
+          <div class="terminal-head"><i></i><i></i><i></i><span>modelsphere · list</span></div>
+          <pre><span class="prompt">$ modelsphere plugin list</span>
+
+<span class="comment">发现 Console ..................................... modelsphere-console / console-system</span>
+<span class="comment">读取 Plugin 注册表和 Helm release ................. ok</span>
+
+IDENTITY                 VERSION   KIND    RELEASE   STATUS
+modelsphere.dev/canary   0.4.0     Plugin  canary    Ready
+modelsphere.dev/metrics  1.2.1     Plugin  metrics   Ready
+
+<span class="comment">卸载时可使用 IDENTITY，也可以省略参数进入选择。</span></pre>
+        </div>
+        <div class="callout"><strong>卸载目标不是 release 名称。</strong>日常交互使用列表中的 <code>group/name</code>；Helm release 只是宿主运行时实现，可能与插件身份不同，不应该成为用户必须记忆的主标识。</div>
+      </section>
+
+      <section class="section">
+        <div class="section-label">Uninstall</div>
+        <h2>卸载时的 CLI 交互</h2>
+        <p class="section-intro">没有参数时，CLI 使用插件列表让用户选择；在脚本或自动化环境中，传入完整的 <code>group/name</code>，不需要输入 Console 参数。</p>
+        <div class="terminal">
+          <div class="terminal-head"><i></i><i></i><i></i><span>modelsphere · uninstall</span></div>
+          <pre><span class="prompt">$ modelsphere plugin uninstall</span>
+
+<span class="comment">读取当前 Kubernetes context ...................... kubernetes-admin@kubernetes</span>
+<span class="comment">发现 Console ..................................... modelsphere-console / console-system</span>
+<span class="comment">读取已安装插件 .................................. 2 plugins</span>
+
+可卸载插件：
+  1. modelsphere.dev/canary  0.4.0   release=canary
+  2. modelsphere.dev/metrics 1.2.1   release=metrics
+
+<span class="prompt">? 选择插件 [1-2]</span> <span class="answer">1</span>
+<span class="comment">确认插件注册 ..................................... modelsphere.dev/canary 0.4.0</span>
+<span class="comment">确认插件 release ................................. canary</span>
+
+将移除：
+  Console 菜单：Canary
+  Console 路由：/canary
+  Console 后端代理：/api/canary
+  Helm release：canary
+
+<span class="prompt">? 继续卸载？ [y/N]</span> <span class="answer">y</span>
+<span class="comment">移除 Console plugin registry .................... ok</span>
+<span class="comment">验证 Console 不再发现插件 ....................... ok</span>
+<span class="comment">卸载插件 Helm release ........................... ok</span>
+
+Uninstalled: modelsphere.dev/canary</pre>
+        </div>
+        <div class="compare">
+          <div class="compare-box target">
+            <h3>脚本 / CI：显式传入稳定身份</h3>
+            <pre>modelsphere plugin uninstall modelsphere.dev/canary</pre>
+          </div>
+          <div class="compare-box current">
+            <h3>不建议：让用户直接输入 release</h3>
+            <pre>modelsphere plugin uninstall canary</pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-label">Global contract</div>
+        <h2>Global 的 kind、group 和身份如何分层</h2>
+        <p class="section-intro">Global 是后续融合的插件包兼容基线。这里必须按字段所在的对象区分，不能把三个不同层次都叫作“插件 kind”。</p>
+        <table>
+          <thead><tr><th>层次</th><th>字段</th><th>含义与 Console 映射</th></tr></thead>
+          <tbody>
+            <tr><td>插件包 <code>plugin.yaml</code></td><td><code>group/name</code>、<code>version</code>、<code>apiVersion</code></td><td>Global 的稳定身份是 <code>group/name</code>；<code>version</code> 是插件能力版本；<code>apiVersion</code> 只表示元数据契约版本。Global 的 plugin.yaml 不声明 Kubernetes <code>kind</code>。</td></tr>
+            <tr><td>宿主 Plugin CR</td><td><code>apiVersion: plugin.rise.io/v1alpha1</code><br /><code>kind: Plugin</code></td><td>这是 Kubernetes 宿主对象的类型。Console 可以用自己的宿主 API 版本和 <code>kind: Plugin</code> 表示安装记录，但对象身份仍必须来自插件包的 <code>group/name</code>。</td></tr>
+            <tr><td>包目录来源</td><td><code>origin.kind</code></td><td><code>ImageSeed</code>、<code>CLIUpload</code>、<code>Unknown</code> 表示包如何进入目录，与插件类型、Kubernetes kind 和插件身份都无关。</td></tr>
+          </tbody>
+        </table>
+        <div class="callout"><strong>Console 适配结论。</strong>本例插件身份是 <code>modelsphere.dev/canary</code>，其中 <code>modelsphere.dev</code> 是 group；Console 的安装记录可以有 <code>kind: Plugin</code>，但 <code>Plugin</code> 是宿主对象类型，不是 group。CLI 列表和卸载使用 <code>group/name</code>，不能用单独的 name 或 Helm release 代替。</div>
+        <h3 style="margin: 25px 0 0; font-size: 17px;">面向融合的兼容边界</h3>
+        <div class="contract">
+          <div class="contract-row"><strong>共用插件包合同</strong><span>沿用 Global 的 <code>plugin.yaml</code>：<code>name</code>、<code>group</code>、<code>apiVersion</code>、<code>version</code>，以及前端入口、后端声明、依赖和部署 Chart。两边都从这里读取插件身份与版本。</span></div>
+          <div class="contract-row"><strong>ModelSphere 宿主适配</strong><span>只负责把共用包接入 Console：发现 Console、生成或更新宿主的 <code>kind: Plugin</code> 安装记录、注册前端资源、配置后端代理和校验运行状态。</span></div>
+          <div class="contract-row"><strong>Global 宿主适配</strong><span>继续使用 Global 的 Plugin CR、目录 API、权限和 SDK。它和 ModelSphere 共享插件包身份，不要求两个宿主共享同一套安装记录。</span></div>
+          <div class="contract-row"><strong>CLI 融合点</strong><span>包校验、打包、列表和身份解析使用同一套 <code>group/name/version</code>；只有“目标宿主发现、注册方式和状态验证”由宿主适配器决定。</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-label">Data flow</div>
+        <h2>安装背后的数据流</h2>
+        <p class="section-intro">CLI 不是把一堆参数转发给 Helm，而是先把用户输入、插件包数据和宿主数据合成一个安装计划。</p>
+        <div class="flow">
+          <div class="flow-node"><span class="flow-number">1</span><h3>用户输入</h3><p>插件包路径。可选确认、context 覆盖或目标选择。</p></div>
+          <div class="flow-node"><span class="flow-number">2</span><h3>读取插件包</h3><p>manifest、Chart、Service 声明、菜单和镜像默认值。</p></div>
+          <div class="flow-node"><span class="flow-number">3</span><h3>发现宿主</h3><p>读取 kubeconfig，定位 Console release、namespace 和 chart。</p></div>
+          <div class="flow-node"><span class="flow-number">4</span><h3>合成计划</h3><p>合并现有 Console 注册、插件 release 状态和插件声明。</p></div>
+          <div class="flow-node"><span class="flow-number">5</span><h3>执行并验证</h3><p>部署插件、更新 Console、检查 Services 和 plugin index。</p></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-label">Source of truth</div>
+        <h2>每一类数据从哪里来</h2>
+        <div class="data-grid">
+          <article class="data-card user">
+            <h3>用户只提供</h3>
+            <ul>
+              <li>插件包路径</li>
+              <li>安装或卸载确认</li>
+              <li>存在多个 Console 时的目标选择</li>
+              <li>需要环境差异时的 profile 覆盖</li>
+            </ul>
+          </article>
+          <article class="data-card package">
+            <h3>插件包提供</h3>
+            <ul>
+              <li>Global 兼容的 <code>group/name</code>、插件版本和元数据契约版本</li>
+              <li>前端入口、菜单、路由和后端 prefix</li>
+              <li>前端/后端 Service 声明</li>
+              <li>Chart 默认值与已发布的镜像引用</li>
+            </ul>
+          </article>
+          <article class="data-card host">
+            <h3>宿主自动提供</h3>
+            <ul>
+              <li>当前 Kubernetes context</li>
+              <li>Console release、namespace、chart</li>
+              <li>当前 Console plugins/backends 配置</li>
+              <li>已有插件 release 的 values 和状态</li>
+            </ul>
+          </article>
+          <article class="data-card runtime">
+            <h3>运行后验证</h3>
+            <ul>
+              <li>插件声明的前端和后端 Service</li>
+              <li>Pod readiness 和 Helm release 状态</li>
+              <li>Console /plugins/index.json</li>
+              <li>入口资源和后端代理的 HTTP 响应</li>
+            </ul>
+          </article>
+        </div>
+        <table>
+          <thead><tr><th>数据</th><th>来源</th><th>CLI 处理</th></tr></thead>
+          <tbody>
+            <tr><td>Console release</td><td>当前 context 自动发现</td><td>只有发现 0 个或多个候选且无法判断时才询问用户。</td></tr>
+            <tr><td>已安装插件列表</td><td>Console Plugin 注册表 + Helm release 状态</td><td>展示 <code>group/name</code>、插件版本、宿主 <code>kind</code>、release 和状态；卸载选择以此为准。</td></tr>
+            <tr><td>当前 plugins</td><td>宿主 Plugin 资源 / Console registry</td><td>以宿主当前值为基线，按 Global 的 <code>group/name</code> 做新增或替换。</td></tr>
+            <tr><td>插件镜像</td><td>插件包 Chart defaults / package lock</td><td>用户不填写 tag；CI 在打包时固定发布镜像引用。</td></tr>
+            <tr><td>插件 release values</td><td>已有 release 或插件包默认值</td><td>升级时自动复用已有 values；首次安装使用包内默认值。</td></tr>
+            <tr><td>Console URL</td><td>宿主 Service / 当前访问端点</td><td>用于验证 plugin index，不作为安装前的必填参数。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <div class="section-label">Why current flags are wrong</div>
+        <h2>当前命令为什么暴露了不必要的信息</h2>
+        <div class="compare">
+          <div class="compare-box current">
+            <h3>当前实现：用户被迫拼装宿主状态</h3>
+            <pre>plugin install package \
+  --console-release modelsphere-console \
+  --console-namespace console-system \
+  --console-chart ./helm/console \
+  --values canary-values.yaml \
+  --values image-values.yaml</pre>
+          </div>
+          <div class="compare-box target">
+            <h3>目标交互：用户只表达业务意图</h3>
+            <pre>plugin install ./canaryd-0.3.0.tgz
+
+// 多宿主时才需要：
+plugin install package \
+  --console modelsphere-console</pre>
+          </div>
+        </div>
+        <div class="callout"><strong>image-values 不是用户输入。</strong>它暴露出来，是因为当前插件包没有把部署所需的镜像引用和默认值封装完整。应由 CI 在 package 阶段固定镜像引用，或由宿主的环境 profile 提供；不能要求用户手工编辑第二个 YAML。</div>
+      </section>
+
+      <section class="section">
+        <div class="section-label">CLI contract</div>
+        <h2>建议的命令契约</h2>
+        <div class="contract">
+          <div class="contract-row"><strong>日常安装</strong><span><code>modelsphere plugin install &lt;package&gt;</code>。自动发现唯一 Console，使用包内 defaults 和已有 release 状态。</span></div>
+          <div class="contract-row"><strong>插件列表</strong><span><code>modelsphere plugin list</code>。列出当前宿主可管理的 <code>group/name</code>、版本、宿主 <code>kind</code>、release 和状态。</span></div>
+          <div class="contract-row"><strong>日常卸载</strong><span><code>modelsphere plugin uninstall</code> 进入选择；<code>modelsphere plugin uninstall &lt;group/name&gt;</code> 用于脚本。从当前宿主注册表确认插件，不要求 Console 参数。</span></div>
+          <div class="contract-row"><strong>预览计划</strong><span><code>modelsphere plugin install &lt;package&gt; --plan</code>。只读取数据并展示目标、合并结果和待执行动作。</span></div>
+          <div class="contract-row"><strong>自动化覆盖</strong><span><code>--context</code>、<code>--console</code>、<code>--profile</code> 只用于多集群、多宿主或 CI，不进入普通操作路径。</span></div>
+        </div>
+        <p class="footer">这个页面描述的是目标 CLI 交互和数据流，不是新增一个插件管理页面。下一步应先调整 CLI 的宿主发现、包默认值和 plan 输出，再决定具体参数名。</p>
+      </section>
+    </main>
+  </body>
+</html>

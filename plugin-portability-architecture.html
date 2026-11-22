@@ -1,0 +1,638 @@
+<title>插件可移植性架构</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  /* 布局：控制面蓝图，单栏居中，宽屏下带 150px 的章节眉栏 */
+  :root {
+    --ground: #f3f5f7;
+    --surface: #fbfcfd;
+    --surface-2: #eef1f4;
+    --ink: #121a20;
+    --ink-2: #47545d;
+    --muted: #6b7883;
+    --line: #d5dce2;
+    --line-strong: #b7c2ca;
+    --accent: #0f6659;
+    --accent-ink: #0b4b42;
+    --accent-tint: #e3f0ec;
+    --warn: #8a5a12;
+    --warn-tint: #f6ead6;
+    --font-sans: "IBM Plex Sans", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, "PingFang SC", monospace;
+    --fs-xs: 12px;
+    --fs-sm: 13.5px;
+    --fs-base: 16.5px;
+    --fs-lg: 19px;
+    --fs-xl: 24px;
+    --fs-2xl: 32px;
+    --fs-3xl: 40px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0c1115;
+      --surface: #131a1f;
+      --surface-2: #182127;
+      --ink: #e4ebef;
+      --ink-2: #b3c0c8;
+      --muted: #8595a0;
+      --line: #243037;
+      --line-strong: #35454f;
+      --accent: #5ec8b4;
+      --accent-ink: #8fdfcd;
+      --accent-tint: #16302c;
+      --warn: #d9a45b;
+      --warn-tint: #2e2519;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0c1115;
+    --surface: #131a1f;
+    --surface-2: #182127;
+    --ink: #e4ebef;
+    --ink-2: #b3c0c8;
+    --muted: #8595a0;
+    --line: #243037;
+    --line-strong: #35454f;
+    --accent: #5ec8b4;
+    --accent-ink: #8fdfcd;
+    --accent-tint: #16302c;
+    --warn: #d9a45b;
+    --warn-tint: #2e2519;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--ground); }
+  body {
+    margin: 0;
+    padding-left: max(20px, env(safe-area-inset-left, 0px));
+    padding-right: max(20px, env(safe-area-inset-right, 0px));
+    padding-block: 0 80px;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--fs-base);
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent-tint); color: var(--ink); }
+  a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+  .wrap { max-width: 980px; margin: 0 auto; }
+
+  /* ── 页眉 ─────────────────────────────────────────────── */
+  .masthead {
+    padding-block: 64px 40px;
+    border-bottom: 1px solid var(--line-strong);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(30px, 5vw, var(--fs-3xl));
+    line-height: 1.18;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    font-weight: 600;
+  }
+  .lede {
+    margin: 0;
+    max-width: 60ch;
+    font-size: var(--fs-lg);
+    line-height: 1.65;
+    color: var(--ink-2);
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 28px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--muted);
+  }
+  .meta-row b { color: var(--ink-2); font-weight: 500; }
+
+  /* ── 章节 ─────────────────────────────────────────────── */
+  section { padding-block: 56px; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: 0; }
+  .section-grid { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 40px; }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    padding-top: 6px;
+    line-height: 1.6;
+  }
+  .eyebrow span { display: block; color: var(--accent-ink); }
+  .section-body > :first-child { margin-top: 0; }
+  h2 {
+    margin: 0 0 20px;
+    font-size: var(--fs-2xl);
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    font-weight: 600;
+    text-wrap: balance;
+  }
+  h3 {
+    margin: 36px 0 12px;
+    font-size: var(--fs-lg);
+    line-height: 1.45;
+    font-weight: 600;
+    text-wrap: balance;
+  }
+  p { margin: 0 0 16px; max-width: 68ch; }
+  .section-body > p:last-child { margin-bottom: 0; }
+
+  /* ── 问答块 ───────────────────────────────────────────── */
+  .qa { display: flex; flex-direction: column; gap: 20px; }
+  .qa-item {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 20px 24px;
+  }
+  .qa-item .q {
+    margin: 0 0 8px;
+    font-weight: 600;
+    font-size: var(--fs-base);
+  }
+  .qa-item .a { margin: 0; color: var(--ink-2); }
+  .qa-item .a strong { color: var(--ink); font-weight: 600; }
+
+  /* ── 三层模型图 ───────────────────────────────────────── */
+  .stack { display: flex; flex-direction: column; gap: 10px; }
+  .stack-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .layer-box {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--surface);
+    padding: 16px 18px;
+  }
+  .layer-box .tag {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .layer-box .name { font-weight: 600; }
+  .layer-box .desc { font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.6; margin-top: 4px; }
+  .layer-contract {
+    border: 1px solid var(--accent);
+    background: var(--accent-tint);
+    border-radius: 4px;
+    padding: 18px 20px;
+  }
+  .layer-contract .tag { color: var(--accent-ink); }
+  .layer-contract .name { font-size: var(--fs-lg); }
+  .layer-contract .desc { color: var(--ink-2); font-size: var(--fs-sm); }
+  .connector {
+    align-self: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-block: 2px;
+  }
+  .connector::before, .connector::after { content: ""; height: 1px; background: var(--line-strong); width: 36px; }
+  .stack-note { font-size: var(--fs-sm); color: var(--muted); margin-top: 14px; }
+
+  /* ── 表格 ─────────────────────────────────────────────── */
+  .tablewrap { overflow-x: auto; margin: 20px 0; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); line-height: 1.6; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child th, tr:last-child td { border-bottom: 0; }
+  th {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+  td code, th code { font-family: var(--font-mono); font-size: 12.5px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .pill {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line-strong);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .pill.ok { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-tint); }
+  .pill.gap { border-color: var(--warn); color: var(--warn); background: var(--warn-tint); }
+  .pill.plat { border-color: var(--line-strong); color: var(--muted); }
+
+  /* ── 代码 ─────────────────────────────────────────────── */
+  pre {
+    margin: 20px 0;
+    padding: 16px 18px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--ink);
+  }
+  pre .c { color: var(--muted); }
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 0.5px 5px;
+  }
+  pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+
+  /* ── 清单 ─────────────────────────────────────────────── */
+  ul.checks { list-style: none; margin: 18px 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  ul.checks li {
+    position: relative;
+    padding-left: 30px;
+    color: var(--ink-2);
+    max-width: 66ch;
+  }
+  ul.checks li::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 0.62em;
+    width: 12px;
+    height: 12px;
+    border: 1.5px solid var(--accent);
+    border-radius: 2px;
+  }
+  ul.checks li b { color: var(--ink); font-weight: 600; }
+
+  /* ── 结尾卡片 ─────────────────────────────────────────── */
+  .verdict {
+    margin-top: 28px;
+    border: 1px solid var(--accent);
+    background: var(--accent-tint);
+    border-radius: 4px;
+    padding: 22px 26px;
+  }
+  .verdict .vtag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    display: block;
+    margin-bottom: 6px;
+  }
+  .verdict p { margin: 0; font-size: var(--fs-lg); line-height: 1.6; color: var(--ink); max-width: 60ch; }
+
+  .caveat {
+    margin-top: 22px;
+    border: 1px solid var(--warn);
+    background: var(--warn-tint);
+    border-radius: 4px;
+    padding: 16px 20px;
+    font-size: var(--fs-sm);
+    color: var(--ink-2);
+  }
+  .caveat b { color: var(--warn); font-weight: 600; }
+
+  footer {
+    padding-top: 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    line-height: 1.9;
+  }
+  footer b { color: var(--ink-2); font-weight: 500; }
+
+  @media (max-width: 860px) {
+    .section-grid { grid-template-columns: 1fr; gap: 12px; }
+    .eyebrow { padding-top: 0; }
+    .section-body { min-width: 0; }
+    .stack-row { grid-template-columns: 1fr; }
+    section { padding-block: 40px; }
+    .masthead { padding-block: 44px 32px; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="kicker">ModelSphere · 插件体系</div>
+    <h1>插件可移植性架构</h1>
+    <p class="lede">插件产物固定，宿主契约固定；平台实现各自演进。北极星这类插件最终应当同一个包同时装进 ModelSphere 和 Global，差别只在谁来安装、谁来填环境参数。</p>
+    <div class="meta-row">
+      <span><b>日期</b> 2026-11-16</span>
+      <span><b>范围</b> plugin.yaml v1 · Plugin CRD · 插件前端 bundle</span>
+      <span><b>结论</b> 契约层已成型，机制层还缺两处收敛</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- 01 -->
+    <section>
+      <div class="section-grid">
+        <div class="eyebrow"><span>01</span>两个问题</div>
+        <div class="section-body">
+          <h2>先回答最初的两个问题</h2>
+          <div class="qa">
+            <div class="qa-item">
+              <p class="q">现阶段插件格式和 Global 完全通用吗？</p>
+              <p class="a">不是<b>整个包</b>通用，而是<b>契约层</b>通用。SDK 注册、共享宿主、IAM 路由、i18n 模型来自 Global；manifest 的承载方式、安装器、bundle 供给地址是我们自己的。旧 Global 格式的包不用再考虑，还没发布。</p>
+            </div>
+            <div class="qa-item">
+              <p class="q">未来能不能把北极星直接装到 Global？</p>
+              <p class="a">能，但前提是把「机制层」定死、平台层各做各的适配。装不进去的从来不是插件业务代码，而是<b>插件对宿主的三处隐含依赖</b>：能力查询的路径、<code>business.console</code> 这个复合名字、以及能力声明放在哪一侧。这三处收敛之后，同一个 tgz 在两边只是安装器不同。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section>
+      <div class="section-grid">
+        <div class="eyebrow"><span>02</span>三层模型</div>
+        <div class="section-body">
+          <h2>平台、机制、插件</h2>
+          <p>分成三层看，要求就很清楚：平台层可以完全不同，机制层必须一致，插件层只依赖机制层。</p>
+
+          <div class="stack" role="img" aria-label="三层结构：两个平台实现汇入统一的机制层，再被插件包依赖">
+            <div class="stack-row">
+              <div class="layer-box">
+                <span class="tag">平台 A · 当前</span>
+                <span class="name">ModelSphere Console</span>
+                <div class="desc">React + Vite 自研 shell，Plugin CRD <code>modelsphere.dev/v1alpha1</code>，<code>cmd/modelsphere</code> 安装器，bundle 从已装 release 供给。</div>
+              </div>
+              <div class="layer-box">
+                <span class="tag">平台 B · 目标</span>
+                <span class="name">Rise Global</span>
+                <div class="desc">Next.js，自有一套插件管理体系与投递方式。这些差异不需要消除。</div>
+              </div>
+            </div>
+            <div class="connector">各自实现 · 不要求一致</div>
+            <div class="layer-contract">
+              <span class="tag">机制层 · 唯一必须固定的部分</span>
+              <span class="name">宿主契约</span>
+              <div class="desc">SDK 全局对象与注册调用 · 共享模块的 window 别名 · API 路由声明（IAM ReverseProxy）· manifest 字段 · i18n 注册 · 菜单 key 约定 · 能力提供（provides）与绑定（consumes）· 同一个 bundle 供给方式</div>
+            </div>
+            <div class="connector">插件只认识这一层</div>
+            <div class="layer-box">
+              <span class="tag">插件层 · 产物固定</span>
+              <span class="name">一个 tgz</span>
+              <div class="desc">Helm chart + <code>plugin.yaml</code> + <code>frontend/&lt;entry&gt;</code>。不含任何平台的构建步骤，业务代码里不出现平台内部包名。</div>
+            </div>
+          </div>
+          <p class="stack-note">ModelSphere 与 Global 的框架选择、CRD 与管理体系、安装命令，全部落在平台层。它们可以各自演进，不构成插件复用的障碍。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 -->
+    <section>
+      <div class="section-grid">
+        <div class="eyebrow"><span>03</span>能力模型</div>
+        <div class="section-body">
+          <h2>能力不是注入，是声明与绑定</h2>
+          <p><code>requires: { swiss: true }</code> 这种写法有两个问题。布尔位只说明「我需要一样东西」，不说明从哪来、谁保证、哪个版本；而且这几个名字是安装器里写死的枚举，第三方提供方没法扩展，两个提供方用了同一个名字也没法区分。</p>
+          <p>方向也是反的。<code>imagePullSecrets</code> 和 <code>inferenceNamespaces</code> 由平台提供，swiss 的网关地址和代理 key 由 swiss 插件提供。北极星能用它们，是因为提供方公开声明了自己提供这些数据、声明的版本在哪，使用方再按声明去绑定。</p>
+
+          <pre><code><span class="c"># swiss 插件：提供方声明</span>
+provides:
+  - capability: swiss.modelsphere.dev/gateway
+    version: v1
+    values:
+      endpoint: .endpoint
+      apiKeyRef: .apiKey.secretRef</code></pre>
+
+          <pre><code><span class="c"># 北极星：使用方声明</span>
+consumes:
+  - capability: swiss.modelsphere.dev/gateway
+    version: v1
+    from: { kind: Plugin, name: swiss, version: "&gt;=0.3.0 &lt;0.5.0" }
+  - capability: platform.modelsphere.dev/image-pull-secrets
+    version: v1
+  - capability: platform.modelsphere.dev/inference-namespaces
+    version: v1</code></pre>
+
+          <p>能力标识是反域名加路径，提供方身份和版本都在名字里，同名不会撞。要锁到某个具体提供方实例、或者限制它的插件版本范围时，才用 <code>from</code> 补上 kind 和 name。</p>
+
+          <p>安装器只做解析：在已安装的提供方里找匹配的能力和版本，把结果写进使用方的 values。写进去的键按提供方限定，两个提供方同名也不会串：</p>
+
+          <pre><code><span class="c"># 安装器写给北极星的 values（片段）</span>
+consumed:
+  modelsphere.dev/swiss:
+    endpoint: http://swiss-gateway.inference:8080
+    apiKeyRef: swiss-proxy-key
+  modelsphere.dev/platform:
+    imagePullSecrets: [rise-registry]
+    inferenceNamespaces: [swiss-deploy]</code></pre>
+
+          <div class="tablewrap">
+            <table>
+              <thead>
+                <tr><th>角色</th><th>负责声明什么</th><th>安装时核对什么</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>提供方<br><span class="pill plat">含平台自身</span></td>
+                  <td>能力名、版本、输出哪些键</td>
+                  <td>它确实能渲染出这些键</td>
+                </tr>
+                <tr>
+                  <td>使用方</td>
+                  <td>绑定哪项能力、能力版本；需要时用 <code>from</code> 锁定提供方实例与版本</td>
+                  <td>绑定是否可解析</td>
+                </tr>
+                <tr>
+                  <td>安装器</td>
+                  <td>不写名称</td>
+                  <td>缺提供方、版本不匹配、有多个提供方但未指定，一律预检失败</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>平台不需要特殊处理。平台就是提供方 <code>platform</code>，它的能力随平台版本一起声明。这样三个布尔位全部消失，插件包也不再假设任何平台的 values 长什么样。</p>
+
+          <h3>三个直接后果</h3>
+          <ul class="checks">
+            <li><b>同名不再冲突</b>：能力标识带提供方域名，解析结果也按提供方隔离。</li>
+            <li><b>第三方能扩展</b>：新提供方只要声明 capability 和版本，已有使用方不用改安装器代码。</li>
+            <li><b>依赖关系变成显式的</b>：北极星绑定 swiss 的能力，就说明 swiss 必须先装、且版本落在区间里；缺了在预检就报，不会装完才炸。</li>
+          </ul>
+
+          <h3>它和插件可移植性的关系</h3>
+          <p>提供方声明属于机制层，平台只是众多提供方中的一个。换平台时插件包一行不改，变的只是新平台声明了哪些能力、用哪个版本号。真正稳定的不是「宿主注入三样东西」，而是「谁能声明、怎么绑定、怎么解析」这套规则。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 04 -->
+    <section>
+      <div class="section-grid">
+        <div class="eyebrow"><span>04</span>插件产物</div>
+        <div class="section-body">
+          <h2>什么算「产物固定」</h2>
+          <p>判定标准只有一个：同一个 tgz 不重新构建，能在两个平台装起来并跑通。要达到这个标准，插件的运行时依赖面必须只剩机制层暴露的接口。</p>
+
+          <ul class="checks">
+            <li><b>包结构固定</b>：chart 内 <code>Chart.yaml</code> + <code>plugin.yaml</code> + <code>frontend/&lt;entry&gt;</code>，由平台负责解包和供给。</li>
+            <li><b>manifest 字段固定</b>：<code>apiVersion: v1</code>、name/group/version/displayName、<code>provides</code> / <code>consumes</code>、<code>frontend{type, runtime, entry}</code>。字段内容固定，存在 CRD 里还是 Global 的管理体系里，是平台的事。</li>
+            <li><b>bundle 只从宿主全局对象取依赖</b>：React、UI 组件、Router、Query 都不打包进插件，编译期改写成宿主注入的全局对象。</li>
+            <li><b>API 走声明式路由</b>：通过 <code>iam.theriseunion.io/v1alpha1</code> 的 <code>ReverseProxy</code> 声明 <code>/api/</code> 前缀，平台负责鉴权和转发。</li>
+            <li><b>文案走宿主 i18n</b>：通过 SDK 注册到宿主实例，不自己另起一套语言切换。</li>
+          </ul>
+
+          <h3>bundle 的依赖实际去了哪里</h3>
+          <p>插件 SDK 的构建脚本已经把这件事做掉了。源码里写 <code>@modelsphere/ui</code>，编译后并不带这个包的代码，而是从宿主的全局对象上取同名导出：</p>
+
+          <div class="tablewrap">
+            <table>
+              <thead>
+                <tr><th>插件源码 import</th><th>编译后从宿主取</th><th>提供方</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>react</code></td><td><code>window.__MODELSPHERE_SDK__.React</code></td><td>宿主 React</td></tr>
+                <tr><td><code>@modelsphere/ui</code></td><td><code>…SDK__.ui</code></td><td>宿主 UI 包</td></tr>
+                <tr><td><code>react-router</code></td><td><code>…SDK__.business.console.Router</code></td><td>宿主 Router 单例</td></tr>
+                <tr><td><code>@tanstack/react-query</code></td><td><code>…SDK__.business.console.Query</code></td><td>宿主 QueryClient 单例</td></tr>
+                <tr><td><code>@modelsphere/plugin-sdk</code></td><td>打包进 bundle（契约代码），运行时读全局对象</td><td>插件自身</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>注意第一列的写法不是问题，第二列才是契约。全局对象同时挂了三个名字：</p>
+          <pre><code>window.__MODELSPHERE_SDK__
+window.__GLOBAL_SDK__      <span class="c">// 同一个对象</span>
+window.__RISE_SDK__        <span class="c">// 同一个对象</span></code></pre>
+          <p>这就是「同一个 bundle 两边都能跑」的技术基础。真正需要冻结的是第二列的接口形状，也就是机制层。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 05 -->
+    <section>
+      <div class="section-grid">
+        <div class="eyebrow"><span>05</span>现状与差距</div>
+        <div class="section-body">
+          <h2>已经固定的，和还差一点的</h2>
+
+          <div class="tablewrap">
+            <table>
+              <thead>
+                <tr><th>项</th><th>状态</th><th>说明</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>SDK 注册与共享宿主</td>
+                  <td><span class="pill ok">已固定</span></td>
+                  <td>迁自 <code>rise-global-extension</code> 4.2.1，注册与共享宿主契约保持兼容</td>
+                </tr>
+                <tr>
+                  <td>三个 window 别名</td>
+                  <td><span class="pill ok">已固定</span></td>
+                  <td>Global / Rise / ModelSphere 三个名字指向同一个对象</td>
+                </tr>
+                <tr>
+                  <td>i18n 模型</td>
+                  <td><span class="pill ok">已固定</span></td>
+                  <td>同一个 <code>rise-locale</code> 存储键与 locale 集合，语言选择可迁移</td>
+                </tr>
+                <tr>
+                  <td>API 路由声明</td>
+                  <td><span class="pill ok">已固定</span></td>
+                  <td><code>iam.theriseunion.io/v1alpha1</code> ReverseProxy + <code>authProxy: true</code>，IAM 原生能力</td>
+                </tr>
+                <tr>
+                  <td>能力声明</td>
+                  <td><span class="pill gap">待收敛</span></td>
+                  <td>现在是三个布尔位 <code>requires</code>；应换成提供方的 <code>provides</code> 与使用方的 <code>consumes</code>，按提供方和版本解析</td>
+                </tr>
+                <tr>
+                  <td>能力查询</td>
+                  <td><span class="pill gap">待收敛</span></td>
+                  <td>插件现在调 <code>/api/capabilities</code> 这个 Console 端点；应改为 SDK 方法，让各平台各自实现</td>
+                </tr>
+                <tr>
+                  <td><code>business.console</code></td>
+                  <td><span class="pill gap">待收敛</span></td>
+                  <td>名字里带 Console；契约里应收敛为中性的宿主命名空间，或由 Global 提供同名 shim</td>
+                </tr>
+                <tr>
+                  <td>manifest 承载</td>
+                  <td><span class="pill plat">平台侧</span></td>
+                  <td>ModelSphere 存 CRD，Global 存自己的管理体系；字段一致即可</td>
+                </tr>
+                <tr>
+                  <td>安装与卸载</td>
+                  <td><span class="pill plat">平台侧</span></td>
+                  <td>各平台各写一个安装器，负责读 <code>consumes</code>、从已声明能力的提供方解析绑定并填值</td>
+                </tr>
+                <tr>
+                  <td>bundle 供给地址</td>
+                  <td><span class="pill plat">平台侧</span></td>
+                  <td>ModelSphere 是 <code>/plugins/&lt;cr-name&gt;/&lt;entry&gt;</code>，Global 用自己的投递方式</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>剩余的未知</h3>
+          <p>本仓库里查不到 Global 当前的 manifest 结构与前端投递方式，因此上面「机制层已成型」的判断，依据的是我们这边已迁入的契约与构建产物，不是 Global 的现行实现。要把「还差两处收敛」变成一份确定的改动清单，需要一份 Global 正在使用的插件包，或 Global 加载插件的那段代码。</p>
+
+          <div class="verdict">
+            <span class="vtag">结论</span>
+            <p>插件是可移植的资产，平台是可替换的实现。把机制层冻在 SDK、ReverseProxy 和 manifest 字段上，北极星换平台时只需要换安装器，不需要动插件。</p>
+          </div>
+
+          <div class="caveat">
+            <b>范围说明</b>：上一轮讨论中旧 Global 格式的包（<code>modelsphere.io/v1alpha1</code>）已按「未发布、面向未来」的结论排除，本文不包含兼容该格式的内容。安装链路、CRD、前端 import 说明符的差异归为平台层，也不在本轮收敛目标内。
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div><b>证据索引</b></div>
+    <div>api/plugin/v1alpha1/types.go · PluginCapability / PluginCapabilityBinding</div>
+    <div>helm/console/values.yaml · platform.inferenceNamespaces</div>
+    <div>web/packages/plugin-sdk/src/shared-imports.ts · HOST_SURFACES</div>
+    <div>web/packages/plugin-sdk/src/build.ts · shared React banner</div>
+    <div>web/packages/plugin-sdk/UPSTREAM.md · 迁移来源与兼容范围</div>
+    <div>web/src/shell/global-sdk/host.tsx · 宿主注入面</div>
+    <div>web/src/shell/i18n.ts · rise-locale 与菜单 key 约定</div>
+    <div>docs/plans/2026-11-05-global-sdk-design.md · non-goals</div>
+    <div>console-canary-plugin/plugin.yaml · consumes 实际声明</div>
+  </footer>
+</div>
