@@ -11,10 +11,12 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
@@ -114,7 +116,16 @@ type Backend struct {
 	// namespace can still take a copied key through a Secret volume.
 	APIKeyEnv string `yaml:"apiKeyEnv,omitempty"`
 	// WritePermission is an optional permission required in addition to backend update access.
-	WritePermission string `yaml:"writePermission,omitempty"`
+	WritePermission string              `yaml:"writePermission,omitempty"`
+	AccessRules     []BackendAccessRule `yaml:"accessRules,omitempty"`
+}
+
+// BackendAccessRule overrides authorization for a backend-relative path and HTTP methods.
+type BackendAccessRule struct {
+	PathPrefix   string   `yaml:"pathPrefix"`
+	Methods      []string `yaml:"methods"`
+	ResourceName string   `yaml:"resourceName"`
+	Verb         string   `yaml:"verb"`
 }
 
 // Gateway is an inference entrypoint resolved from the cluster at startup and
@@ -311,7 +322,48 @@ func validateBackend(b Backend) error {
 	if b.APIKeyEnv != "" && !envNameRE.MatchString(b.APIKeyEnv) {
 		return fmt.Errorf("apiKeyEnv %q is not an environment variable name", b.APIKeyEnv)
 	}
+	if err := validateBackendAccessRules(b.AccessRules); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateBackendAccessRules(rules []BackendAccessRule) error {
+	seen := make(map[string]bool)
+	for i, rule := range rules {
+		prefix := rule.PathPrefix
+		if !CanonicalBackendPath(prefix) || (prefix != "/" && strings.HasSuffix(prefix, "/")) {
+			return fmt.Errorf("accessRules[%d]: pathPrefix must be a clean backend-relative path", i)
+		}
+		if len(rule.Methods) == 0 || strings.TrimSpace(rule.ResourceName) != rule.ResourceName || rule.ResourceName == "" {
+			return fmt.Errorf("accessRules[%d]: methods and resourceName are required", i)
+		}
+		switch rule.Verb {
+		case "get", "create", "update", "delete":
+		default:
+			return fmt.Errorf("accessRules[%d]: verb must be get, create, update or delete", i)
+		}
+		for _, method := range rule.Methods {
+			switch method {
+			case "GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE":
+			default:
+				return fmt.Errorf("accessRules[%d]: unsupported HTTP method %q", i, method)
+			}
+			key := method + " " + prefix
+			if seen[key] {
+				return fmt.Errorf("accessRules[%d]: duplicate rule for %s", i, key)
+			}
+			seen[key] = true
+		}
+	}
+	return nil
+}
+
+// CanonicalBackendPath permits a trailing slash but rejects ambiguous decoded paths.
+func CanonicalBackendPath(p string) bool {
+	return strings.HasPrefix(p, "/") &&
+		(p == "/" || path.Clean(p) == strings.TrimSuffix(p, "/")) &&
+		!strings.ContainsAny(p, "%?#\\") && !strings.ContainsFunc(p, unicode.IsControl)
 }
 
 // validateGateway checks only what can be known without the cluster. Whether the

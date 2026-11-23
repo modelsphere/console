@@ -123,6 +123,34 @@ func TestBackendAPIKey(t *testing.T) {
 	}
 }
 
+func TestValidateBackendAccessRules(t *testing.T) {
+	base := BackendAccessRule{PathPrefix: "/policies", Methods: []string{"POST"}, ResourceName: "autotune-settings", Verb: "create"}
+	testCases := []struct {
+		name    string
+		rules   []BackendAccessRule
+		wantErr string
+	}{
+		{"separate methods", []BackendAccessRule{base, {PathPrefix: "/policies", Methods: []string{"PUT"}, ResourceName: "autotune-settings", Verb: "update"}}, ""},
+		{"catch-all", []BackendAccessRule{base, {PathPrefix: "/", Methods: []string{"POST"}, ResourceName: "autotune-unmapped", Verb: "create"}}, ""},
+		{"duplicate method", []BackendAccessRule{base, base}, "duplicate rule"},
+		{"trailing slash", []BackendAccessRule{{PathPrefix: "/policies/", Methods: base.Methods, ResourceName: base.ResourceName, Verb: base.Verb}}, "clean backend-relative path"},
+		{"missing resource name", []BackendAccessRule{{PathPrefix: "/policies", Methods: base.Methods, Verb: base.Verb}}, "methods and resourceName"},
+		{"unsupported method", []BackendAccessRule{{PathPrefix: "/policies", Methods: []string{"post"}, ResourceName: base.ResourceName, Verb: base.Verb}}, "unsupported HTTP method"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := Backend{Name: "autotune", Prefix: "/api/autotune", URL: "http://autotune:8000/api", AccessRules: tc.rules}
+			err := validateBackend(backend)
+			if tc.wantErr == "" && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Fatalf("want error containing %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
 // document is what a config file says, and the YAML key names are part of the
 // contract: KnownFields turns a typo into a startup failure instead of a setting
 // that quietly does nothing.

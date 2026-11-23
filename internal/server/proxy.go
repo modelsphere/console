@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/modelsphere/console/internal/config"
@@ -72,8 +73,14 @@ func (s *Server) mountBackends(mux *http.ServeMux) {
 		mux.HandleFunc(prefix+"/route-options", func(w http.ResponseWriter, r *http.Request) {
 			s.handleRouteOptions(w, r, b, catalogResolve)
 		})
-		mux.HandleFunc(strings.TrimSuffix(b.Prefix, "/")+"/", func(w http.ResponseWriter, r *http.Request) {
-			if !s.authorize(w, r, backendVerb(r.Method), backendResource, b.Name) {
+		mux.HandleFunc(prefix+"/", func(w http.ResponseWriter, r *http.Request) {
+			relative := strings.TrimPrefix(r.URL.Path, prefix)
+			if len(b.AccessRules) > 0 && !config.CanonicalBackendPath(relative) {
+				writeError(w, http.StatusBadRequest, "invalid backend path")
+				return
+			}
+			verb, name := backendAccess(b, r.Method, relative)
+			if !s.authorize(w, r, verb, backendResource, name) {
 				return
 			}
 			target, err := resolve(r.Context())
@@ -102,6 +109,20 @@ func (s *Server) mountBackends(mux *http.ServeMux) {
 			writeError(w, http.StatusNotFound, "no gateway backend configured")
 		})
 	}
+}
+
+func backendAccess(b config.Backend, method, relative string) (verb, resourceName string) {
+	verb, resourceName = backendVerb(method), b.Name
+	longest := 0
+	for _, rule := range b.AccessRules {
+		prefix := rule.PathPrefix
+		if len(prefix) > longest && (prefix == "/" || relative == prefix || strings.HasPrefix(relative, prefix+"/")) &&
+			slices.Contains(rule.Methods, method) {
+			verb, resourceName = rule.Verb, rule.ResourceName
+			longest = len(prefix)
+		}
+	}
+	return verb, resourceName
 }
 
 // backendTargets resolves each backend once for the process: a gateway resolver
