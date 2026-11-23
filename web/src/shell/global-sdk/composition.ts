@@ -1,17 +1,19 @@
 import { type ConsoleModule } from "@/shell/module";
-import { buildScopeDeclarations, type SDKScopeDeclaration } from "./scope-declarations";
+import type { PluginNavigationComposition } from "../../../packages/plugin-sdk/src/types";
+import { buildScopeDeclarations } from "./scope-declarations";
 
-export interface NavigationComposition {
+export interface NavigationComposition extends PluginNavigationComposition {
   name: string;
   version: string;
   displayName: string;
-  scopes: SDKScopeDeclaration[];
-  groups: { name: string; title: string; menus: { provider: string; entry: string; scope?: string; viewport?: string }[] }[];
 }
 
-export function compositionModule(composition: NavigationComposition, provider = `modelsphere.dev/${composition.name}`): ConsoleModule {
+export function compileNavigationComposition(composition: NavigationComposition) {
   if (!composition.version || typeof composition.displayName !== "string" || !Array.isArray(composition.scopes) || !composition.scopes.length || !Array.isArray(composition.groups)) {
     throw new Error("Navigation composition requires version, displayName, scopes and groups");
+  }
+  if (composition.launcher !== undefined && typeof composition.launcher !== "boolean") {
+    throw new Error("Navigation composition launcher must be a boolean");
   }
   const scopes = buildScopeDeclarations({ name: composition.name, version: composition.version, scopes: composition.scopes });
   const groups = new Set<string>();
@@ -26,5 +28,10 @@ export function compositionModule(composition: NavigationComposition, provider =
       }
     }
   }
-  return { id: composition.name, title: composition.displayName, basePath: `/plugin-menus/${composition.name}`, pages: [], navigation: { provider, entries: [], menus: [], scopes, composition: { groups: composition.groups } } };
+  return { scopes, groups: composition.groups, launcher: composition.launcher };
+}
+
+export function compositionModule(composition: NavigationComposition, provider = `modelsphere.dev/${composition.name}`): ConsoleModule {
+  const { scopes, ...application } = compileNavigationComposition(composition);
+  return { id: composition.name, title: composition.displayName, basePath: `/plugin-menus/${composition.name}`, pages: [], navigation: { provider, entries: [], menus: [], scopes, composition: application } };
 }

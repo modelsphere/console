@@ -13,7 +13,8 @@ export function ApplicationLauncher({ items, className }: { items: ApplicationIt
   const labelFor = (item: ApplicationItem) => t(`${item.ns}:scope.${item.scope}`, { defaultValue: item.label });
   const current = items.find(item => item.id === activeID);
   const triggerLabel = current ? `${t("applications.title")}: ${labelFor(current)}` : t("applications.title");
-  if (!items.length) return null;
+  const available = items.filter(item => item.launcher !== false);
+  if (!available.some(item => item.id !== "console")) return null;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -27,7 +28,7 @@ export function ApplicationLauncher({ items, className }: { items: ApplicationIt
           <DialogDescription>{t("applications.description")}</DialogDescription>
         </DialogHeader>
         <nav aria-label={t("applications.title")} className="grid max-h-[60vh] grid-cols-1 gap-2 overflow-y-auto p-1 sm:grid-cols-2">
-          {items.map(item => {
+          {available.map(item => {
             const Icon = item.icon;
             const active = item.id === activeID;
             const label = labelFor(item);

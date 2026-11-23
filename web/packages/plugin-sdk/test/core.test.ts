@@ -357,6 +357,21 @@ describe('typed events', () => {
 })
 
 describe('registration contract validation', () => {
+  it('forwards business entries and their application composition with the plugin definition', async () => {
+    const { registerPlugin } = installHost()
+    const createPlugin = await loadCreatePlugin()
+    const entries = [{ name: 'settings', path: '/example/settings', scope: 'platform' as const }]
+    const navigationComposition = {
+      scopes: [{ scope: 'platform', path: '/example/settings' }],
+      groups: [{ name: 'settings', title: '', menus: [{ provider: 'modelsphere.dev/example', entry: 'settings' }] }],
+      launcher: false,
+    }
+
+    createPlugin({ ...baseDefinition, entries, navigationComposition })
+
+    expect(registerPlugin).toHaveBeenCalledWith(expect.objectContaining({ entries, navigationComposition }))
+  })
+
   it('forwards account menu links with the plugin definition', async () => {
     const { registerPlugin } = installHost()
     const createPlugin = await loadCreatePlugin()

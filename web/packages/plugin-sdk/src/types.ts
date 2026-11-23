@@ -276,6 +276,17 @@ export interface ScopeDeclaration {
   path?: string
 }
 
+export interface PluginNavigationComposition {
+  scopes: ScopeDeclaration[]
+  groups: {
+    name: string
+    title: string
+    menus: { provider: string; entry: string; scope?: string; viewport?: string }[]
+  }[]
+  /** Set to false to expose the application through account menu links and URLs. */
+  launcher?: boolean
+}
+
 // ── Plugin Definition (createPlugin input) ──────────────────
 
 /** Input to `createPlugin()`. */
@@ -298,6 +309,12 @@ export interface PluginDefinition {
 
   /** Menu items to register */
   menus?: PluginMenu[]
+
+  /** Business pages that can be referenced by a navigation composition. */
+  entries?: PluginMenu[]
+
+  /** A named application owned by this plugin. */
+  navigationComposition?: PluginNavigationComposition
 
   /** Links contributed to the Console account menu. */
   userMenu?: UserMenuItemDefinition[]

@@ -6,6 +6,8 @@ export type {
   Scope,
   ViewMode,
   PluginMenu,
+  ScopeDeclaration,
+  PluginNavigationComposition,
   PluginContext,
   PluginAPI,
   RequestOpts,

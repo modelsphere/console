@@ -185,7 +185,8 @@ Providers own functionality; compositions own navigation. Installing a plugin do
 | `menus` | Legacy default placement inside Console, including `parent/group/order/children` |
 | `entries` | Reusable business pages registered by stable provider/name identity; no automatic menu placement |
 | provider `scopes` | Context/title/icon metadata; not an application declaration |
-| `registerNavigationComposition` | Ordered groups of provider/entry references; supplies a named application's navigation |
+| `createPlugin({ navigationComposition })` | Named application owned by the same plugin as its business pages |
+| `registerNavigationComposition` | A separate navigation-only plugin with ordered groups of provider/entry references |
 | host composition | `web/src/shell/console-navigation.ts`; the same group/reference model orders Console's built-in and plugin entries |
 
 ```tsx
@@ -198,6 +199,15 @@ groups: [{
   ],
 }],
 ```
+
+A plugin that includes both Console pages and an application can place its
+Console pages in `menus` and its application pages in `entries`. Declare the
+application scopes and groups in `navigationComposition`, and reference the
+entries by their provider and name. An application is identified as
+`<plugin-name>/<scope>`. Set `launcher: false` inside the composition to keep
+the application available through an account menu link or its routes while
+hiding its launcher card. Shared route namespaces use the ordinary menus for
+their default landing page.
 
 - Change group/reference array order to reorder menus without changing plugin bundles or module load order.
 - Unreferenced legacy menus keep their default Console placement. North Star/Canary therefore integrates into Console, not a separate application.
