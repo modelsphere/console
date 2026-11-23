@@ -214,6 +214,34 @@ Authenticated `/clusters/{value}/oapis/` aliases do not select another cluster.
 not authorization aggregation. See the [single-cluster design](single-cluster-applications-design.md)
 for the unchanged original Dashboard Charts and browser verification.
 
+### Account menu links
+
+Set `userMenu` on `createPlugin()` to add links to the account dropdown. Use
+an entry name from your plugin or an application ID from a registered
+navigation composition.
+
+```ts
+userMenu: [
+  { id: "overview", title: "My Plugin", target: { kind: "entry", name: "my-plugin" } },
+  { id: "settings", title: "Settings", target: { kind: "application", id: "my-settings/platform" } },
+],
+```
+
+- Each `id` is unique within the plugin and uses kebab-case. Translate the
+  label at `userMenu.<id>` in the plugin's namespace. The declared `title`
+  serves as the fallback.
+- Set `order` to place the link among other plugin links. It defaults to
+  `999`, with ties sorted by plugin ID and link ID.
+- An entry target resolves to a static page owned by this plugin. Console
+  checks the same visibility and permission rules it uses for navigation.
+- An application target opens its default page if the user can access it
+  and the first accessible landing page otherwise. Console hides the link
+  if the application has no accessible landing page.
+
+Console resolves these links from the currently available plugins and pages.
+Page guards and backend authorization still apply. An older Console with the
+same SDK major version ignores account menu declarations.
+
 ### Routes
 
 Menu paths and route keys are normalized before matching; a matching route

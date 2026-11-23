@@ -17,6 +17,8 @@ export type {
   VisibilityExtensionRegistration,
   PresentationExtensionRegistration,
   ActionExtensionRegistration,
+  UserMenuTarget,
+  UserMenuItemDefinition,
   PluginDefinition,
   PluginInstance,
   RiseHostSDK,
