@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router";
 import {
   Avatar,
@@ -19,7 +19,11 @@ import { ChangePasswordDialog } from "@/shell/ChangePasswordDialog";
 import { PreferencesPanel } from "@/shell/PreferencesPanel";
 import { useLayout } from "@/shell/preferences";
 import { userMenuIdentity, userMenuState } from "@/shell/user-menu";
-import { activeGroupTitle, navGroups, topbarItems, type ConsoleModule, type NavGroup, type NavItem } from "@/shell/module";
+import { topbarItems, type ConsoleModule, type NavItem } from "@/shell/module";
+import { Sidebar } from "./Sidebar";
+import { ApplicationLauncher } from "./ApplicationLauncher";
+import type { ApplicationItem } from "./applications";
+import { applicationNavigation } from "./application-navigation";
 import { LOCALES, navLabel, useLocale, useT } from "@/shell/i18n";
 
 // The console shell in Rise Global's layouts, picked in the preferences panel.
@@ -37,9 +41,10 @@ export function Layout({ modules, children }: { modules: ConsoleModule[]; childr
   const { has } = usePermissions();
   const t = useT("shell");
   const layout = useLayout();
+  const { pathname } = useLocation();
   const [collapsed, setCollapsed] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const [prefsOpen, setPrefsOpen] = useState(false);
-  const groups = navGroups(modules, has);
+  const { groups, applications, activeID } = applicationNavigation(modules, has, pathname);
   const links = topbarItems(modules, has);
   const toggle = () => setCollapsed((c) => !c);
   const page = <main className="relative min-h-0 min-w-0 flex-1 overflow-auto bg-surface-page">{children}</main>;
@@ -49,17 +54,17 @@ export function Layout({ modules, children }: { modules: ConsoleModule[]; childr
       <div className="flex h-screen bg-[var(--shell-canvas)] [background-image:var(--shell-canvas-image)]">
         <aside className={`shrink-0 overflow-y-auto transition-[width] duration-200 ${collapsed ? "w-16" : "w-64"}`}>
           <nav className={collapsed ? "px-1 pb-1 pt-4" : "p-4"}>
-            <Sidebar groups={groups} collapsed={collapsed} board />
+            <Sidebar key={activeID} groups={groups} collapsed={collapsed} board />
           </nav>
         </aside>
         <div className="m-2 ml-0 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-card shadow-[0_1px_3px_0_rgb(0_0_0/0.1),0_1px_2px_-1px_rgb(0_0_0/0.1)]">
-          <TopBar tone="light" links={links} collapse={{ collapsed, toggle }} onPreferences={() => setPrefsOpen(true)} />
+          <TopBar tone="light" links={links} applications={applications} collapse={{ collapsed, toggle }} onPreferences={() => setPrefsOpen(true)} />
           {page}
         </div>
       </div>
     ) : (
       <div className={`flex h-screen flex-col ${layout === "classic" ? "bg-[var(--shell-classic-canvas)]" : "bg-background"}`}>
-        <TopBar tone="dark" links={links} onPreferences={() => setPrefsOpen(true)} />
+        <TopBar tone="dark" links={links} applications={applications} onPreferences={() => setPrefsOpen(true)} />
         <div className="flex min-h-0 flex-1">
           <aside
             className={`flex shrink-0 flex-col bg-[var(--shell-sidebar)] transition-[width] duration-300 ${collapsed ? "w-16" : "w-64"} ${
@@ -68,7 +73,7 @@ export function Layout({ modules, children }: { modules: ConsoleModule[]; childr
           >
             <div className="flex-1 overflow-y-auto">
               <nav className={collapsed ? "px-1 pb-1 pt-4" : "p-4"}>
-                <Sidebar groups={groups} collapsed={collapsed} />
+                <Sidebar key={activeID} groups={groups} collapsed={collapsed} />
               </nav>
             </div>
             <div className="border-t border-border p-2">
@@ -125,11 +130,13 @@ const TONE = {
 function TopBar({
   tone,
   links,
+  applications,
   collapse,
   onPreferences,
 }: {
   tone: "light" | "dark";
   links: NavItem[];
+  applications: ApplicationItem[];
   collapse?: { collapsed: boolean; toggle: () => void };
   onPreferences: () => void;
 }) {
@@ -142,13 +149,13 @@ function TopBar({
   const t = TONE[tone];
 
   return (
-    <header className={`flex h-14 shrink-0 items-center gap-3 px-4 ${t.bar}`}>
+    <header className={`flex h-14 shrink-0 items-center gap-2 px-2 sm:gap-3 sm:px-4 ${t.bar}`}>
       {collapse && (
         <button
           type="button"
           onClick={collapse.toggle}
           aria-label={tr(collapse.collapsed ? "layout.expandSidebar" : "layout.collapseSidebar")}
-          className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${t.icon}`}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors ${t.icon}`}
         >
           <PanelLeft className="h-4 w-4" />
         </button>
@@ -157,6 +164,7 @@ function TopBar({
         <Boxes className={`h-[26px] w-[26px] shrink-0 ${t.logo}`} />
         <span className="hidden text-sm font-semibold sm:inline">ModelSphere</span>
       </NavLink>
+      <ApplicationLauncher items={applications} className={t.icon} />
 
       <div className="ml-auto flex items-center gap-1">
         {links.map((item) => {
@@ -260,104 +268,5 @@ function LocaleMenu({ iconClass }: { iconClass: string }) {
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-// Global's menu item. On the minimal board it is 14px/500 with 10px vertical
-// padding (BOARD_MENU_ITEM); elsewhere regular weight with 8px.
-const ITEM_BASE = "flex items-center gap-3 rounded-lg px-3 text-sm transition-colors";
-const itemSize = (board: boolean) => (board ? "py-2.5 font-medium" : "py-2");
-const ITEM_IDLE = "text-foreground/80 hover:bg-accent hover:text-foreground";
-const ITEM_ACTIVE = "bg-primary/10 text-primary";
-
-// Accordion like Global's sidebar: one group open at a time, starting with the
-// group that holds the current page.
-function Sidebar({ groups, collapsed, board = false }: { groups: NavGroup[]; collapsed: boolean; board?: boolean }) {
-  const { pathname } = useLocation();
-  const t = useT("shell");
-  const activeGroup = activeGroupTitle(groups, pathname);
-  const [open, setOpen] = useState<string | undefined>(activeGroup ?? groups.find((g) => g.title)?.title);
-  const shown = open ?? activeGroup;
-  // Navigating into another module (a link, the back button) opens its group.
-  useEffect(() => {
-    if (activeGroup) setOpen(activeGroup);
-  }, [activeGroup]);
-
-  if (collapsed) {
-    return (
-      <div className="space-y-1">
-        {groups.flatMap((g) => g.items).map((item) => (
-          <MenuLink key={item.to} item={item} iconOnly />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-1">
-      {groups.map((g, i) =>
-        !g.title ? (
-          <div key={i} className="mb-1 space-y-0.5">
-            {g.items.map((item) => (
-              <MenuLink key={item.to} item={item} board={board} />
-            ))}
-          </div>
-        ) : (
-          <div key={g.title} className="mb-1">
-            <button
-              type="button"
-              onClick={() => setOpen(shown === g.title ? "" : g.title)}
-              className={`flex w-full items-center justify-between rounded-lg px-3 text-sm transition-colors hover:bg-accent ${itemSize(board)} ${
-                g.title === activeGroup ? "text-primary" : "text-foreground/80"
-              }`}
-            >
-              <span>{navLabel(t, g.ns, "group", g.title, g.title)}</span>
-              <ChevronRight
-                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${shown === g.title ? "rotate-90" : ""}`}
-              />
-            </button>
-            <div
-              className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
-                shown === g.title ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-              }`}
-              inert={shown !== g.title}
-            >
-              <div className="overflow-hidden">
-                <div className="pl-4">
-                  {g.items.map((item) => (
-                    <MenuLink key={item.to} item={item} board={board} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        ),
-      )}
-    </div>
-  );
-}
-
-function MenuLink({ item, iconOnly = false, board = false }: { item: NavItem; iconOnly?: boolean; board?: boolean }) {
-  const t = useT("shell");
-  const { to, icon: Icon, end } = item;
-  const label = navLabel(t, item.ns, "menu", item.key, item.label);
-  return (
-    <NavLink
-      to={to}
-      end={end}
-      title={iconOnly ? label : undefined}
-      className={({ isActive }) =>
-        iconOnly
-          ? `flex h-10 items-center justify-center rounded-lg transition-colors ${isActive ? ITEM_ACTIVE : ITEM_IDLE}`
-          : `${ITEM_BASE} ${itemSize(board)} ${isActive ? `${ITEM_ACTIVE} font-medium` : ITEM_IDLE}`
-      }
-    >
-      {({ isActive }) => (
-        <>
-          <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
-          {!iconOnly && <span className="truncate">{label}</span>}
-        </>
-      )}
-    </NavLink>
   );
 }

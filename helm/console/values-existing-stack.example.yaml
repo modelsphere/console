@@ -13,6 +13,11 @@ externalSwiss:
   # The Playground resolves the gateway from it.
   profile: "swiss-system/swiss-profile"
 
+# Shared platform scope supplied to plugins that declare the corresponding
+# requirement. The plugin CLI maps this to the plugin chart's own value names.
+platform:
+  inferenceNamespaces: [swiss-deploy]
+
 playground:
   gateway:
     # The profile's route.nginxService and route.auth.secretRef, as

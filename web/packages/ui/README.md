@@ -14,6 +14,8 @@ A second batch came from `rise-global/design` commit `f9c21d1b`, also with appro
 | `CodeBlock`, `CodeToolbar`, `CodeViewSheet` | `CodeViewSheet` shows a `CodeBlock`: the Monaco editor loads from the internet and is not forked |
 | `useDirty`, `useAnchorNav`, `useScrollShadow` | none |
 
+`EmptyState` and its state model come from `rise-global/design` commit `2be16f2c7bfa43e8dc2e5a90f936008d963888e4` for the Global plugin host contract. The rendering function is split for readability; state selection and action behavior are unchanged. Its model tests use this repository's Vitest runner.
+
 | | |
 |---|---|
 | Delivered as | TypeScript source, not built. The consumer's bundler compiles it and the consumer's Tailwind generates its CSS |

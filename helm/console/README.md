@@ -110,6 +110,7 @@ Write every reference as `namespace/name`.
 | `externalSwiss.url` | `http://<swiss-name>.<swiss-namespace>.svc:<port>/api`; must end in `/api` | — |
 | `externalSwiss.proxyKey.secretName` | `swiss-proxy-key` from step 2; delete the line if Swiss runs with `auth.disabled=true` | — |
 | `externalSwiss.profile` | Swiss's `cluster.profile.configMap` | yes |
+| `platform.inferenceNamespaces` | Production inference namespaces that plugins may inspect, for example `[swiss-deploy]` | — |
 | `playground.gateway.service` | the profile's `route.nginxService` | yes |
 | `playground.gateway.secretRef` | the profile's `route.auth.secretRef`; if it is a bare name, its namespace is **Swiss's namespace**. Delete the line if the profile has no such field | yes |
 | `playground.gateway.configMap` | **leave unset**: Console refuses to start when a profile is also set | — |
@@ -215,6 +216,7 @@ Every setting is documented in the comments of `values.yaml` (`helm show values 
 | Value | Effect |
 |---|---|
 | `externalSwiss.*` | connects to an existing Swiss, see above |
+| `platform.inferenceNamespaces` | production inference scope published as the `platform.modelsphere.dev/inference-namespaces` capability; the plugin CLI binds it into each consuming plugin's `consumed` values |
 | `playground.gateway.*` | points at an inference gateway directly (without Swiss, use `configMap` + `service`) |
 | `service.type` | how the UI is exposed; `NodePort` by default |
 | `admin.encryptedPassword` | presets the administrator password as a bcrypt hash |

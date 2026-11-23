@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Boxes } from "lucide-react";
-import { activeGroupTitle, joinPath, navGroups, topbarItems, validateModules, type ConsoleModule } from "@/shell/module";
+import { activeGroupTitle, activeNavItem, joinPath, navGroups, topbarItems, validateModules, type ConsoleModule } from "@/shell/module";
 
 const mod = (over: Partial<ConsoleModule> = {}): ConsoleModule => ({
   id: "swiss",
@@ -127,5 +127,61 @@ describe("topbarItems", () => {
 
   it("hides the model plaza when the catalog permission is missing", () => {
     expect(topbarItems([serving, help], () => false).map((i) => i.to)).toEqual(["/help/docs"]);
+  });
+});
+
+describe("plugin sidebar ownership", () => {
+  it("uses static route specificity when competing parent sidebars own dynamic and static pages", () => {
+    const first = mod({ id: "first", title: "动态归属", basePath: "/first" });
+    const second = mod({ id: "second", title: "静态归属", basePath: "/second" });
+    const contributor = mod({ id: "extra", basePath: "/extra", pages: [
+      { path: "jobs/:id", element: null, menu: { label: "详情", icon: Boxes, parent: "first", hidden: true } },
+      { path: "jobs/new", element: null, menu: { label: "新建", icon: Boxes, parent: "second" } },
+    ] });
+    const groups = navGroups([first, second, contributor], () => true);
+    expect(activeGroupTitle(groups, "/extra/jobs/new")).toBe("静态归属");
+    expect(activeGroupTitle(groups, "/extra/jobs/42")).toBe("动态归属");
+  });
+
+  it("selects only the most-specific menu, retaining that menu on hidden detail routes", () => {
+    const module = mod({ pages: [
+      { path: "", element: null, menu: { label: "全部", icon: Boxes } },
+      { path: "list", element: null, menu: { label: "列表", icon: Boxes } },
+      { path: "list/settings", element: null, menu: { label: "设置", icon: Boxes } },
+    ] });
+    const items = navGroups([module], () => true).flatMap(group => group.items);
+    expect(activeNavItem(items, "/swiss/list/settings")?.label).toBe("设置");
+    expect(activeNavItem(items, "/swiss/list/settings/details")?.label).toBe("设置");
+    expect(activeNavItem(items, "/swiss/list/42")?.label).toBe("列表");
+    expect(activeNavItem(items, "/swiss/other")?.label).toBe("全部");
+    expect(activeNavItem(items, "/other")).toBeUndefined();
+    expect(activeNavItem(items, "/")?.label).toBe("概览");
+  });
+
+  it("aggregates contributions into their parent, merges group titles, and sorts by order", () => {
+    const target = mod({ id: "target", title: "目标插件", basePath: "/target", pages: [
+      { path: "home", element: null, menu: { label: "首页", icon: Boxes, group: "资源", order: 200 } },
+    ] });
+    const contributor = mod({ id: "extra", basePath: "/extra", pages: [
+      { path: "jobs", element: null, menu: { label: "任务", icon: Boxes, parent: "target", group: "资源", order: 100, key: "jobs" } },
+      { path: "jobs/:id", element: null },
+    ] });
+    const groups = navGroups([target, contributor], () => true);
+    expect(groups).toHaveLength(2);
+    expect(groups[1].items.map(item => [item.label, item.to, item.group, item.ns])).toEqual([
+      ["任务", "/extra/jobs", "资源", "extra"],
+      ["首页", "/target/home", "资源", "target"],
+    ]);
+    expect(activeGroupTitle(groups, "/extra/jobs/42")).toBe("目标插件");
+  });
+
+  it("does not reassign a contribution when the parent is unavailable", () => {
+    const module = mod({ pages: [{ path: "", element: null, menu: { label: "任务", icon: Boxes, parent: "missing" } }] });
+    expect(navGroups([module], () => true)).toHaveLength(1);
+  });
+
+  it("accepts a multi-segment namespace but rejects overlapping module namespaces", () => {
+    expect(() => validateModules([mod({ basePath: "/rise.io/v1/example" })])).not.toThrow();
+    expect(() => validateModules([mod(), mod({ id: "other", basePath: "/swiss/nested" })])).toThrow(/already taken|overlap/);
   });
 });

@@ -1,0 +1,186 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { loadPlugins } from "@/shell/plugins";
+import { navGroups, type ConsoleModule } from "@/shell/module";
+import type { InstalledPlugin } from "@/shell/global-sdk/runtime";
+import { extensions } from "@/extensions/registry";
+
+const builtin: ConsoleModule = { id: "core", title: "Core", basePath: "/core", pages: [] };
+const example = (id = "example"): InstalledPlugin => ({ id, entry: `/plugins/${id}/index.umd.js` });
+
+class Asset {
+  src = ""; href = ""; rel = ""; type = "";
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  remove = vi.fn();
+}
+function browser(installed: InstalledPlugin[], execute: (asset: Asset) => void) {
+  const assets: Asset[] = [];
+  const listeners = new Set<(event: Event) => void>();
+  const win = {
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    addEventListener(type: string, listener: (event: Event) => void) { if (type === "error") listeners.add(listener); },
+    removeEventListener(type: string, listener: (event: Event) => void) { if (type === "error") listeners.delete(listener); },
+    dispatchEvent(event: Event) { listeners.forEach((listener) => listener(event)); return true; },
+  };
+  vi.stubGlobal("window", win);
+  vi.stubGlobal("HTMLScriptElement", Asset);
+  vi.stubGlobal("document", { createElement: () => new Asset(), head: { append(asset: Asset) { assets.push(asset); queueMicrotask(() => execute(asset)); } } });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => installed }));
+  return assets;
+}
+function register(id = "example", path = `/${id}`) {
+  const sdk = window.__MODELSPHERE_SDK__;
+  sdk.registerPlugin({ name: id, version: "1.0.0", menus: [{ name: "Example", title: "Example", path }] });
+  sdk.registerPluginComponent(id, "Example", () => null);
+  sdk.registerPluginRoutes(id, { "items/[id]": () => null });
+}
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.resetAllMocks();
+  extensions.data.length = 0;
+  extensions.visibility.length = 0;
+  extensions.presentations.length = 0;
+  extensions.actions.length = 0;
+});
+
+describe("configured SDK plugins", () => {
+  it("uses SDK navigation and routes when a CR supplies only identity and entry", async () => {
+    browser([{id:"example",group:"modelsphere.dev",entry:"/plugins/modelsphere.dev--example/index.js"}], asset => {
+      const sdk=window.__MODELSPHERE_SDK__;
+      sdk.registerPlugin({name:"example",version:"1.0.0",displayName:"Tools",menus:[{name:"home",title:"Example",path:"/example"}]});
+      sdk.registerPluginRoutes("example",{"/example":()=>null,"items/[id]":()=>null});
+      asset.onload?.();
+    });
+    const result=await loadPlugins([builtin]);
+    expect(result.errors).toEqual([]);
+    expect(result.modules[1].basePath).toBe("/example");
+    expect(result.modules[1].pages.map(page=>page.path)).toEqual(["","items/:id"]);
+  });
+  it("keeps the shell unchanged with no configured plugins", async () => {
+    browser([], () => {});
+    expect(await loadPlugins([builtin])).toEqual({ modules: [builtin], errors: [] });
+  });
+  it("shares SDK host aliases and registers the SDK menu and dynamic routes", async () => {
+    browser([example()], asset => { register(); asset.onload?.(); });
+    const result = await loadPlugins([builtin]);
+    expect(result.errors).toEqual([]);
+    expect(window.__MODELSPHERE_SDK__).toBe(window.__GLOBAL_SDK__);
+    expect(window.__MODELSPHERE_SDK__).toBe(window.__RISE_SDK__);
+    expect(result.modules[1].pages.map(page => page.path)).toEqual(["", "items/:id"]);
+    expect(navGroups(result.modules, () => false).at(-1)?.items[0].label).toBe("Example");
+  });
+  it("registers data, visibility, presentation and action extensions", async () => {
+    browser([example()], asset => {
+      register();
+      const sdk = window.__MODELSPHERE_SDK__;
+      sdk.registerPluginComponent("example", "Owner", () => null);
+      sdk.registerDataExtension("example", { id: "owner", resourceType: "inference-service", load: () => ({}) });
+      sdk.registerVisibilityExtension("example", { id: "owner-visible", resourceType: "inference-service", placement: "resource.header", evaluate: () => true });
+      sdk.registerPresentationExtension("example", { id: "owner-view", resourceType: "inference-service", placement: "resource.header", key: "owner", component: "Owner" });
+      sdk.registerActionExtension("example", { id: "owner-action", resourceType: "inference-service", action: "upgrade", evaluate: () => false });
+      asset.onload?.();
+    });
+    expect((await loadPlugins([builtin])).errors).toEqual([]);
+    expect(extensions.data.map(item => item.id)).toEqual(["owner"]);
+    expect(extensions.visibility.map(item => item.id)).toEqual(["owner-visible"]);
+    expect(extensions.presentations.map(item => item.id)).toEqual(["owner-view"]);
+    expect(extensions.actions.map(item => item.id)).toEqual(["owner-action"]);
+  });
+  it("loads the entry as a classic script", async () => {
+    const assets = browser([example()], asset => { register(); asset.onload?.(); });
+    expect((await loadPlugins([builtin])).errors).toEqual([]);
+    expect(assets[0].type).toBe("");
+  });
+  it("loads stylesheet assets before the entry", async () => {
+    const assets = browser([{ ...example(), styles: ["/plugins/example/style.css"] }], asset => { if (asset.src) register(); asset.onload?.(); });
+    expect((await loadPlugins([builtin])).errors).toEqual([]);
+    expect(assets.map(asset => asset.href || asset.src)).toEqual(["/plugins/example/style.css", "/plugins/example/index.umd.js"]);
+  });
+  it.each([
+    ["identity", () => register("other"), /registered/],
+    ["missing menu", () => window.__MODELSPHERE_SDK__.registerPlugin({name:"example",version:"1"}), /did not register a menu/],
+    ["missing component", () => window.__MODELSPHERE_SDK__.registerPlugin({name:"example",version:"1",menus:[{name:"Example",title:"Example",path:"/example"}]}), /not registered/],
+    ["missing presentation component", () => {
+      register();
+      window.__MODELSPHERE_SDK__.registerPresentationExtension("example", {
+        id: "broken-view",
+        resourceType: "inference-service",
+        placement: "resource.header",
+        key: "broken",
+        component: "Missing",
+      });
+    }, /Presentation component/],
+    ["duplicate registration", () => { register(); register(); }, /more than one/],
+  ])("reports %s failures and removes failed assets", async (_name, execute, error) => {
+    const assets = browser([example()], asset => { execute(); asset.onload?.(); });
+    const result = await loadPlugins([builtin]);
+    expect(result.modules).toEqual([builtin]);
+    expect(result.errors[0]).toMatch(error);
+    expect(assets[0].remove).toHaveBeenCalled();
+  });
+  it("rejects a menu that collides with a builtin", async () => {
+    browser([example()],asset=>{register("example","/core");asset.onload?.();});
+    expect((await loadPlugins([builtin])).errors[0]).toMatch(/already taken/);
+  });
+  it("rolls back a secondary namespace collision and still loads the next plugin", async () => {
+    const assets = browser([example("collision"), example()], asset => {
+      if (asset.src.includes("collision")) {
+        const sdk = window.__MODELSPHERE_SDK__;
+        sdk.registerPlugin({ name: "collision", version: "1", menus: [
+          { name: "home", path: "/collision" }, { name: "extra", path: "/core/list" },
+        ] });
+        sdk.registerPluginComponent("collision", "Home", () => null);
+        sdk.registerPluginComponent("collision", "Extra", () => null);
+        sdk.registerDataExtension("collision", { id: "rolled-back", resourceType: "test", load: () => ({}) });
+      } else register();
+      asset.onload?.();
+    });
+    const result = await loadPlugins([builtin]);
+    expect(result.modules.map(module => module.id)).toEqual(["core", "example"]);
+    expect(result.errors[0]).toMatch(/already taken|overlap/);
+    expect(assets[0].remove).toHaveBeenCalled();
+    expect(extensions.data).toEqual([]);
+  });
+  it("continues after an entry asset fails", async () => {
+    browser([example("broken"),example()],asset=>{if(asset.src.includes("broken"))asset.onerror?.();else{register();asset.onload?.();}});
+    const result=await loadPlugins([builtin]);
+    expect(result.modules.map(module=>module.id)).toEqual(["core","example"]);
+    expect(result.errors[0]).toMatch(/broken/);
+  });
+  it("keeps invalid application declarations out of the launcher without blocking the next plugin", async () => {
+    const assets = browser([example("broken"), example()], asset => {
+      if (asset.src.includes("broken")) {
+        const sdk = window.__MODELSPHERE_SDK__;
+        sdk.registerPlugin({ name: "broken", version: "1", scopes: [{ scope: "platform", path: "/outside" }], menus: [{ name: "home", path: "/broken" }] });
+        sdk.registerPluginComponent("broken", "Home", () => null);
+      } else register();
+      asset.onload?.();
+    });
+    const result = await loadPlugins([builtin]);
+    expect(result.modules.map(module => module.id)).toEqual(["core", "example"]);
+    expect(result.modules[1].navigation).toMatchObject({ provider: "modelsphere.dev/example", scopes: [], menus: ["Example"] });
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatch(/Application path/);
+    expect(assets[0].remove).toHaveBeenCalled();
+  });
+  it("rolls back an entry that throws after registering", async () => {
+    const assets = browser([example()], (asset) => {
+      register();
+      const failure = new Event("error");
+      Object.assign(failure, { message: "entry exploded", filename: asset.src });
+      window.dispatchEvent(failure);
+      asset.onload?.();
+    });
+    const result = await loadPlugins([builtin]);
+    expect(result.modules).toEqual([builtin]);
+    expect(result.errors[0]).toMatch(/entry exploded/);
+    expect(assets[0].remove).toHaveBeenCalled();
+  });
+  it("bounds stalled resource loading", async () => {
+    vi.useFakeTimers();browser([example()],()=>{});
+    const loading=loadPlugins([builtin]);await vi.advanceTimersByTimeAsync(15000);
+    expect((await loading).errors[0]).toMatch(/timed out/);
+  });
+});

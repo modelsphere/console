@@ -19,6 +19,7 @@ import (
 	"github.com/modelsphere/console/internal/cluster"
 	"github.com/modelsphere/console/internal/config"
 	"github.com/modelsphere/console/internal/iam"
+	"github.com/modelsphere/console/internal/pluginregistry"
 	"github.com/modelsphere/console/internal/router"
 	"github.com/modelsphere/console/internal/server"
 	"github.com/modelsphere/console/internal/version"
@@ -77,6 +78,7 @@ func run(configPath, addr, logLevel, webDir string) error {
 	defer stop()
 
 	srv := server.New(cfg, kube, log, version.Version)
+	srv.SetPluginRegistry(pluginregistry.New(kube.Dynamic(), pluginregistry.HelmReader(kube.Typed()), log))
 
 	// Identity kernel: users and roles live as CRDs, tokens are HS256, both
 	// wire-compatible with Rise Global.

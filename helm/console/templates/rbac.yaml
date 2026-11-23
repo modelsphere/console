@@ -9,6 +9,12 @@ metadata:
   labels:
     {{- include "console.labels" . | nindent 4 }}
 rules:
+  - apiGroups: ["modelsphere.dev"]
+    resources: ["plugins"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["modelsphere.dev"]
+    resources: ["plugins/status"]
+    verbs: ["get", "update", "patch"]
   - apiGroups: ["iam.theriseunion.io"]
     resources: ["users", "users/status", "iamroles", "iamrolebindings", "loginrecords"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -37,6 +43,31 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ include "console.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "console.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+# Helm stores plugin Chart metadata and frontend files beside Console.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "console.fullname" . }}-plugin-releases
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "console.fullname" . }}-plugin-releases
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "console.fullname" . }}-plugin-releases
 subjects:
   - kind: ServiceAccount
     name: {{ include "console.serviceAccountName" . }}

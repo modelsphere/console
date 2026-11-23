@@ -120,6 +120,12 @@ externalSwiss:
     key: proxyKey
   profile: ""
 
+# Platform defaults consumed by plugin packages that declare host requirements.
+# Swiss connection details remain in externalSwiss; inferenceNamespaces defines
+# the production inference scope granted to those plugins.
+platform:
+  inferenceNamespaces: [swiss-deploy]
+
 # An existing inference gateway, resolved from the cluster instead of named
 # here: console reads the entrypoint Service, the route to talk to and the key
 # from what is already the source of truth, and re-reads it as the cluster

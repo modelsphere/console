@@ -1,12 +1,13 @@
 import { createContext, useContext, type ComponentType, type ReactNode } from "react";
-import { LayoutDashboard, type LucideIcon } from "lucide-react";
-import { pageKey } from "@/shell/i18n";
+import type { LucideIcon } from "lucide-react";
+import type { ModuleNavigation } from "./navigation-types";
+export { activeGroupKey, activeGroupTitle, activeNavItem, flattenNavItems, navGroups, routeSpecificity, topbarItems } from "./module-navigation";
 
 // A module is one feature area of the console (iam, swiss, …). It declares its
 // pages; the shell owns everything around them: login, layout, sidebar, route
 // guards, the query client and the session on every request.
 //
-// Plugging a module in or out is one line in src/modules/index.ts.
+// Built-ins register in src/modules/index.ts; configured plugins register through the ModelSphere SDK host.
 export interface ModuleOverviewProps {
   session?: ReactNode;
 }
@@ -14,12 +15,13 @@ export interface ModuleOverviewProps {
 export interface ConsoleModule {
   // Stable id: used as the React key and in logs. Lowercase, no spaces.
   id: string;
-  // Sidebar group heading, in Chinese. Other languages: "{id}:group.{title}"
-  // in the module's strings (see navLabel in shell/i18n.ts).
+  // Default navigation title; compositions may place entries under other groups.
   title: string;
   // Every page mounts below this path, e.g. "/swiss". No trailing slash.
   basePath: string;
   pages: ModulePage[];
+  navigation?: ModuleNavigation;
+  capability?: string;
   // "flush": pages draw Rise Global's skeleton themselves -- a PageBanner edge to
   // edge, then their own p-4 body. Default "padded": the shell insets the page.
   frame?: "padded" | "flush";
@@ -30,27 +32,37 @@ export interface ConsoleModule {
 export interface ModulePage {
   // Relative to basePath. "" is the module's index; ":params" are allowed.
   path: string;
+  // Additional plugin namespace; omitted for pages under the module's primary mount.
+  basePath?: string;
   element: ReactNode;
   // UI permission (a Role's uiPermissions entry). Guards the route and hides the
   // menu entry. Omit for pages every logged-in user may see.
   permission?: string;
-  // Present means the page gets a sidebar entry. label is Chinese; other
-  // languages: "{module id}:menu.{pageKey(path)}".
-  menu?: { label: string; icon: LucideIcon };
+  requiresWrite?: boolean;
+  // Hidden entries retain route/ownership metadata without appearing in navigation.
+  menu?: { label: string; icon: LucideIcon; key?: string; scope?: string; parent?: string; treeParent?: string; group?: string; order?: number; hidden?: boolean };
   // Also link the page from the top bar; an object overrides its menu label.
   topbar?: boolean | { label: string };
 }
 
 const ModuleContext = createContext<ConsoleModule | null>(null);
 
-export function ModuleProvider({ module, children }: { module: ConsoleModule; children: ReactNode }) {
-  return <ModuleContext.Provider value={module}>{children}</ModuleContext.Provider>;
+export function ModuleProvider({ module, basePath, children }: { module: ConsoleModule; basePath?: string; children: ReactNode }) {
+  return <ModuleContext.Provider value={basePath ? { ...module, basePath } : module}>{children}</ModuleContext.Provider>;
 }
 
 // joinPath("/swiss", "catalog/x") === "/swiss/catalog/x"; joinPath("/swiss", "") === "/swiss".
 export function joinPath(basePath: string, path: string): string {
   const rel = path.replace(/^\/+/, "");
   return rel ? `${basePath}/${rel}` : basePath || "/";
+}
+
+export function pagePath(module: Pick<ConsoleModule, "basePath">, page: ModulePage): string {
+  return joinPath(page.basePath ?? module.basePath, page.path);
+}
+
+export function moduleMounts(module: ConsoleModule): string[] {
+  return [...new Set([module.basePath, ...module.pages.map(page => page.basePath ?? module.basePath)])];
 }
 
 // useModulePath turns a module-relative path into an absolute one, so a module's
@@ -61,7 +73,7 @@ export function useModulePath(): (path: string) => string {
   return (path) => joinPath(module.basePath, path);
 }
 
-const RESERVED = new Set(["/login", "/change-password", "/api", "/oauth"]);
+const RESERVED = new Set(["/login", "/change-password", "/api", "/oauth", "/plugins", "/assets"]);
 // A module's id is its i18n namespace; these belong to the shell.
 const RESERVED_IDS = new Set(["common", "shell", "ui"]);
 
@@ -75,14 +87,20 @@ export function validateModules(modules: ConsoleModule[]): void {
     if (RESERVED_IDS.has(m.id)) throw new Error(`module id "${m.id}" is reserved by the shell`);
     if (ids.has(m.id)) throw new Error(`duplicate module id "${m.id}"`);
     ids.add(m.id);
-    if (!/^\/[a-z0-9-]+$/.test(m.basePath)) throw new Error(`module "${m.id}": basePath "${m.basePath}" must look like "/name"`);
-    if (RESERVED.has(m.basePath)) throw new Error(`module "${m.id}": basePath "${m.basePath}" is reserved by the shell`);
-    if (bases.has(m.basePath)) throw new Error(`module "${m.id}": basePath "${m.basePath}" already taken`);
-    bases.add(m.basePath);
+    const mounts = moduleMounts(m);
+    for (const mount of mounts) {
+      if (!/^\/[a-z0-9][a-z0-9.-]*(?:\/[a-z0-9][a-z0-9.-]*)*$/.test(mount) || mount.split("/").some(segment => segment === "." || segment === "..")) throw new Error(`module "${m.id}": invalid basePath "${mount}"`);
+      if (RESERVED.has("/" + mount.split("/")[1])) throw new Error(`module "${m.id}": basePath "${mount}" is reserved by the shell`);
+      if ([...bases].some(base => base === mount || base.startsWith(mount + "/") || mount.startsWith(base + "/"))) {
+        throw new Error(`module "${m.id}": basePath "${mount}" already taken or overlaps another module`);
+      }
+    }
+    mounts.forEach(mount => bases.add(mount));
     const paths = new Set<string>();
     for (const p of m.pages) {
-      if (paths.has(p.path)) throw new Error(`module "${m.id}": page path "${p.path}" declared twice`);
-      paths.add(p.path);
+      const pattern = pagePath(m, p).replace(/:[\w-]+/g, ":param");
+      if (paths.has(pattern)) throw new Error(`module "${m.id}": page path "${p.path}" declared twice`);
+      paths.add(pattern);
     }
   }
 }
@@ -96,53 +114,18 @@ export interface NavItem {
   key: string;
   icon: LucideIcon;
   end: boolean;
+  group?: string;
+  order?: number;
+  children?: NavItem[];
 }
 
 export interface NavGroup {
+  id?: string;
   title?: string;
   ns?: string;
   // The module's mount point: every page below it belongs to this group, menu
   // entry or not (a detail page has none).
   basePath?: string;
   items: NavItem[];
-}
-
-// navGroups turns module declarations into sidebar groups, dropping pages the
-// user may not open and groups left empty by that.
-export function navGroups(modules: ConsoleModule[], has: (permission: string) => boolean): NavGroup[] {
-  const groups: NavGroup[] = [{ items: [{ to: "/", label: "概览", ns: "shell", key: "overview", icon: LayoutDashboard, end: true }] }];
-  for (const m of modules) {
-    const items = menuItems(m, has);
-    if (items.length) groups.push({ title: m.title, ns: m.id, basePath: m.basePath, items });
-  }
-  return groups;
-}
-
-function menuItems(m: ConsoleModule, has: (permission: string) => boolean, pick: (p: ModulePage) => boolean = () => true, placement: "menu" | "topbar" = "menu"): NavItem[] {
-  return m.pages
-    .filter((p) => p.menu && (!p.permission || has(p.permission)) && pick(p))
-    .map((p) => {
-      const topbar = placement === "topbar" && typeof p.topbar === "object" ? p.topbar : undefined;
-      return {
-        to: joinPath(m.basePath, p.path),
-        label: topbar?.label ?? p.menu!.label,
-        ns: m.id,
-        key: pageKey(p.path) + (topbar ? "Topbar" : ""),
-        icon: p.menu!.icon,
-        end: p.path === "",
-      };
-    });
-}
-
-// topbarItems are the pages declared topbar: true that the user may open.
-export function topbarItems(modules: ConsoleModule[], has: (permission: string) => boolean): NavItem[] {
-  return modules.flatMap((m) => menuItems(m, has, (p) => !!p.topbar, "topbar"));
-}
-
-// activeGroupTitle is the group holding the current page: the module it is
-// mounted under. Matching menu entries alone misses a module's pages that have
-// none -- /inferences/x/details is under /inferences, whose index entry only
-// matches exactly.
-export function activeGroupTitle(groups: NavGroup[], pathname: string): string | undefined {
-  return groups.find((g) => g.title && g.basePath && (pathname === g.basePath || pathname.startsWith(g.basePath + "/")))?.title;
+  paths?: string[];
 }

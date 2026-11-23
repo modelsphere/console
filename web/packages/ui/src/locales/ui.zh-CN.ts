@@ -35,6 +35,10 @@ const zhCN = {
     selectAll: "全选",
     search: "搜索",
   },
+  emptyState: {
+    unavailable: { title: "暂不可用" },
+    forbidden: { title: "无权访问", description: "请联系管理员开通相应权限" },
+  },
   resourceTable: {
     filters: {
       collapse: "收起筛选",

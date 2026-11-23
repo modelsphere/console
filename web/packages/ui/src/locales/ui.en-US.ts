@@ -36,6 +36,10 @@ const enUS: typeof zhCN = {
     selectAll: "Select all",
     search: "Search",
   },
+  emptyState: {
+    unavailable: { title: "Unavailable" },
+    forbidden: { title: "Access denied", description: "Contact your administrator to request access" },
+  },
   resourceTable: {
     filters: {
       collapse: "Hide filters",

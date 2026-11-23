@@ -64,6 +64,9 @@ func (k *Kube) WithTyped(typed kubernetes.Interface) *Kube {
 // clients against the iam.theriseunion.io GroupVersionResources.
 func (k *Kube) Dynamic() dynamic.Interface { return k.dyn }
 
+// Typed exposes the clientset for Helm's existing Secret storage driver.
+func (k *Kube) Typed() kubernetes.Interface { return k.typed }
+
 // ConfigMap reads one ConfigMap's data. The gateway resolver reads two: the site
 // profile, and the openresty route list beside it.
 func (k *Kube) ConfigMap(ctx context.Context, namespace, name string) (map[string]string, error) {

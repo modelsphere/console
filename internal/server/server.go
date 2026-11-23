@@ -21,6 +21,7 @@ import (
 	"github.com/modelsphere/console/internal/cluster"
 	"github.com/modelsphere/console/internal/config"
 	"github.com/modelsphere/console/internal/iam"
+	"github.com/modelsphere/console/internal/pluginregistry"
 	"github.com/modelsphere/console/internal/router"
 )
 
@@ -44,6 +45,15 @@ type Server struct {
 	targets     map[string]targetResolver
 
 	draining atomic.Bool
+	plugins  PluginRegistry
+}
+
+// PluginRegistry is the read side of plugin registrations. The running Console
+// uses pluginregistry.Registry; tests supply a static snapshot.
+type PluginRegistry interface {
+	Entries() []*pluginregistry.Entry
+	Ready() bool
+	Run(context.Context)
 }
 
 func New(cfg *config.Config, kube *cluster.Kube, log *slog.Logger, version string) *Server {
@@ -54,6 +64,9 @@ func New(cfg *config.Config, kube *cluster.Kube, log *slog.Logger, version strin
 
 // SetWeb installs the SPA filesystem. Without one, console is API only.
 func (s *Server) SetWeb(f fs.FS) { s.web = f }
+
+// SetPluginRegistry installs the CR-backed registration observer.
+func (s *Server) SetPluginRegistry(registry PluginRegistry) { s.plugins = registry }
 
 // SetIAM installs the identity kernel: the user store, the token signer, and
 // the login authenticator. Without it, /oauth and /api/iam are unavailable and
@@ -92,10 +105,16 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
+	mux.HandleFunc("GET /plugins/index.json", s.handlePluginIndex)
+	mux.HandleFunc("GET /plugins/{id}", http.NotFound)
+	mux.HandleFunc("GET /plugins/{id}/{asset...}", s.handlePluginAsset)
+	mux.HandleFunc("/plugins", http.NotFound)
+	mux.HandleFunc("/plugins/", http.NotFound)
 
 	if s.authn != nil {
 		mux.HandleFunc("POST /oauth/token", s.handleToken)
 		mux.HandleFunc("GET /api/me", s.handleMe)
+		mux.HandleFunc("GET /api/capabilities", s.handleCapabilities)
 		mux.HandleFunc("POST /api/me/password", s.handleChangeOwnPassword)
 		mux.HandleFunc("GET /api/iam/users", s.handleListUsers)
 		mux.HandleFunc("POST /api/iam/users", s.handleCreateUser)
@@ -130,10 +149,13 @@ func (s *Server) Handler() http.Handler {
 		// is an ambiguous pair that ServeMux refuses. spa enforces GET/HEAD.
 		mux.HandleFunc("/", s.spa)
 	}
-	return s.recover(s.logRequests(s.authenticate(s.requirePasswordReset(mux))))
+	return s.recover(s.logRequests(s.authenticate(s.requirePasswordReset(s.pluginBackends(pluginPaths(mux))))))
 }
 
 func (s *Server) Run(ctx context.Context) error {
+	if s.plugins != nil {
+		go s.plugins.Run(ctx)
+	}
 	srv := &http.Server{
 		Addr:              s.cfg.Server.Addr,
 		Handler:           s.Handler(),
@@ -183,6 +205,10 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	if s.plugins != nil && !s.plugins.Ready() {
+		writeError(w, http.StatusServiceUnavailable, "loading plugin registrations")
+		return
+	}
 	if s.draining.Load() {
 		writeError(w, http.StatusServiceUnavailable, "draining")
 		return
@@ -216,6 +242,9 @@ type statusRecorder struct {
 	http.ResponseWriter
 	status int
 }
+
+// Unwrap lets ResponseController preserve WebSocket upgrades through logging.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code
