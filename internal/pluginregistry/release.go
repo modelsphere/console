@@ -95,6 +95,11 @@ func (r *Registry) load(ctx context.Context, plugin *pluginapi.Plugin) (*Entry, 
 	if err != nil {
 		return nil, err
 	}
+	for _, route := range entry.Routes {
+		if route.Spec.Directives.AuthProxySecretRef != nil && route.Namespace != "" && route.Namespace != plugin.Spec.Chart.Namespace {
+			return nil, fmt.Errorf("plugin proxy credential route must be in the installed release namespace")
+		}
+	}
 	entry.Plugin.Status = pluginapi.PluginStatus{Phase: pluginapi.PluginPhaseInstalled, ObservedGeneration: plugin.Generation, ReleaseName: installed.Name, ReleaseVersion: installed.Version, PluginMeta: meta, FrontendStatus: &pluginapi.FrontendStatus{Distributed: true, EntryURL: "/plugins/" + plugin.Name + "/" + meta.Frontend.Entry}}
 	return entry, nil
 }

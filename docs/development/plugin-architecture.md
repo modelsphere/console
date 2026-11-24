@@ -307,6 +307,42 @@ when the browser only had a cookie. An unreachable upstream answers 502 and
 leaves the rest of Console working. SSE and chunked responses stream as they
 arrive.
 
+Plugins that validate a shared proxy credential declare a Secret reference:
+
+```yaml
+spec:
+  directives:
+    authProxy: true
+    authProxySecretRef:
+      name: example-proxy
+      key: proxyKey
+```
+
+| Boundary | Contract |
+| --- | --- |
+| Frontend | Uses the SDK and the user's session; never holds the proxy key |
+| Console | Authenticates and authorizes first, then reads the release-namespace Secret and overwrites `Authorization: Bearer <key>` |
+| Backend | Validates the shared credential and requires Console's `X-Remote-User`; backend owners implement this contract |
+| Installation | Configures the same Secret/key for Console's route and the backend; no inline credentials or automatic permission grants |
+
+- The reference is optional for existing routes, but requires `authProxy: true`
+  and forbids `skipAuthentication`. No namespace override is supported.
+- Secret data is a raw RFC 6750 bearer token (no `Bearer ` prefix or whitespace).
+- Missing/unreadable Secrets, missing/empty/invalid keys and unavailable clients
+  return 502 without contacting the upstream or falling back to a user token.
+- Secrets are read on every authorized request. Rotation/deletion takes effect
+  on the next request; backend environment variables still require its rollout.
+- The release namespace is the lookup boundary. An explicitly different route
+  namespace is rejected. Existing Secret read RBAC is reused, not expanded.
+- Only trusted operators may install packages: their charts choose upstream
+  destinations and Secret references. NetworkPolicy remains defense in depth.
+- Upgrade Console and its ReverseProxy CRD before installing consumers. Helm
+  does not update CRDs on upgrade. This optional field is a Console extension;
+  other Global-compatible hosts must implement it before using these packages.
+
+Regenerate the schema with `bash hack/generate-proxy-crd.sh`. See
+[the credential design](plugin-proxy-credentials.md) for rollout and alternatives.
+
 The plugin's frontend uses the SDK `ApiClient`, which accepts same-origin
 absolute paths only, attaches the session and throws `ApiError(status, detail)`
 on a non-2xx response. A 401 is not redirected to the login page; the plugin

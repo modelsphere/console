@@ -58,10 +58,15 @@ func (u *ReverseProxyUpstream) RawURL() string {
 }
 
 // ReverseProxyDirectives defines proxy behavior and transformation rules
+// +kubebuilder:validation:XValidation:rule="!has(self.authProxySecretRef) || (has(self.authProxy) && self.authProxy && (!has(self.skipAuthentication) || !self.skipAuthentication))",message="authProxySecretRef requires authProxy without skipAuthentication"
 type ReverseProxyDirectives struct {
 	// Enable authentication proxy
 	// +optional
 	AuthProxy bool `json:"authProxy,omitempty"`
+
+	// Shared proxy credential in the installed plugin release namespace. Requires authProxy.
+	// +optional
+	AuthProxySecretRef *ProxySecretReference `json:"authProxySecretRef,omitempty"`
 
 	// Skip host authentication and authorization for matching requests; upstream must authenticate.
 	// Mutually exclusive with authProxy.
@@ -99,6 +104,18 @@ type ReverseProxyDirectives struct {
 	// Content replacement rules
 	// +optional
 	Replace []ReverseProxyReplaceRule `json:"replace,omitempty"`
+}
+
+// ProxySecretReference selects a required bearer credential without exposing its value.
+type ProxySecretReference struct {
+	// Secret name in the installed plugin release namespace.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name"`
+	// Key containing the raw bearer token, without the Bearer prefix.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Key string `json:"key"`
 }
 
 // ReverseProxyRewriteRule defines path rewriting rules
