@@ -1,5 +1,10 @@
 import type { ResourceDataExtension } from "./types";
 
+export interface LoadedResourceData {
+  extensions: readonly Pick<ResourceDataExtension, "plugin" | "id">[];
+  values: readonly unknown[];
+}
+
 /**
  * Plugin-local data map for one extension callback.
  *

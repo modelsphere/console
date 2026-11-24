@@ -1,7 +1,7 @@
-import { useQueries } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { dataForPlugin } from "./data";
 import { extensions } from "./registry";
+import { useResourceExtensionData } from "./queries";
 
 interface ResourceExtensionSurfaceProps<T> {
   resourceType: string;
@@ -18,20 +18,13 @@ export function ResourceExtensionSurface<T>({
   placement,
   fallback = null,
 }: ResourceExtensionSurfaceProps<T>) {
-  const dataExtensions = extensions.data.filter((extension) => extension.resourceType === resourceType);
+  const loaded = useResourceExtensionData(resourceType, [{ resourceKey, resource }]).get(resourceKey)!;
   const presentations = extensions.presentations.filter(
     (extension) => extension.resourceType === resourceType && extension.placement === placement,
   );
-  const queries = useQueries({
-    queries: dataExtensions.map((extension) => ({
-      queryKey: ["extension-data", extension.plugin, extension.id, resourceType, resourceKey],
-      queryFn: () => extension.load({ resourceType, resourceKey, resource }),
-      staleTime: 30_000,
-    })),
-  });
   if (presentations.length === 0) return fallback;
 
-  const values = queries.map((query) => query.data);
+  const { extensions: dataExtensions, values } = loaded;
   const context = { resourceType, resourceKey, resource };
   return (
     <>

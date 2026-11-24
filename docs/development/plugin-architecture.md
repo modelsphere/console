@@ -307,10 +307,39 @@ when the browser only had a cookie. An unreachable upstream answers 502 and
 leaves the rest of Console working. SSE and chunked responses stream as they
 arrive.
 
+The generic proxy does not read plugin Secrets or replace the session with a
+backend shared key. A backend requiring another credential needs an agreed
+authentication contract before integration can be accepted; do not put keys in
+frontend code, inline route headers or an authentication bypass.
+
+The [shared-credential proposal](plugin-proxy-credentials.md) is deferred; it is
+not part of the current Console or Global contract. Regenerate the ReverseProxy
+schema with `bash hack/generate-proxy-crd.sh` after changing its Go types.
+
 The plugin's frontend uses the SDK `ApiClient`, which accepts same-origin
 absolute paths only, attaches the session and throws `ApiError(status, detail)`
 on a non-2xx response. A 401 is not redirected to the login page; the plugin
 shows the error.
+
+## Resource action data
+
+```text
+resource snapshot -> plugin data loaders -> plugin-local data -> action policy
+                                    +---> presentation / visibility
+```
+
+- Collection and detail actions receive the same data-extension results as
+  presentation callbacks, scoped to the owning plugin and resource.
+- Data queries include the resource snapshot in their key; a changed assignment
+  cannot reuse the previous owner's policy. Failed queries withhold stale data.
+- Action callbacks stay synchronous. Plugins must explicitly block actions that
+  require data while that data is loading or unavailable.
+- Each action uses its own policy. A denied uninstall does not implicitly deny
+  SLO editing; read-only and uninstalling resource state still deny writes.
+- An open SLO editor stays mounted during policy refresh to retain the draft;
+  writes remain disabled until the new policy permits them.
+- Backend-specific policy resolution belongs in the plugin's data loader, not
+  in the Console host or a new backend exception.
 
 ## Capabilities
 

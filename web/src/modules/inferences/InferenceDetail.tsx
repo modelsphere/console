@@ -13,7 +13,7 @@ import { Endpoint } from "@swiss/components/Endpoint";
 import { Provenance } from "@swiss/components/Provenance";
 import { useT } from "@/modules/inferences/i18n";
 import { modelLine, parseTab, releaseState, sloBlocked, visibleTabs, type Tab } from "@/modules/inferences/lib";
-import { evaluateResourceAction } from "@/extensions/registry";
+import { useResourceActions } from "@/extensions/queries";
 import { ResourceExtensionSurface } from "@/extensions/surface";
 import { statusOf } from "@/modules/inferences/components/StatusDot";
 import { DeploySheet } from "@/modules/inferences/components/DeploySheet";
@@ -66,6 +66,8 @@ export function InferenceDetail() {
   });
 
   const s = status.data;
+  const resourceKey = `${namespace}/${release}`;
+  const evaluateAction = useResourceActions("inference-service", s ? [{ resourceKey, resource: s }] : []);
   const visible = visibleTabs({ plan: !!plan.data });
   const tab = parseTab(search.get("tab"), visible);
   const setTab = (next: Tab, pod?: string) =>
@@ -108,18 +110,18 @@ export function InferenceDetail() {
 
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
   const removing = isUninstalling(s);
-  const resourceKey = `${namespace}/${release}`;
-  const actionBlocked = (action: string) => evaluateResourceAction("inference-service", resourceKey, s, action);
-  const blockedWrite = actionBlocked("uninstall") || (readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false);
-  const upgradeBlocked = actionBlocked("upgrade") || (readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false);
-  const sloBlockedByExtension = actionBlocked("slo");
+  const actionBlocked = (action: string) => evaluateAction(resourceKey, s, action);
+  const writeUnavailable = readOnly ? t("disabled.readOnly") : removing ? t("disabled.uninstalling") : false;
+  const blockedWrite = actionBlocked("uninstall") || writeUnavailable;
+  const upgradeBlocked = actionBlocked("upgrade") || writeUnavailable;
+  const sloBlockedByExtension = actionBlocked("slo") || writeUnavailable;
   const external = s.external;
   const untracked = !plan.data && plan.isError;
   const source = plan.data?.source;
   const model = modelLine(source ?? {}) || s.model;
   const pods = s.pods.map((p) => p.name);
   const blocked = sloBlocked(s, plan.data);
-  const sloOpen = !sloBlockedByExtension && !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
+  const sloOpen = !removing && (editingSLO || (sloSetup && blocked !== "off" && s.planStatus?.phase !== "failed"));
   const closeSLO = () => {
     setEditingSLO(false);
     if (!sloSetup) return;
@@ -142,7 +144,7 @@ export function InferenceDetail() {
             {
               key: "slo",
               label: t("actions.slo"),
-              disabled: sloBlockedByExtension || blockedWrite || (external ? t("disabled.external") : blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
+              disabled: sloBlockedByExtension || (external ? t("disabled.external") : blocked === "off" ? t("disabled.sloOff") : blocked === "pending" ? t("disabled.sloPending") : false),
               onClick: () => setEditingSLO(true),
             },
             {

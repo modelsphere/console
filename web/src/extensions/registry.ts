@@ -5,6 +5,7 @@ import type {
   ResourcePresentationExtension,
   ResourceVisibilityExtension,
 } from "./types";
+import { dataForPlugin, type LoadedResourceData } from "./data";
 
 export const extensions: ConsoleExtensions = {
   modules: [],
@@ -43,12 +44,14 @@ export function evaluateResourceAction<T>(
   resourceKey: string,
   resource: T,
   action: string,
+  loaded: LoadedResourceData = { extensions: [], values: [] },
 ): false | string {
-  const context = { resourceType, resourceKey, resource, data: {}, action };
+  const context = { resourceType, resourceKey, resource, action };
   for (const extension of extensions.actions) {
     if (extension.resourceType !== resourceType || extension.action !== action) continue;
     try {
-      const blocked = extension.evaluate(context);
+      const data = dataForPlugin(loaded.extensions, loaded.values, extension.plugin);
+      const blocked = extension.evaluate({ ...context, data });
       if (blocked) return blocked;
     } catch (error) {
       console.error(`[console] resource action policy failed: ${extension.plugin}/${extension.id}`, error);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -6,6 +6,13 @@ import type { Deployment, Plan, ReleaseStatus } from "@swiss/lib/api";
 import { ModuleProvider } from "@/shell/module";
 import { InferenceDetail } from "@/modules/inferences/InferenceDetail";
 import { InferenceList } from "@/modules/inferences/InferenceList";
+import { extensions } from "@/extensions/registry";
+import { resourceDataQueryKey } from "@/extensions/queries";
+
+vi.mock("@/modules/inferences/components/SLOSheet", () => ({
+  SLOSheet: ({ target, canEdit }: { target: { release: string } | null; canEdit: boolean }) =>
+    target ? <div data-slo-editor={target.release} data-can-edit={canEdit} /> : null,
+}));
 
 const module = { id: "inferences", title: "模型服务", basePath: "/inferences", pages: [] };
 const cluster = { name: "c", profile: "p", catalog: "u", version: "0", allowDeploy: true };
@@ -72,8 +79,7 @@ function renderList(rows: Deployment[]) {
   );
 }
 
-function renderDetail(status: ReleaseStatus) {
-  const c = client();
+function renderDetail(status: ReleaseStatus, c = client(), sloSetup = false) {
   c.setQueryData(["cluster"], cluster);
   c.setQueryData(["status", "models", "qwen"], status);
   c.setQueryData(["releasePlan", "models", "qwen"], plan);
@@ -84,7 +90,7 @@ function renderDetail(status: ReleaseStatus) {
   return renderToStaticMarkup(
     <QueryClientProvider client={c}>
       <ModuleProvider module={module}>
-        <MemoryRouter initialEntries={["/inferences/qwen/details?namespace=models&tab=versions"]}>
+        <MemoryRouter initialEntries={[{ pathname: "/inferences/qwen/details", search: "?namespace=models&tab=versions", state: { sloSetup } }]}>
           <Routes>
             <Route path="/inferences/:release/details" element={<InferenceDetail />} />
           </Routes>
@@ -93,6 +99,46 @@ function renderDetail(status: ReleaseStatus) {
     </QueryClientProvider>,
   );
 }
+
+afterEach(() => {
+  extensions.actions.length = 0;
+  extensions.data.length = 0;
+});
+
+describe("independent action policies", () => {
+  it("uses loaded SLO policy without inheriting the uninstall lock", () => {
+    const status = release();
+    const c = client();
+    const dataExtension = { plugin: "example", id: "policy", resourceType: "inference-service", load: () => ({ canEdit: true }) };
+    extensions.data.push(dataExtension);
+    extensions.actions.push(
+      { plugin: "example", id: "uninstall", resourceType: "inference-service", action: "uninstall", evaluate: () => "assigned" },
+      { plugin: "example", id: "slo", resourceType: "inference-service", action: "slo", evaluate: ({ data }) => (data.policy as { canEdit?: boolean })?.canEdit ? false : "unavailable" },
+    );
+    c.setQueryData(resourceDataQueryKey(dataExtension, "inference-service", "models/qwen", status), { canEdit: true });
+    const html = renderDetail(status, c);
+    expect(button(html, "编辑 SLO")?.disabled).toBe(false);
+    expect(button(html, "卸载")?.disabled).toBe(true);
+    c.clear();
+  });
+
+  it("keeps an open SLO editor mounted but read-only while refreshed policy is unavailable", () => {
+    const status = release();
+    const c = client();
+    const dataExtension = { plugin: "example", id: "policy", resourceType: "inference-service", load: () => ({ canEdit: true }) };
+    extensions.data.push(dataExtension);
+    extensions.actions.push({ plugin: "example", id: "slo", resourceType: "inference-service", action: "slo", evaluate: ({ data }) => (data.policy as { canEdit?: boolean })?.canEdit ? false : "unavailable" });
+    c.setQueryData(resourceDataQueryKey(dataExtension, "inference-service", "models/qwen", status), { canEdit: true });
+    expect(renderDetail(status, c, true)).toContain('data-slo-editor="qwen" data-can-edit="true"');
+    const refreshed = release({ ready: 0 });
+    const pending = renderDetail(refreshed, c, true);
+    expect(pending).toContain('data-slo-editor="qwen" data-can-edit="false"');
+    expect(button(pending, "编辑 SLO")?.disabled).toBe(true);
+    c.setQueryData(resourceDataQueryKey(dataExtension, "inference-service", "models/qwen", refreshed), { canEdit: true });
+    expect(renderDetail(refreshed, c, true)).toContain('data-slo-editor="qwen" data-can-edit="true"');
+    c.clear();
+  });
+});
 
 describe("inference list while a deployment is uninstalling", () => {
   const html = renderList([

@@ -19,7 +19,7 @@ import { isUninstalling } from "@swiss/lib/phase";
 import { pollOptions, usePollingPaused } from "@swiss/lib/polling";
 import { useT } from "@/modules/inferences/i18n";
 import { detailPath, modelLine, rowState } from "@/modules/inferences/lib";
-import { evaluateResourceAction } from "@/extensions/registry";
+import { useResourceActions } from "@/extensions/queries";
 import { ResourceExtensionSurface } from "@/extensions/surface";
 import { StatusDot } from "@/modules/inferences/components/StatusDot";
 import { DeploySheet, type DeployTarget } from "@/modules/inferences/components/DeploySheet";
@@ -52,6 +52,7 @@ export function InferenceList() {
   const readOnly = cluster.data ? !cluster.data.allowDeploy : false;
 
   const rows: Row[] = (list.data?.deployments ?? []).map((d) => ({ ...d, key: `${d.namespace}/${d.release}` }));
+  const evaluateAction = useResourceActions("inference-service", rows.map((resource) => ({ resourceKey: resource.key, resource })));
   const open = (d: Deployment) => navigate(p(detailPath(d.release, d.namespace)));
 
   const columns: ResourceColumn<Row>[] = [
@@ -107,7 +108,7 @@ export function InferenceList() {
 
   const writeBlocked = (d: Deployment, untracked = false, adaptive = false): boolean | string => {
     const action = adaptive ? "upgrade" : "uninstall";
-    const extensionBlocked = evaluateResourceAction("inference-service", `${d.namespace}/${d.release}`, d, action);
+    const extensionBlocked = evaluateAction(`${d.namespace}/${d.release}`, d, action);
     if (extensionBlocked) return extensionBlocked;
     return readOnly ? t("disabled.readOnly") : isUninstalling(d) ? t("disabled.uninstalling") : untracked && d.external ? t("disabled.external") : untracked && !d.model ? t("disabled.untracked") : false;
   };
