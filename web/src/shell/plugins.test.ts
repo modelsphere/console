@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadPlugins } from "@/shell/plugins";
 import { navGroups, type ConsoleModule } from "@/shell/module";
 import type { InstalledPlugin } from "@/shell/global-sdk/runtime";
+import { resolveUserMenuItems } from "@/shell/user-menu";
 import { extensions } from "@/extensions/registry";
 
 const builtin: ConsoleModule = { id: "core", title: "Core", basePath: "/core", pages: [] };
@@ -71,6 +72,29 @@ describe("configured SDK plugins", () => {
     expect(result.modules[1].pages.map(page => page.path)).toEqual(["", "items/:id"]);
     expect(navGroups(result.modules, () => false).at(-1)?.items[0].label).toBe("Example");
   });
+  it("publishes account menu links for installed plugins and removes them on reload after disabling", async () => {
+    browser([example()], asset => {
+      const sdk = window.__MODELSPHERE_SDK__;
+      sdk.registerPlugin({
+        name: "example",
+        version: "1.0.0",
+        menus: [{ name: "home", path: "/example", authKey: "example.read" }],
+        userMenu: [{ id: "example-home", title: "Example", target: { kind: "entry", name: "home" } }],
+      });
+      sdk.registerPluginRoutes("example", { "/example": () => null });
+      asset.onload?.();
+    });
+
+    const installed = await loadPlugins([builtin]);
+    expect(installed.errors).toEqual([]);
+    expect(resolveUserMenuItems(installed.modules, [], permission => permission === "example.read"))
+      .toMatchObject([{ title: "Example", to: "/example" }]);
+    expect(resolveUserMenuItems(installed.modules, [], () => false)).toEqual([]);
+
+    browser([], () => {});
+    const disabled = await loadPlugins([builtin]);
+    expect(resolveUserMenuItems(disabled.modules, [], () => true)).toEqual([]);
+  });
   it("registers data, visibility, presentation and action extensions", async () => {
     browser([example()], asset => {
       register();
@@ -102,6 +126,16 @@ describe("configured SDK plugins", () => {
     ["identity", () => register("other"), /registered/],
     ["missing menu", () => window.__MODELSPHERE_SDK__.registerPlugin({name:"example",version:"1"}), /did not register a menu/],
     ["missing component", () => window.__MODELSPHERE_SDK__.registerPlugin({name:"example",version:"1",menus:[{name:"Example",title:"Example",path:"/example"}]}), /not registered/],
+    ["invalid account menu", () => {
+      const sdk = window.__MODELSPHERE_SDK__;
+      sdk.registerPlugin({
+        name: "example",
+        version: "1",
+        menus: [{ name: "home", path: "/example" }],
+        userMenu: [{ id: "broken", title: "Broken", target: { kind: "entry", name: "missing" } }],
+      });
+      sdk.registerPluginRoutes("example", { "/example": () => null });
+    }, /registered static entry/],
     ["missing presentation component", () => {
       register();
       window.__MODELSPHERE_SDK__.registerPresentationExtension("example", {

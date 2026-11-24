@@ -241,6 +241,21 @@ export interface ActionExtensionRegistration {
   evaluate: (context: { resourceType: string; resourceKey: string; resource: unknown; data: Record<string, unknown>; action: string }) => false | string
 }
 
+export type UserMenuTarget =
+  | { kind: 'entry'; name: string }
+  | { kind: 'application'; id: string }
+
+export interface UserMenuItemDefinition {
+  /** Unique kebab-case identifier within this plugin. */
+  id: string
+  /** Fallback label for the plugin's userMenu.<id> translation. */
+  title: string
+  /** Sort order, defaulting to 999. */
+  order?: number
+  /** Own static entry or the stable ID of an application. */
+  target: UserMenuTarget
+}
+
 // ── Scope Declaration (Dock metadata) ────────────────────────
 
 /** Declares a Dock entry for a specific scope. */
@@ -283,6 +298,9 @@ export interface PluginDefinition {
 
   /** Menu items to register */
   menus?: PluginMenu[]
+
+  /** Links contributed to the Console account menu. */
+  userMenu?: UserMenuItemDefinition[]
 
   /**
    * React components to register. Keys are component names,

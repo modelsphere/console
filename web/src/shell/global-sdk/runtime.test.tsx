@@ -173,3 +173,55 @@ describe("SDK menu adaptation", () => {
     expect(() => runtime.finish()).toThrow(/Unsupported menu icon/);
   });
 });
+
+describe("SDK user menu registration", () => {
+  const link = { id: "open-home", title: "Home", target: { kind: "entry", name: "home" } };
+
+  function pluginWithUserMenu(userMenu: unknown) {
+    const runtime = registration();
+    const definition = {
+      name: "example",
+      version: "1",
+      menus: [
+        { name: "home", path: "/example" },
+        { name: "item", path: "/example/items/[id]" },
+        { name: "subpath", path: "/example/files/[...path]" },
+      ],
+      entries: [{ name: "reports", path: "/example/reports" }],
+      userMenu,
+    } as Parameters<typeof runtime.sdk.registerPlugin>[0];
+    runtime.sdk.registerPlugin(definition);
+    for (const name of ["Home", "Item", "Subpath", "Reports"]) runtime.sdk.registerPluginComponent("example", name, Page);
+    return runtime;
+  }
+
+  it("stores normalized links for actual entries and for applications that can load separately", () => {
+    const userMenu = [
+      link,
+      { id: "reports", title: "Reports", order: 20, target: { kind: "entry", name: "reports" } },
+      { id: "settings", title: "Settings", target: { kind: "application", id: "settings/platform" } },
+    ];
+    const module = pluginWithUserMenu(userMenu).finish();
+    expect(module.userMenu).toEqual(userMenu);
+    expect(module.userMenu).not.toBe(userMenu);
+    expect(module.userMenu?.[0].target).not.toBe(link.target);
+  });
+
+  it.each([
+    ["non-array", {}, /must be an array/],
+    ["non-object", [null], /must be an object/],
+    ["duplicate ID", [link, link], /declared twice/],
+    ["invalid ID", [{ ...link, id: "Home-Link" }], /must be kebab-case/],
+    ["empty title", [{ ...link, title: " " }], /must be a nonempty string/],
+    ["non-integer order", [{ ...link, order: 1.5 }], /must be a safe integer/],
+    ["arbitrary href", [{ ...link, href: "/example" }], /unsupported fields/],
+    ["external application URL", [{ ...link, target: { kind: "application", id: "https://example.org" } }], /must reference an entry or application/],
+  ])("rejects a %s declaration", (_description, userMenu, error) => {
+    expect(() => pluginWithUserMenu(userMenu).finish()).toThrow(error);
+  });
+
+  it.each(["missing", "item", "subpath"])("rejects a missing or non-static entry %s", name => {
+    const runtime = pluginWithUserMenu([{ ...link, target: { kind: "entry", name } }]);
+    expect(() => runtime.finish()).toThrow(/registered static entry in this plugin/);
+  });
+});

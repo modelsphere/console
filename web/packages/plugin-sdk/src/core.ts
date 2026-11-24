@@ -427,6 +427,7 @@ function registerDefinition(sdk: RiseHostSDK, def: PluginDefinition): void {
     scope: '', // plugin-level scope left empty for child plugins
     scopes: def.scopes || undefined,
     menus: bridgedMenus,
+    ...(def.userMenu === undefined ? {} : { userMenu: def.userMenu }),
   })
 
 }
