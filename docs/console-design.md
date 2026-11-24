@@ -779,21 +779,6 @@ in [#145](https://github.com/modelsphere/console/issues/145) and the
 | Navigation | Build the active composition directly from the shared registry; retain route guards and all three appearance layouts |
 | Dashboard status | Original Charts install and original resource lists/details work through current-cluster context, business-entry composition and existing-authorized backend proxies |
 
-## Plugin proxy credentials
-
-The shared-credential contract is recorded in [design #148](https://github.com/modelsphere/console/issues/148)
-and [the implementation design](development/plugin-proxy-credentials.md).
-
-| Owner | Responsibility |
-| --- | --- |
-| Console | Authenticate users, enforce backend IAM, read the release-scoped Secret and inject the shared credential |
-| Plugin chart | Declare `authProxySecretRef` and configure the backend with the same Secret/key |
-| Backend team | Validate the credential and user identity; frontend integration must not disable those checks |
-| Frontend | Use the same-origin SDK without handling backend credentials |
-
-Existing routes remain compatible. Secret lookup fails closed and runs per
-authorized request so rotation and revocation do not depend on a cached key.
-
 ## Known debt
 
 - **The token preset is Tailwind 3-style**, loaded through `@config`. A Tailwind 4

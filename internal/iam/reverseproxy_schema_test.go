@@ -8,7 +8,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func TestReverseProxySchemaPreservesSecretReference(t *testing.T) {
+func TestReverseProxySchemaUsesExistingAuthProxyContract(t *testing.T) {
 	data, err := os.ReadFile("../../helm/console/crds/iam.theriseunion.io_reverseproxies.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -25,15 +25,11 @@ func TestReverseProxySchemaPreservesSecretReference(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("schema directives: found=%t err=%v", found, err)
 	}
-	required, found, err := unstructured.NestedStringSlice(directives, "properties", "authProxySecretRef", "required")
-	if err != nil || !found || len(required) != 2 || required[0] != "key" || required[1] != "name" {
-		t.Fatalf("Secret reference required fields=%v err=%v", required, err)
+	if _, found, err := unstructured.NestedFieldNoCopy(directives, "properties", "authProxySecretRef"); err != nil || found {
+		t.Fatalf("unsupported Secret reference: found=%t err=%v", found, err)
 	}
-	validations, found, err := unstructured.NestedSlice(directives, "x-kubernetes-validations")
-	if err != nil || !found || len(validations) != 1 {
-		t.Fatalf("credential authentication validation: found=%t err=%v", found, err)
-	}
-	if validations[0].(map[string]any)["rule"] != "!has(self.authProxySecretRef) || (has(self.authProxy) && self.authProxy && (!has(self.skipAuthentication) || !self.skipAuthentication))" {
-		t.Fatal("Secret references must require authentication and reject public routes")
+	fieldType, found, err := unstructured.NestedString(directives, "properties", "authProxy", "type")
+	if err != nil || !found || fieldType != "boolean" {
+		t.Fatalf("authProxy type=%q found=%t err=%v", fieldType, found, err)
 	}
 }

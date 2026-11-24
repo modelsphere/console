@@ -307,41 +307,14 @@ when the browser only had a cookie. An unreachable upstream answers 502 and
 leaves the rest of Console working. SSE and chunked responses stream as they
 arrive.
 
-Plugins that validate a shared proxy credential declare a Secret reference:
+The generic proxy does not read plugin Secrets or replace the session with a
+backend shared key. A backend requiring another credential needs an agreed
+authentication contract before integration can be accepted; do not put keys in
+frontend code, inline route headers or an authentication bypass.
 
-```yaml
-spec:
-  directives:
-    authProxy: true
-    authProxySecretRef:
-      name: example-proxy
-      key: proxyKey
-```
-
-| Boundary | Contract |
-| --- | --- |
-| Frontend | Uses the SDK and the user's session; never holds the proxy key |
-| Console | Authenticates and authorizes first, then reads the release-namespace Secret and overwrites `Authorization: Bearer <key>` |
-| Backend | Validates the shared credential and requires Console's `X-Remote-User`; backend owners implement this contract |
-| Installation | Configures the same Secret/key for Console's route and the backend; no inline credentials or automatic permission grants |
-
-- The reference is optional for existing routes, but requires `authProxy: true`
-  and forbids `skipAuthentication`. No namespace override is supported.
-- Secret data is a raw RFC 6750 bearer token (no `Bearer ` prefix or whitespace).
-- Missing/unreadable Secrets, missing/empty/invalid keys and unavailable clients
-  return 502 without contacting the upstream or falling back to a user token.
-- Secrets are read on every authorized request. Rotation/deletion takes effect
-  on the next request; backend environment variables still require its rollout.
-- The release namespace is the lookup boundary. An explicitly different route
-  namespace is rejected. Existing Secret read RBAC is reused, not expanded.
-- Only trusted operators may install packages: their charts choose upstream
-  destinations and Secret references. NetworkPolicy remains defense in depth.
-- Upgrade Console and its ReverseProxy CRD before installing consumers. Helm
-  does not update CRDs on upgrade. This optional field is a Console extension;
-  other Global-compatible hosts must implement it before using these packages.
-
-Regenerate the schema with `bash hack/generate-proxy-crd.sh`. See
-[the credential design](plugin-proxy-credentials.md) for rollout and alternatives.
+The [shared-credential proposal](plugin-proxy-credentials.md) is deferred; it is
+not part of the current Console or Global contract. Regenerate the ReverseProxy
+schema with `bash hack/generate-proxy-crd.sh` after changing its Go types.
 
 The plugin's frontend uses the SDK `ApiClient`, which accepts same-origin
 absolute paths only, attaches the session and throws `ApiError(status, detail)`

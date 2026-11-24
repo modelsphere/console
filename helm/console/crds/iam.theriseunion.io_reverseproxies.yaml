@@ -61,25 +61,6 @@ spec:
                   authProxy:
                     description: Enable authentication proxy
                     type: boolean
-                  authProxySecretRef:
-                    description: Shared proxy credential in the installed plugin release
-                      namespace. Requires authProxy.
-                    properties:
-                      key:
-                        description: Key containing the raw bearer token, without
-                          the Bearer prefix.
-                        maxLength: 253
-                        minLength: 1
-                        type: string
-                      name:
-                        description: Secret name in the installed plugin release namespace.
-                        maxLength: 253
-                        minLength: 1
-                        type: string
-                    required:
-                    - key
-                    - name
-                    type: object
                   headerDown:
                     description: Response header modifications
                     items:
@@ -142,10 +123,6 @@ spec:
                     description: Wrap transport for additional processing
                     type: boolean
                 type: object
-                x-kubernetes-validations:
-                - message: authProxySecretRef requires authProxy without skipAuthentication
-                  rule: '!has(self.authProxySecretRef) || (has(self.authProxy) &&
-                    self.authProxy && (!has(self.skipAuthentication) || !self.skipAuthentication))'
               matcher:
                 description: Request matching rules
                 properties:

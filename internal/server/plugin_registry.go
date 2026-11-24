@@ -48,7 +48,7 @@ func (s *Server) pluginBackends(next http.Handler) http.Handler {
 					if !route.Spec.Directives.SkipAuthentication && !s.allowPluginRequest(w, request, name) {
 						return
 					}
-					s.servePluginRoute(w, request, name, entry.Plugin.Spec.Chart.Namespace, route)
+					s.servePluginRoute(w, request, name, route)
 					return
 				}
 			}
@@ -57,7 +57,7 @@ func (s *Server) pluginBackends(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) servePluginRoute(w http.ResponseWriter, r *http.Request, name, namespace string, route pluginregistry.Route) {
+func (s *Server) servePluginRoute(w http.ResponseWriter, r *http.Request, name string, route pluginregistry.Route) {
 	upstream := route.Spec.Upstream
 	backend := config.Backend{Name: name, Prefix: route.Spec.Directives.StripPathPrefix, URL: fmt.Sprintf("%s://%s:%d", upstream.Scheme, upstream.Host, upstream.Port)}
 	if backend.Prefix == "" {
@@ -73,11 +73,6 @@ func (s *Server) servePluginRoute(w http.ResponseWriter, r *http.Request, name, 
 	if err != nil {
 		s.log.Warn("plugin upstream unavailable", "plugin", name, "error", err)
 		writeError(w, http.StatusBadGateway, "plugin upstream unavailable")
-		return
-	}
-	if err := s.setPluginCredential(r.Context(), namespace, route, target); err != nil {
-		s.log.Warn("plugin proxy credential unavailable", "plugin", name, "error", err)
-		writeError(w, http.StatusBadGateway, "plugin proxy credential unavailable")
 		return
 	}
 	proxy := s.backendProxy(backend)

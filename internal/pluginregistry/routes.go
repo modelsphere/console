@@ -10,7 +10,6 @@ import (
 	pluginapi "github.com/modelsphere/console/api/plugin/v1alpha1"
 	"github.com/modelsphere/console/internal/config"
 	"github.com/modelsphere/console/internal/iam"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	sigyaml "sigs.k8s.io/yaml"
 )
@@ -52,14 +51,6 @@ func validateRoute(route Route, meta *pluginapi.PluginMeta) error {
 		return fmt.Errorf("plugin ReverseProxy prefix %q is reserved by console", prefix)
 	}
 	directives := route.Spec.Directives
-	if reference := directives.AuthProxySecretRef; reference != nil {
-		if !directives.AuthProxy || directives.SkipAuthentication {
-			return fmt.Errorf("plugin proxy credential requires authProxy without skipAuthentication")
-		}
-		if len(validation.IsDNS1123Subdomain(reference.Name)) != 0 || reference.Key == "" || len(validation.IsConfigMapKey(reference.Key)) != 0 {
-			return fmt.Errorf("plugin proxy credential requires a valid Secret name and key")
-		}
-	}
 	if directives.SkipAuthentication {
 		owned := "/oapis/" + meta.Group + "/" + meta.APIVersion + "/" + meta.Name
 		if prefix != owned || route.Spec.Matcher.Method != "GET" || directives.AuthProxy {

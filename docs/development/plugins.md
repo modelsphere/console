@@ -307,15 +307,6 @@ Registration requires every `ReverseProxy` in the release to satisfy:
 - `directives.authProxy: true`;
 - `upstream.scheme` is `http` or `https`, `host` is non-empty, `port` is 1–65535.
 
-If the backend requires a shared proxy key, add
-`directives.authProxySecretRef: {name: my-plugin-proxy, key: proxyKey}` and
-configure the backend with the same release-namespace Secret. Console reads it
-after IAM authorization and overwrites the upstream Bearer credential; the
-frontend never receives it. Missing or invalid credentials fail closed with 502.
-This requires a host and ReverseProxy CRD implementing the
-[shared-credential contract](plugin-architecture.md#backend-contract); upgrading a
-Helm release alone does not upgrade its CRDs.
-
 Add an IAM role pair so users can reach the backend. Console authorizes each
 request on resource `backends` with resource name equal to the plugin name:
 

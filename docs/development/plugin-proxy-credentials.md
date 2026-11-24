@@ -1,3 +1,10 @@
+## Status
+
+Deferred at the user's request. The Secret-reference field and its proxy
+implementation are not shipped by Console or Global, and plugin charts must not
+declare it. Any future implementation requires a shared cross-host contract.
+The sections below retain the proposal, not an installation requirement.
+
 ## Background
 
 Installed plugins currently receive Console identity headers and the user's session token, but cannot declare the shared backend credential that configured backends already support. Plugin backends should implement a platform contract, not disable credential verification to accommodate the frontend. Canary PR modelsphere/console-canary-plugin#11 is the first consumer.
