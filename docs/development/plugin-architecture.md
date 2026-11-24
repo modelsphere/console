@@ -348,6 +348,26 @@ absolute paths only, attaches the session and throws `ApiError(status, detail)`
 on a non-2xx response. A 401 is not redirected to the login page; the plugin
 shows the error.
 
+## Resource action data
+
+```text
+resource snapshot -> plugin data loaders -> plugin-local data -> action policy
+                                    +---> presentation / visibility
+```
+
+- Collection and detail actions receive the same data-extension results as
+  presentation callbacks, scoped to the owning plugin and resource.
+- Data queries include the resource snapshot in their key; a changed assignment
+  cannot reuse the previous owner's policy. Failed queries withhold stale data.
+- Action callbacks stay synchronous. Plugins must explicitly block actions that
+  require data while that data is loading or unavailable.
+- Each action uses its own policy. A denied uninstall does not implicitly deny
+  SLO editing; read-only and uninstalling resource state still deny writes.
+- An open SLO editor stays mounted during policy refresh to retain the draft;
+  writes remain disabled until the new policy permits them.
+- Backend-specific policy resolution belongs in the plugin's data loader, not
+  in the Console host or a new backend exception.
+
 ## Capabilities
 
 `provides` and `consumes` move host-owned values into a plugin without copying
