@@ -96,6 +96,7 @@ export interface SectionCardProps {
    * 只在内容必须常驻、不能藏进浮层时才给（开发明确要求的那种）。
    */
   footer?: React.ReactNode
+  footerClassName?: string
 
   children?: React.ReactNode
   className?: string
@@ -120,6 +121,7 @@ export function SectionCard({
   onRetry,
   empty,
   footer,
+  footerClassName,
   children,
   className,
   contentClassName,
@@ -299,7 +301,7 @@ export function SectionCard({
 
           {/* 脚注：配了才出现，连同它上面那条分隔线 */}
           {footer && (
-            <footer className="border-t border-border/60 bg-surface-toolbar px-4 py-2.5 text-xs text-muted-foreground">
+            <footer className={cn("border-t border-border/60 bg-surface-toolbar px-4 py-2.5 text-xs text-muted-foreground", footerClassName)}>
               {footer}
             </footer>
           )}

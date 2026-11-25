@@ -9,6 +9,7 @@ import { CapabilityContext } from "@/shell/capabilities";
 import { createRegistration, type InstalledPlugin } from "@/shell/global-sdk/runtime";
 import { ModuleProvider } from "@/shell/module";
 import { PermissionsProvider } from "@/shell/permissions";
+import { CatalogPage } from "./CatalogPage";
 import { ModelPage } from "./ModelPage";
 
 const auth = vi.hoisted(() => ({ name: "alice", permissions: [] as string[] }));
@@ -73,6 +74,7 @@ function render(path: string, capabilities: Capabilities = {}) {
           <ModuleProvider module={module}>
             <MemoryRouter initialEntries={[path]}>
               <Routes>
+                <Route path="/inferences/catalog" element={<CatalogPage />} />
                 <Route path="/inferences/catalog/:name" element={<ModelPage />} />
               </Routes>
             </MemoryRouter>
@@ -142,5 +144,69 @@ describe("ModelPage resource tabs", () => {
     expect(removed).toContain("recipe-a");
     expect(removed).not.toContain("Task history");
     expect(removed).toContain("Guide history");
+  });
+});
+
+describe("model catalog resource actions", () => {
+  it("passes the selected catalog, model and pinned recipe to permitted actions", () => {
+    const listPath = "/inferences/catalog?catalog=internal";
+    expect(render(listPath, enabled)).not.toContain("<footer");
+    expect(render(detailPath, enabled)).not.toContain("<footer");
+    const tuning = registerPlugin("tuning", backend);
+    const ModelAction = vi.fn((_props: ResourcePresentationProps) => <button type="button">Start model task</button>);
+    let showRecipeActions = true;
+    const RecipeAction = vi.fn((_props: ResourcePresentationProps) => showRecipeActions ? <button type="button">Start recipe task</button> : null);
+    const BaselineAction = () => showRecipeActions ? <button type="button">Set as baseline</button> : null;
+    tuning.sdk.registerPluginComponent("tuning", "ModelAction", ModelAction);
+    tuning.sdk.registerPluginComponent("tuning", "RecipeAction", RecipeAction);
+    tuning.sdk.registerPluginComponent("tuning", "BaselineAction", BaselineAction);
+    tuning.sdk.registerPresentationExtension("tuning", {
+      id: "list-tune", resourceType: "catalog-model", placement: "collection.card.actions",
+      key: "tune", component: "ModelAction", authKey: "tuning.tasks.write",
+    });
+    tuning.sdk.registerPresentationExtension("tuning", {
+      id: "model-tune", resourceType: "catalog-model", placement: "resource.header.actions",
+      key: "tune", component: "ModelAction", authKey: "tuning.tasks.write",
+    });
+    tuning.sdk.registerPresentationExtension("tuning", {
+      id: "recipe-tune", resourceType: "catalog-variant", placement: "collection.card.actions",
+      key: "tune", component: "RecipeAction", authKey: "tuning.tasks.write",
+    });
+    tuning.sdk.registerPresentationExtension("tuning", {
+      id: "recipe-baseline", resourceType: "catalog-variant", placement: "collection.card.actions",
+      key: "baseline", component: "BaselineAction", authKey: "tuning.baselines.write",
+    });
+    tuning.finish();
+    expect(render(listPath, enabled)).not.toContain("Start model task");
+    auth.permissions = ["tuning.tasks.write", "tuning.baselines.write"];
+    const denied = render(detailPath, { "tuning-api": { configured: true, canRead: false, canWrite: false } });
+    expect(denied).not.toContain("Start model task");
+    expect(denied).not.toContain("Start recipe task");
+    expect(denied).not.toContain("<footer");
+
+    const list = render(listPath, enabled);
+    expect(list).toMatch(/<footer\b[^>]*justify-end[^>]*>\s*<button[^>]*>Start model task<\/button><\/footer>/);
+    expect(list).not.toContain("Start recipe task");
+    const modelKey = JSON.stringify([catalog, model.name]);
+    expect(ModelAction.mock.lastCall?.[0]).toMatchObject({ resourceKey: modelKey, resource: { catalog, model, schema: "v2" } });
+
+    const page = render(detailPath, enabled);
+    expect(page).toContain("Start model task");
+    const footer = page.match(/<footer\b[^>]*>[\s\S]*?<\/footer>/)?.[0];
+    expect(footer).toContain("justify-end");
+    expect(footer).toContain("Start recipe task");
+    expect(footer).toContain("Set as baseline");
+    expect(page.match(/<header\b[^>]*>[\s\S]*?<\/header>/g)?.join()).not.toMatch(/Start recipe task|Set as baseline/);
+    expect(ModelAction.mock.lastCall?.[0]).toMatchObject({
+      resourceKey: modelKey, resource: { catalog, model, schema: "v2", localPath: "/weights/qwen", servedName: "qwen-inference" },
+    });
+    expect(RecipeAction.mock.lastCall?.[0]).toMatchObject({
+      resourceType: "catalog-variant",
+      resourceKey: JSON.stringify([catalog, model.name, variant.id, variant.version, variant.digest]),
+      resource: { catalog, model, schema: "v2", variant },
+    });
+
+    showRecipeActions = false;
+    expect(render(detailPath, enabled)).toMatch(/<footer\b[^>]*empty:hidden[^>]*><\/footer>/);
   });
 });

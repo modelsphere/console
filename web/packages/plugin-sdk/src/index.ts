@@ -20,6 +20,7 @@ export type {
   PresentationExtensionRegistration,
   CatalogModelResource,
   CatalogVariantReference,
+  CatalogVariantResource,
   ActionExtensionRegistration,
   UserMenuTarget,
   UserMenuItemDefinition,

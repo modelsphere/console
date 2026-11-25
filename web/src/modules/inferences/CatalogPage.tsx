@@ -23,8 +23,10 @@ import {
   cn,
 } from "@modelsphere/ui";
 import { Boxes, Library, MoreHorizontal, TriangleAlert } from "lucide-react";
+import type { CatalogModelResource } from "../../../packages/plugin-sdk/src/types";
+import { useResourcePresentations } from "@/extensions/surface";
 import { useModulePath } from "@/shell";
-import { api, type CatalogInfo } from "@swiss/lib/api";
+import { api, type CatalogInfo, type CatalogSchema } from "@swiss/lib/api";
 import { facetsOf, formatUplift, sorters, type Facets } from "@swiss/lib/catalog";
 import { useCatalogChoice } from "@swiss/components/CatalogChoice";
 import { useT } from "@/modules/inferences/i18n";
@@ -183,7 +185,8 @@ export function CatalogPage() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {shown.map((x) => (
-                  <ModelCard key={x.model.name} x={x} catalog={choice.selected} onDeploy={onDeploy} to={p(modelPath(x.model.name, choice.selected))} />
+                  <ModelCard key={x.model.name} x={x} catalog={choice.selected} schema={catalog.data?.schema}
+                    onDeploy={onDeploy} to={p(modelPath(x.model.name, choice.selected))} />
                 ))}
               </div>
             )}
@@ -258,20 +261,36 @@ function SearchBox({ q, set, placeholder }: { q: string; set: (patch: Partial<Ca
   return <Input value={text} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-64" />;
 }
 
-function ModelCard({ x, catalog, to, onDeploy }: { x: Facets; catalog: string; to: string; onDeploy?: (model: string, catalog: string) => void }) {
+function ModelCard({ x, catalog, schema, to, onDeploy }: {
+  x: Facets;
+  catalog: string;
+  schema?: CatalogSchema;
+  to: string;
+  onDeploy?: (model: string, catalog: string) => void;
+}) {
   const t = useT();
   const navigate = useNavigate();
   const m = x.model;
   const open = () => navigate(to);
+  const extensionActions = useResourcePresentations<CatalogModelResource>({
+    resourceType: "catalog-model",
+    resourceKey: JSON.stringify([catalog, m.name]),
+    resource: { catalog, model: m, schema },
+  }, "collection.card.actions", true);
   return (
     <div
       role="link"
       tabIndex={0}
       onClick={open}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open())}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+        e.preventDefault();
+        open();
+      }}
       className={cn(
         "group flex cursor-pointer flex-col gap-3 rounded-lg border bg-card p-4 transition-colors hover:border-primary/40 focus-visible:outline-2 focus-visible:outline-ring",
         x.deprecated && "opacity-70",
+        extensionActions.length > 0 && "overflow-hidden",
       )}
     >
       <div className="flex items-start gap-3">
@@ -321,6 +340,15 @@ function ModelCard({ x, catalog, to, onDeploy }: { x: Facets; catalog: string; t
           ))}
         </span>
       </div>
+      {extensionActions.length > 0 && (
+        <footer
+          role="presentation"
+          className="-mx-4 -mb-4 flex flex-wrap items-center justify-end gap-2 border-t border-border/60 bg-surface-toolbar px-4 py-2.5 text-xs text-muted-foreground empty:hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {extensionActions.map(({ content }) => content)}
+        </footer>
+      )}
     </div>
   );
 }

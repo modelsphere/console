@@ -262,6 +262,10 @@ export interface CatalogModelResource {
   servedName?: string
 }
 
+export interface CatalogVariantResource extends CatalogModelResource {
+  variant: CatalogVariantReference
+}
+
 export interface ActionExtensionRegistration {
   id: string
   resourceType: string

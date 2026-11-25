@@ -23,7 +23,7 @@ import {
   cn,
 } from "@modelsphere/ui";
 import { MoreHorizontal, TriangleAlert } from "lucide-react";
-import type { CatalogModelResource } from "../../../packages/plugin-sdk/src/types";
+import type { CatalogModelResource, CatalogVariantResource } from "../../../packages/plugin-sdk/src/types";
 import { useResourcePresentations } from "@/extensions/surface";
 import { useModulePath } from "@/shell";
 import { api, type GPUSpec, type ModelVariant, type Node } from "@swiss/lib/api";
@@ -60,11 +60,13 @@ export function ModelPage() {
     localPath: model.data.localPath,
     servedName: model.data.variant.servedName,
   } : undefined;
-  const extensionTabs = useResourcePresentations(modelResource ? {
+  const modelContext = modelResource ? {
     resourceType: "catalog-model",
     resourceKey: JSON.stringify([modelResource.catalog, modelResource.model.name]),
     resource: modelResource,
-  } : null, "resource.tabs")
+  } : null;
+  const modelActions = useResourcePresentations(modelContext, "resource.header.actions", true);
+  const extensionTabs = useResourcePresentations(modelContext, "resource.tabs")
     .flatMap(({ key, content, tab }) => tab ? [{
       value: `plugin:${key}`,
       label: tab.title,
@@ -107,7 +109,7 @@ export function ModelPage() {
   );
 
   if (model.isPending || choice.isPending) return page(<Skeleton className="h-40 w-full" />);
-  if (model.error || !model.data) {
+  if (model.error || !model.data || !modelResource) {
     return page(
       <Alert variant="destructive">
         <TriangleAlert />
@@ -157,6 +159,7 @@ export function ModelPage() {
             : []),
           ...(onDeploy ? [{ key: "deploy", label: t("model.deploy"), onClick: () => onDeploy({ model: name, catalog: choice.selected }) }] : []),
         ]}
+        additionalActions={modelActions.length ? modelActions.map(({ content }) => content) : undefined}
         meta={[
           { label: t("model.fields.family"), value: m.family || "-" },
           { label: t("model.fields.source"), value: <span title={m.source.hf}>{m.source.hf}</span> },
@@ -207,6 +210,7 @@ export function ModelPage() {
               <VariantCard
                 key={v.id}
                 v={v}
+                modelResource={modelResource}
                 kind={variantKind(v, m.tuning)}
                 version={shared ? undefined : v.version}
                 uplift={cmp && cmp.optimized === v.id ? cmp : null}
@@ -253,6 +257,7 @@ export function ModelPage() {
 
 function VariantCard({
   v,
+  modelResource,
   kind,
   version,
   uplift,
@@ -264,6 +269,7 @@ function VariantCard({
   onDelete,
 }: {
   v: ModelVariant;
+  modelResource: CatalogModelResource;
   kind: Kind;
   // The variant's own version, when the model's variants are not all at one.
   version?: string;
@@ -279,8 +285,15 @@ function VariantCard({
   const r = v.requires;
   const fit = fitness(v, nodes, gpus);
   const docs = httpLink(v.link);
+  const extensionActions = useResourcePresentations<CatalogVariantResource>({
+    resourceType: "catalog-variant",
+    resourceKey: JSON.stringify([modelResource.catalog, modelResource.model.name, v.id, v.version, v.digest]),
+    resource: { ...modelResource, variant: v },
+  }, "collection.card.actions", true);
+  const hasExtensionActions = extensionActions.length > 0;
   return (
     <SectionCard
+      className={hasExtensionActions ? "flex flex-col" : undefined}
       title={
         <span className="inline-flex flex-wrap items-center gap-2">
           <span className="font-mono">{v.id}</span>
@@ -320,6 +333,8 @@ function VariantCard({
           </span>
         )
       }
+      footer={hasExtensionActions && extensionActions.map(({ content }) => content)}
+      footerClassName="mt-auto flex flex-wrap items-center justify-end gap-2 empty:hidden"
     >
       <div className="space-y-3 text-sm">
         {v.description && <p className="text-muted-foreground">{v.description}</p>}

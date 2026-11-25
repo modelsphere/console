@@ -32,23 +32,23 @@ function evaluateVisibility(rule: ResourceVisibilityExtension, context: Resource
 export function useResourcePresentations<T>(
   context: ResourceContext<T> | null,
   placement: string,
+  requireBackendRead = placement === "resource.tabs",
 ): ResourcePresentation[] {
   const { data: capabilities } = useCapabilities();
   const permissions = useOptionalPermissions();
   const resourceType = context?.resourceType;
-  const isTabs = placement === "resource.tabs";
   const presentations = extensions.presentations.filter((extension) => {
     if (extension.resourceType !== resourceType || extension.placement !== placement) return false;
     if (extension.authKey !== undefined && !permissions?.has(extension.authKey)) return false;
-    if (!isTabs || !extension.capability) return true;
+    if (!requireBackendRead || !extension.capability) return true;
     const access = capabilities?.[extension.capability];
     return !!(access?.configured && access.canRead);
   });
   const contributors = new Set(presentations.map((extension) => extension.plugin));
   const dataExtensions = extensions.data.filter(
-    (extension) => extension.resourceType === resourceType && (!isTabs || contributors.has(extension.plugin)),
+    (extension) => extension.resourceType === resourceType && (!requireBackendRead || contributors.has(extension.plugin)),
   );
-  const queryScope = isTabs ? [permissions?.username] : [];
+  const queryScope = requireBackendRead ? [permissions?.username, placement] : [];
   const queries = useQueries({
     queries: context ? dataExtensions.map((extension) => ({
       queryKey: ["extension-data", extension.plugin, extension.id, context.resourceType, context.resourceKey, ...queryScope],
@@ -64,14 +64,14 @@ export function useResourcePresentations<T>(
   );
   return presentations.flatMap((extension) => {
     const visible = visibility.every((rule) =>
-      (isTabs && rule.plugin !== extension.plugin) || evaluateVisibility(
-        rule, { ...context, data: dataForPlugin(dataExtensions, values, rule.plugin) }, isTabs,
+      (requireBackendRead && rule.plugin !== extension.plugin) || evaluateVisibility(
+        rule, { ...context, data: dataForPlugin(dataExtensions, values, rule.plugin) }, requireBackendRead,
       ),
     );
     if (!visible) return [];
     const Component = extension.component;
     const key = `${extension.plugin}:${extension.key}`;
-    const componentKey = isTabs ? `${key}:${context.resourceKey}` : key;
+    const componentKey = requireBackendRead ? `${key}:${context.resourceKey}` : key;
     const data = dataForPlugin(dataExtensions, values, extension.plugin);
     return [{ key, content: <Component key={componentKey} {...context} data={data} />, tab: extension.tab }];
   });

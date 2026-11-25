@@ -294,6 +294,26 @@ path when available. The tab key is unique within the plugin for this surface.
 Ordering defaults to `999`. If the plugin registers a backend, the tab also
 requires read access to that backend.
 
+### Model catalog actions
+
+Register a presentation for the action's location. Its component can render a
+button or a link using the catalog and model it receives.
+
+| Location | `resourceType` | `placement` | SDK resource type |
+| --- | --- | --- | --- |
+| Model library card footer | `catalog-model` | `collection.card.actions` | `CatalogModelResource` |
+| Model details toolbar | `catalog-model` | `resource.header.actions` | `CatalogModelResource` |
+| Recipe card footer on model details | `catalog-variant` | `collection.card.actions` | `CatalogVariantResource` |
+
+The model library card receives the catalog's model summary. Detail actions
+also receive the resolved weights path and serving name when available. Recipe
+actions receive the selected variant's ID, version, and digest. Use those
+fields together when resolving a recipe in the plugin.
+
+The host checks the contribution's optional `authKey` and read access to the
+registered plugin backend. The destination and its backend still enforce their
+own permissions.
+
 ### Data and permissions
 
 ```tsx
