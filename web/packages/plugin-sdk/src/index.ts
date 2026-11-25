@@ -18,6 +18,8 @@ export type {
   DataExtensionRegistration,
   VisibilityExtensionRegistration,
   PresentationExtensionRegistration,
+  CatalogModelResource,
+  CatalogVariantReference,
   ActionExtensionRegistration,
   UserMenuTarget,
   UserMenuItemDefinition,

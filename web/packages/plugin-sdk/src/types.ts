@@ -232,6 +232,34 @@ export interface PresentationExtensionRegistration {
   placement: string
   key: string
   component: string
+  /** Console UI permission required to render this contribution. */
+  authKey?: string
+  /** Metadata for a contribution at resource.tabs. */
+  tab?: { title: string; order?: number }
+}
+
+export interface CatalogVariantReference {
+  id: string
+  version: string
+  digest: string
+  engine: string
+  servedName?: string
+  default?: boolean
+  deprecated?: boolean | string
+}
+
+export interface CatalogModelResource {
+  catalog: string
+  model: {
+    name: string
+    displayName?: string
+    source: { hf: string; revision?: string }
+    defaultVariant: string
+    variants: readonly CatalogVariantReference[]
+  }
+  schema?: 'v1' | 'v2'
+  localPath?: string
+  servedName?: string
 }
 
 export interface ActionExtensionRegistration {

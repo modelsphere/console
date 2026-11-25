@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import type { ConsoleModule } from "@/shell/module";
+import type { PresentationExtensionRegistration } from "../../packages/plugin-sdk/src/types";
 
 export interface ResourceExtensionContext<T = unknown> {
   resourceType: string;
@@ -27,12 +28,9 @@ export interface ResourcePresentationProps<T = unknown> extends ResourceExtensio
   data: Record<string, unknown>;
 }
 
-export interface ResourcePresentationExtension<T = unknown> {
+export interface ResourcePresentationExtension<T = unknown> extends Omit<PresentationExtensionRegistration, "component"> {
   plugin: string;
-  id: string;
-  resourceType: string;
-  placement: string;
-  key: string;
+  capability?: string;
   component: ComponentType<ResourcePresentationProps<T>>;
 }
 
