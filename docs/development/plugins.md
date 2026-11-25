@@ -268,6 +268,32 @@ Hidden or denied ancestors hide their navigation subtree, while child routes
 remain registered with their own guards. Detail routes inherit their nearest
 menu's `authKey`; backend authorization remains independent.
 
+### Model details tabs
+
+Register a presentation with `resourceType: "catalog-model"` and
+`placement: "resource.tabs"` to add a tab to the model details page.
+Register the tab's component in the same plugin.
+
+```tsx
+components: { ModelHistory },
+presentationExtensions: [{
+  id: "model-history",
+  key: "history",
+  resourceType: "catalog-model",
+  placement: "resource.tabs",
+  component: "ModelHistory",
+  authKey: "my-plugin.history.view",
+  tab: { title: "History", order: 20 },
+}],
+```
+
+The component receives `resourceType`, `resourceKey`, `resource`, and `data`.
+The SDK's `CatalogModelResource` describes `resource`, including the selected
+catalog, model, variant references, and the resolved serving name and weights
+path when available. The tab key is unique within the plugin for this surface.
+Ordering defaults to `999`. If the plugin registers a backend, the tab also
+requires read access to that backend.
+
 ### Data and permissions
 
 ```tsx
@@ -391,6 +417,30 @@ spec:
 
 A frontend-only plugin needs no `ReverseProxy` and no IAM role. It appears in
 the sidebar for every authenticated user who can load Console.
+
+### Authorization for configured backends
+
+For integrations listed under `backends` in the Console server configuration,
+`accessRules` can assign a separate `backends` resource name and verb to an
+endpoint. For example, approve reports with a dedicated role that grants
+`update` on `report-approvals`.
+
+```yaml
+backends:
+  - name: reports
+    prefix: /api/reports
+    url: https://reports.example.com
+    accessRules:
+      - pathPrefix: /approvals
+        methods: [POST]
+        resourceName: report-approvals
+        verb: update
+```
+
+Console matches the longest backend-relative path prefix on a path segment
+boundary for the incoming method. An unmatched request uses the backend's name
+and the standard method-to-verb mapping. Use a `/` rule with a separate resource
+name when access to unmatched endpoints must have its own grant.
 
 ## 7. Capabilities
 
