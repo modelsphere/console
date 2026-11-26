@@ -6,6 +6,11 @@ The ModelSphere community portal. A full-stack BFF that **owns identity** and
 **federates everything else**. It exists because the open-source inference stack
 (swiss and friends) has no user management, login, or unified entry point.
 
+## Login failures
+
+Only `401 invalid_grant` is shown as incorrect credentials; lookup, token issuance, and connectivity failures show service-unavailable guidance.
+Server logs retain the cause; the client receives no internal error details.
+
 ## Why a separate service (not part of swiss)
 
 swiss is a deploy control plane: near-stateless, "the cluster is the only source
