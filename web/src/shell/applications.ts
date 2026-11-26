@@ -10,6 +10,7 @@ export interface ApplicationItem {
   icon: LucideIcon;
   to: string;
   paths: string[];
+  launcher?: boolean;
 }
 
 export function activeApplication(items: ApplicationItem[], pathname: string): string | undefined {

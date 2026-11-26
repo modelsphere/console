@@ -119,6 +119,11 @@ function validatePluginDefinition(def: unknown): void {
     def.menus.forEach((menu, index) => validateMenu(pluginName, `menus[${index}]`, menu))
   }
 
+  if (def.entries !== undefined) {
+    if (!Array.isArray(def.entries)) validationError(pluginName, 'entries', '必须是数组')
+    def.entries.forEach((entry, index) => validateMenu(pluginName, `entries[${index}]`, entry))
+  }
+
   if (def.scopes !== undefined) {
     if (!Array.isArray(def.scopes)) validationError(pluginName, 'scopes', '必须是数组')
     def.scopes.forEach((scope, index) => {
@@ -427,6 +432,9 @@ function registerDefinition(sdk: RiseHostSDK, def: PluginDefinition): void {
     scope: '', // plugin-level scope left empty for child plugins
     scopes: def.scopes || undefined,
     menus: bridgedMenus,
+    ...(def.entries === undefined ? {} : { entries: def.entries }),
+    ...(def.navigationComposition === undefined ? {} : { navigationComposition: def.navigationComposition }),
+    ...(def.userMenu === undefined ? {} : { userMenu: def.userMenu }),
   })
 
 }

@@ -185,7 +185,8 @@ Providers own functionality; compositions own navigation. Installing a plugin do
 | `menus` | Legacy default placement inside Console, including `parent/group/order/children` |
 | `entries` | Reusable business pages registered by stable provider/name identity; no automatic menu placement |
 | provider `scopes` | Context/title/icon metadata; not an application declaration |
-| `registerNavigationComposition` | Ordered groups of provider/entry references; supplies a named application's navigation |
+| `createPlugin({ navigationComposition })` | Named application owned by the same plugin as its business pages |
+| `registerNavigationComposition` | A separate navigation-only plugin with ordered groups of provider/entry references |
 | host composition | `web/src/shell/console-navigation.ts`; the same group/reference model orders Console's built-in and plugin entries |
 
 ```tsx
@@ -198,6 +199,15 @@ groups: [{
   ],
 }],
 ```
+
+A plugin that includes both Console pages and an application can place its
+Console pages in `menus` and its application pages in `entries`. Declare the
+application scopes and groups in `navigationComposition`, and reference the
+entries by their provider and name. An application is identified as
+`<plugin-name>/<scope>`. Set `launcher: false` inside the composition to keep
+the application available through an account menu link or its routes while
+hiding its launcher card. Shared route namespaces use the ordinary menus for
+their default landing page.
 
 - Change group/reference array order to reorder menus without changing plugin bundles or module load order.
 - Unreferenced legacy menus keep their default Console placement. North Star/Canary therefore integrates into Console, not a separate application.
@@ -214,6 +224,34 @@ Authenticated `/clusters/{value}/oapis/` aliases do not select another cluster.
 not authorization aggregation. See the [single-cluster design](single-cluster-applications-design.md)
 for the unchanged original Dashboard Charts and browser verification.
 
+### Account menu links
+
+Set `userMenu` on `createPlugin()` to add links to the account dropdown. Use
+an entry name from your plugin or an application ID from a registered
+navigation composition.
+
+```ts
+userMenu: [
+  { id: "overview", title: "My Plugin", target: { kind: "entry", name: "my-plugin" } },
+  { id: "settings", title: "Settings", target: { kind: "application", id: "my-settings/platform" } },
+],
+```
+
+- Each `id` is unique within the plugin and uses kebab-case. Translate the
+  label at `userMenu.<id>` in the plugin's namespace. The declared `title`
+  serves as the fallback.
+- Set `order` to place the link among other plugin links. It defaults to
+  `999`, with ties sorted by plugin ID and link ID.
+- An entry target resolves to a static page owned by this plugin. Console
+  checks the same visibility and permission rules it uses for navigation.
+- An application target opens its default page if the user can access it
+  and the first accessible landing page otherwise. Console hides the link
+  if the application has no accessible landing page.
+
+Console resolves these links from the currently available plugins and pages.
+Page guards and backend authorization still apply. An older Console with the
+same SDK major version ignores account menu declarations.
+
 ### Routes
 
 Menu paths and route keys are normalized before matching; a matching route
@@ -229,6 +267,52 @@ static own menu in order. Parameterized routes are never redirect targets.
 Hidden or denied ancestors hide their navigation subtree, while child routes
 remain registered with their own guards. Detail routes inherit their nearest
 menu's `authKey`; backend authorization remains independent.
+
+### Model details tabs
+
+Register a presentation with `resourceType: "catalog-model"` and
+`placement: "resource.tabs"` to add a tab to the model details page.
+Register the tab's component in the same plugin.
+
+```tsx
+components: { ModelHistory },
+presentationExtensions: [{
+  id: "model-history",
+  key: "history",
+  resourceType: "catalog-model",
+  placement: "resource.tabs",
+  component: "ModelHistory",
+  authKey: "my-plugin.history.view",
+  tab: { title: "History", order: 20 },
+}],
+```
+
+The component receives `resourceType`, `resourceKey`, `resource`, and `data`.
+The SDK's `CatalogModelResource` describes `resource`, including the selected
+catalog, model, variant references, and the resolved serving name and weights
+path when available. The tab key is unique within the plugin for this surface.
+Ordering defaults to `999`. If the plugin registers a backend, the tab also
+requires read access to that backend.
+
+### Model catalog actions
+
+Register a presentation for the action's location. Its component can render a
+button or a link using the catalog and model it receives.
+
+| Location | `resourceType` | `placement` | SDK resource type |
+| --- | --- | --- | --- |
+| Model library card footer | `catalog-model` | `collection.card.actions` | `CatalogModelResource` |
+| Model details toolbar | `catalog-model` | `resource.header.actions` | `CatalogModelResource` |
+| Recipe card footer on model details | `catalog-variant` | `collection.card.actions` | `CatalogVariantResource` |
+
+The model library card receives the catalog's model summary. Detail actions
+also receive the resolved weights path and serving name when available. Recipe
+actions receive the selected variant's ID, version, and digest. Use those
+fields together when resolving a recipe in the plugin.
+
+The host checks the contribution's optional `authKey` and read access to the
+registered plugin backend. The destination and its backend still enforce their
+own permissions.
 
 ### Data and permissions
 
@@ -353,6 +437,30 @@ spec:
 
 A frontend-only plugin needs no `ReverseProxy` and no IAM role. It appears in
 the sidebar for every authenticated user who can load Console.
+
+### Authorization for configured backends
+
+For integrations listed under `backends` in the Console server configuration,
+`accessRules` can assign a separate `backends` resource name and verb to an
+endpoint. For example, approve reports with a dedicated role that grants
+`update` on `report-approvals`.
+
+```yaml
+backends:
+  - name: reports
+    prefix: /api/reports
+    url: https://reports.example.com
+    accessRules:
+      - pathPrefix: /approvals
+        methods: [POST]
+        resourceName: report-approvals
+        verb: update
+```
+
+Console matches the longest backend-relative path prefix on a path segment
+boundary for the incoming method. An unmatched request uses the backend's name
+and the standard method-to-verb mapping. Use a `/` rule with a separate resource
+name when access to unmatched endpoints must have its own grant.
 
 ## 7. Capabilities
 

@@ -26,10 +26,15 @@ export interface HostNavigation {
   groups: CompositionGroup[];
 }
 
+interface ApplicationComposition extends HostNavigation {
+  scopes?: NavigationScope[];
+  launcher?: boolean;
+}
+
 export interface ModuleNavigation {
   provider: string;
   entries: { name: string; path: string; menu?: ModulePage["menu"] }[];
   menus: string[];
   scopes: NavigationScope[];
-  composition?: HostNavigation;
+  composition?: ApplicationComposition;
 }

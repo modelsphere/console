@@ -137,6 +137,58 @@ func TestProxyAuthorizesPerBackendAndVerb(t *testing.T) {
 	}
 }
 
+func TestProxySeparatesBackendAccessFromSettingsWrites(t *testing.T) {
+	up, seen := upstream(t)
+	h := testServerWithConfig(t, &config.Config{Backends: []config.Backend{{
+		Name: "autotune", Prefix: "/api/autotune", URL: up.URL + "/api",
+		AccessRules: []config.BackendAccessRule{
+			{PathPrefix: "/search-spaces", Methods: []string{"POST"}, ResourceName: "autotune-settings", Verb: "create"},
+			{PathPrefix: "/search-spaces/preview", Methods: []string{"POST"}, ResourceName: "autotune", Verb: "get"},
+			{PathPrefix: "/policies", Methods: []string{"POST"}, ResourceName: "autotune-settings", Verb: "create"},
+			{PathPrefix: "/policies", Methods: []string{"PUT", "PATCH"}, ResourceName: "autotune-settings", Verb: "update"},
+			{PathPrefix: "/policies", Methods: []string{"DELETE"}, ResourceName: "autotune-settings", Verb: "delete"},
+			{PathPrefix: "/settings", Methods: []string{"GET", "HEAD", "OPTIONS"}, ResourceName: "autotune-settings", Verb: "get"},
+			{PathPrefix: "/settings", Methods: []string{"PUT", "PATCH"}, ResourceName: "autotune-settings", Verb: "update"},
+			{PathPrefix: "/campaigns", Methods: []string{"POST"}, ResourceName: "autotune", Verb: "create"},
+			{PathPrefix: "/", Methods: []string{"POST", "PUT", "PATCH", "DELETE"}, ResourceName: "autotune-unmapped", Verb: "update"},
+		},
+	}}}).Handler()
+	bob := login(t, h, "bob", "bob-pw")
+	check := func(method, endpoint string, status int) {
+		t.Helper()
+		if rec := do(h, method, "/api/autotune"+endpoint, bob, ""); rec.Code != status {
+			t.Fatalf("%s %s: want %d, got %d %s", method, endpoint, status, rec.Code, rec.Body.String())
+		}
+	}
+
+	grantNamedBackend(t, h, "bob", "autotune", "get")
+	check("GET", "/policies", http.StatusTeapot)
+	check("POST", "/search-spaces/preview?limit=3", http.StatusTeapot)
+	check("POST", "/campaigns", http.StatusForbidden)
+
+	for _, verb := range []string{"create", "update", "delete"} {
+		grantNamedBackend(t, h, "bob", "autotune", verb)
+	}
+	check("POST", "/campaigns", http.StatusTeapot)
+	check("POST", "/policies", http.StatusForbidden)
+	check("PUT", "/policies/7", http.StatusForbidden)
+	check("PATCH", "/policies/7", http.StatusForbidden)
+	check("DELETE", "/policies/7", http.StatusForbidden)
+	check("POST", "/search-spaces", http.StatusForbidden)
+	check("POST", "/search-spaces/previews", http.StatusForbidden)
+	check("POST", "/other", http.StatusForbidden)
+	check("GET", "/settings", http.StatusForbidden)
+	check("HEAD", "/settings", http.StatusForbidden)
+	check("PUT", "/settings", http.StatusForbidden)
+
+	grantNamedBackend(t, h, "bob", "autotune-settings", "update")
+	check("PUT", "/policies/7", http.StatusTeapot)
+	check("PUT", "/other", http.StatusForbidden)
+	if len(*seen) != 4 || (*seen)[1].path != "/api/search-spaces/preview" || (*seen)[1].query != "limit=3" {
+		t.Fatalf("unexpected upstream requests: %+v", *seen)
+	}
+}
+
 // A backend with a credential of its own (the model gateway) gets that key as
 // its Bearer token, not the caller's session -- the session authorizes the
 // caller to console, and nothing else.
@@ -351,12 +403,18 @@ func TestProxyLeavesOwnRoutesAlone(t *testing.T) {
 // grantBackend binds user to a role allowing verb on the "swiss" backend.
 func grantBackend(t *testing.T, h http.Handler, user, verb string) {
 	t.Helper()
+	grantNamedBackend(t, h, user, "swiss", verb)
+}
+
+func grantNamedBackend(t *testing.T, h http.Handler, user, backend, verb string) {
+	t.Helper()
 	admin := login(t, h, "admin", "admin-pw")
-	role := `{"name":"swiss-` + verb + `","rules":[{"verbs":["` + verb + `"],"apiGroups":["iam.theriseunion.io"],"resources":["backends"],"resourceNames":["swiss"]}]}`
+	name := backend + "-" + verb
+	role := fmt.Sprintf(`{"name":%q,"rules":[{"verbs":[%q],"apiGroups":["iam.theriseunion.io"],"resources":["backends"],"resourceNames":[%q]}]}`, name, verb, backend)
 	if rec := do(h, "POST", "/api/iam/roles", admin, role); rec.Code != http.StatusCreated {
 		t.Fatalf("create role: %d %s", rec.Code, rec.Body.String())
 	}
-	binding := `{"name":"` + user + `-swiss-` + verb + `","role":"swiss-` + verb + `","subjects":[{"kind":"User","name":"` + user + `"}]}`
+	binding := fmt.Sprintf(`{"name":%q,"role":%q,"subjects":[{"kind":"User","name":%q}]}`, user+"-"+name, name, user)
 	if rec := do(h, "POST", "/api/iam/rolebindings", admin, binding); rec.Code != http.StatusCreated {
 		t.Fatalf("create binding: %d %s", rec.Code, rec.Body.String())
 	}

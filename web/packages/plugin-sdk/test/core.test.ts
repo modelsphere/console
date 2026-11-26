@@ -357,6 +357,34 @@ describe('typed events', () => {
 })
 
 describe('registration contract validation', () => {
+  it('forwards business entries and their application composition with the plugin definition', async () => {
+    const { registerPlugin } = installHost()
+    const createPlugin = await loadCreatePlugin()
+    const entries = [{ name: 'settings', path: '/example/settings', scope: 'platform' as const }]
+    const navigationComposition = {
+      scopes: [{ scope: 'platform', path: '/example/settings' }],
+      groups: [{ name: 'settings', title: '', menus: [{ provider: 'modelsphere.dev/example', entry: 'settings' }] }],
+      launcher: false,
+    }
+
+    createPlugin({ ...baseDefinition, entries, navigationComposition })
+
+    expect(registerPlugin).toHaveBeenCalledWith(expect.objectContaining({ entries, navigationComposition }))
+  })
+
+  it('forwards account menu links with the plugin definition', async () => {
+    const { registerPlugin } = installHost()
+    const createPlugin = await loadCreatePlugin()
+    const userMenu: NonNullable<PluginDefinition['userMenu']> = [
+      { id: 'reports', title: 'Reports', order: 50, target: { kind: 'entry', name: 'reports' } },
+      { id: 'settings', title: 'Settings', target: { kind: 'application', id: 'example/platform' } },
+    ]
+
+    createPlugin({ ...baseDefinition, userMenu })
+
+    expect(registerPlugin).toHaveBeenCalledWith(expect.objectContaining({ userMenu }))
+  })
+
   it('preserves scope visibility restrictions and recursive menus across the host bridge', async () => {
     const { registerPlugin } = installHost()
     const createPlugin = await loadCreatePlugin()

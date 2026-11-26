@@ -1,9 +1,12 @@
 import { Boxes } from "lucide-react";
+import { isValidElement } from "react";
 import { describe, expect, it } from "vitest";
 import { createRegistration } from "./global-sdk/runtime";
 import { applicationNavigation } from "./application-navigation";
-import { flattenNavItems, type ConsoleModule } from "./module";
+import { flattenNavItems, type ConsoleModule, validateModules } from "./module";
 import type { NavigationComposition } from "./global-sdk/composition";
+import { menuLandingPath, type SDKMenu } from "./global-sdk/navigation";
+import { resolveUserMenuItems } from "./user-menu";
 
 const builtin: ConsoleModule = { id: "iam", title: "IAM", basePath: "/iam", pages: [
   { path: "users", element: null, permission: "users.view", menu: { label: "Users", icon: Boxes } },
@@ -44,6 +47,48 @@ function install(includeComposition = true) {
 const paths = (result: ReturnType<typeof applicationNavigation>) => flattenNavItems(result.groups.flatMap(group => group.items)).map(item => item.to);
 
 describe("entry registry and navigation compositions", () => {
+  it("registers business pages and an account-only application in the same plugin", () => {
+    const runtime = createRegistration();
+    runtime.begin({ id: "autotune", entry: "/plugins/autotune/index.js" });
+    runtime.sdk.registerPlugin({
+      name: "autotune", version: "1", displayName: "AutoTune",
+      menus: [{ name: "tasks", path: "/autotune/tasks", authKey: "tasks.view" }],
+      entries: [
+        { name: "strategies", path: "/autotune/settings/strategies", authKey: "strategies.view", order: 0 },
+        { name: "spaces", path: "/autotune/settings/spaces", authKey: "spaces.view" },
+      ],
+      navigationComposition: {
+        scopes: [{ scope: "platform", title: "Settings", path: "/autotune/settings/strategies" }],
+        groups: [{ name: "settings", title: "", menus: [
+          { provider: "modelsphere.dev/autotune", entry: "strategies" },
+          { provider: "modelsphere.dev/autotune", entry: "spaces" },
+        ] }],
+        launcher: false,
+      },
+      userMenu: [{ id: "settings", title: "Settings", target: { kind: "application", id: "autotune/platform" } }],
+    });
+    runtime.sdk.registerPluginRoutes("autotune", {
+      "/autotune/tasks": () => null, "/autotune/settings/strategies": () => null, "/autotune/settings/spaces": () => null,
+    });
+    const module = runtime.finish();
+    expect(() => validateModules([module])).not.toThrow();
+    const landing = module.pages.find(page => page.path === "")?.element;
+    expect(isValidElement<{ menus: SDKMenu[] }>(landing) && menuLandingPath(landing.props.menus, () => true, "/autotune")).toBe("/autotune/tasks");
+
+    const main = applicationNavigation([module], () => true, "/autotune");
+    expect(main.activeID).toBe("console");
+    expect(paths(main)).toEqual(["/", "/autotune/tasks"]);
+    const settings = applicationNavigation([module], () => true, "/autotune/settings/spaces");
+    expect(settings.activeID).toBe("autotune/platform");
+    expect(paths(settings)).toEqual(["/autotune/settings/strategies", "/autotune/settings/spaces"]);
+    expect(settings.applications[1]).toMatchObject({ launcher: false, to: "/autotune/settings/strategies" });
+    const partial = (permission: string) => permission === "spaces.view";
+    const fallback = applicationNavigation([module], partial, "/");
+    expect(resolveUserMenuItems([module], fallback.applications, partial)[0]?.to).toBe("/autotune/settings/spaces");
+    const denied = applicationNavigation([module], () => false, "/");
+    expect(resolveUserMenuItems([module], denied.applications, () => false)).toEqual([]);
+  });
+
   it("integrates legacy plugins into Console without inferring applications from provider scopes", () => {
     const result = applicationNavigation(install(), () => true, "/canary/experiment-1");
     expect(result.activeID).toBe("console");

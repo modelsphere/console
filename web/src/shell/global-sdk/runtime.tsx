@@ -27,7 +27,7 @@ export interface InstalledPlugin {
 type PluginComponent = React.ComponentType<any>;
 interface DataDefinition extends Omit<ResourceDataExtension, "plugin"> {}
 interface VisibilityDefinition extends Omit<ResourceVisibilityExtension, "plugin"> {}
-interface PresentationDefinition extends Omit<ResourcePresentationExtension, "plugin" | "component"> { component: string }
+interface PresentationDefinition extends Omit<ResourcePresentationExtension, "plugin" | "component" | "capability"> { component: string }
 interface ActionDefinition extends Omit<ResourceActionExtension, "plugin"> {}
 interface Registration {
   plugin: InstalledPlugin;
@@ -53,7 +53,9 @@ function registerExtensions(registration: Registration): void {
   for (const extension of registration.presentations) {
     const component = registration.components[extension.component];
     if (!component) throw new Error(`Presentation component "${extension.component}" was not registered`);
-    registration.cleanups.push(registerPresentationExtension({ ...extension, plugin: registration.plugin.id, component }));
+    registration.cleanups.push(registerPresentationExtension({
+      ...extension, plugin: registration.plugin.id, capability: registration.plugin.backend?.name, component,
+    }));
   }
   for (const extension of registration.actions) {
     registration.cleanups.push(registerActionExtension({ ...extension, plugin: registration.plugin.id }));
@@ -115,6 +117,17 @@ export function createRegistration() {
     registerPresentationExtension(name: string, extension: PresentationDefinition) {
       record(name, (registration) => {
         if (registration.presentations.some((item) => item.id === extension.id)) throw new Error(`Presentation extension "${extension.id}" registered twice`);
+        if (extension.placement === "resource.tabs") {
+          if (typeof extension.key !== "string" || !extension.key.trim() ||
+              typeof extension.tab?.title !== "string" || !extension.tab.title.trim() ||
+              (extension.tab.order !== undefined && !Number.isFinite(extension.tab.order))) {
+            throw new Error(`Presentation extension "${extension.id}" requires a tab key, title, and optional finite order`);
+          }
+          if (registration.presentations.some((item) => item.resourceType === extension.resourceType &&
+            item.placement === extension.placement && item.key === extension.key)) {
+            throw new Error(`Tab key "${extension.key}" registered twice for resource "${extension.resourceType}"`);
+          }
+        }
         registration.presentations.push(extension);
       });
     },

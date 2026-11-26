@@ -1,5 +1,6 @@
 import { createContext, useContext, type ComponentType, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
+import type { UserMenuItemDefinition } from "../../packages/plugin-sdk/src/types";
 import type { ModuleNavigation } from "./navigation-types";
 export { activeGroupKey, activeGroupTitle, activeNavItem, flattenNavItems, navGroups, routeSpecificity, topbarItems } from "./module-navigation";
 
@@ -21,6 +22,7 @@ export interface ConsoleModule {
   basePath: string;
   pages: ModulePage[];
   navigation?: ModuleNavigation;
+  userMenu?: readonly UserMenuItemDefinition[];
   capability?: string;
   // "flush": pages draw Rise Global's skeleton themselves -- a PageBanner edge to
   // edge, then their own p-4 body. Default "padded": the shell insets the page.

@@ -232,6 +232,38 @@ export interface PresentationExtensionRegistration {
   placement: string
   key: string
   component: string
+  /** Console UI permission required to render this contribution. */
+  authKey?: string
+  /** Metadata for a contribution at resource.tabs. */
+  tab?: { title: string; order?: number }
+}
+
+export interface CatalogVariantReference {
+  id: string
+  version: string
+  digest: string
+  engine: string
+  servedName?: string
+  default?: boolean
+  deprecated?: boolean | string
+}
+
+export interface CatalogModelResource {
+  catalog: string
+  model: {
+    name: string
+    displayName?: string
+    source: { hf: string; revision?: string }
+    defaultVariant: string
+    variants: readonly CatalogVariantReference[]
+  }
+  schema?: 'v1' | 'v2'
+  localPath?: string
+  servedName?: string
+}
+
+export interface CatalogVariantResource extends CatalogModelResource {
+  variant: CatalogVariantReference
 }
 
 export interface ActionExtensionRegistration {
@@ -239,6 +271,21 @@ export interface ActionExtensionRegistration {
   resourceType: string
   action: string
   evaluate: (context: { resourceType: string; resourceKey: string; resource: unknown; data: Record<string, unknown>; action: string }) => false | string
+}
+
+export type UserMenuTarget =
+  | { kind: 'entry'; name: string }
+  | { kind: 'application'; id: string }
+
+export interface UserMenuItemDefinition {
+  /** Unique kebab-case identifier within this plugin. */
+  id: string
+  /** Fallback label for the plugin's userMenu.<id> translation. */
+  title: string
+  /** Sort order, defaulting to 999. */
+  order?: number
+  /** Own static entry or the stable ID of an application. */
+  target: UserMenuTarget
 }
 
 // ── Scope Declaration (Dock metadata) ────────────────────────
@@ -259,6 +306,17 @@ export interface ScopeDeclaration {
   category?: string
   /** Dock 点击落地路径（覆盖默认的“第一个菜单”；无侧边栏的插件用它） */
   path?: string
+}
+
+export interface PluginNavigationComposition {
+  scopes: ScopeDeclaration[]
+  groups: {
+    name: string
+    title: string
+    menus: { provider: string; entry: string; scope?: string; viewport?: string }[]
+  }[]
+  /** Set to false to expose the application through account menu links and URLs. */
+  launcher?: boolean
 }
 
 // ── Plugin Definition (createPlugin input) ──────────────────
@@ -283,6 +341,15 @@ export interface PluginDefinition {
 
   /** Menu items to register */
   menus?: PluginMenu[]
+
+  /** Business pages that can be referenced by a navigation composition. */
+  entries?: PluginMenu[]
+
+  /** A named application owned by this plugin. */
+  navigationComposition?: PluginNavigationComposition
+
+  /** Links contributed to the Console account menu. */
+  userMenu?: UserMenuItemDefinition[]
 
   /**
    * React components to register. Keys are component names,

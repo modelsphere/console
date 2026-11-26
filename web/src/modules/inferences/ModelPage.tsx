@@ -23,6 +23,8 @@ import {
   cn,
 } from "@modelsphere/ui";
 import { MoreHorizontal, TriangleAlert } from "lucide-react";
+import type { CatalogModelResource, CatalogVariantResource } from "../../../packages/plugin-sdk/src/types";
+import { useResourcePresentations } from "@/extensions/surface";
 import { useModulePath } from "@/shell";
 import { api, type GPUSpec, type ModelVariant, type Node } from "@swiss/lib/api";
 import { comparison, formatUplift, httpLink, reportLink, sharedVersion, variantKind, workloadSummary, type Kind } from "@swiss/lib/catalog";
@@ -43,7 +45,6 @@ export function ModelPage() {
   const navigate = useNavigate();
   const { name = "" } = useParams();
   const [params, setParams] = useSearchParams();
-  const tab = params.get("tab") === "info" ? "info" : "variants";
   const choice = useCatalogChoice();
   const qc = useQueryClient();
   // The default variant resolved, for what only its file says: the served name.
@@ -52,6 +53,29 @@ export function ModelPage() {
     queryFn: () => api.model(name, { catalog: choice.selected }),
     enabled: !!choice.selected,
   });
+  const modelResource: CatalogModelResource | undefined = model.data && !model.error && !choice.isPending ? {
+    catalog: choice.selected,
+    model: model.data.model,
+    schema: model.data.schema,
+    localPath: model.data.localPath,
+    servedName: model.data.variant.servedName,
+  } : undefined;
+  const modelContext = modelResource ? {
+    resourceType: "catalog-model",
+    resourceKey: JSON.stringify([modelResource.catalog, modelResource.model.name]),
+    resource: modelResource,
+  } : null;
+  const modelActions = useResourcePresentations(modelContext, "resource.header.actions", true);
+  const extensionTabs = useResourcePresentations(modelContext, "resource.tabs")
+    .flatMap(({ key, content, tab }) => tab ? [{
+      value: `plugin:${key}`,
+      label: tab.title,
+      order: tab.order ?? 999,
+      content,
+    }] : [])
+    .sort((a, b) => a.order - b.order || a.value.localeCompare(b.value));
+  const requestedTab = params.get("tab");
+  const tab = requestedTab === "info" ? "info" : extensionTabs.find(({ value }) => value === requestedTab)?.value ?? "variants";
   const index = useQuery({ queryKey: ["catalog", choice.selected], queryFn: () => api.catalog(choice.selected), enabled: !!choice.selected });
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: api.nodes, retry: false });
   const gpus = useQuery({ queryKey: ["profile"], queryFn: api.profile, retry: false }).data?.profile?.nodes?.gpus;
@@ -85,7 +109,7 @@ export function ModelPage() {
   );
 
   if (model.isPending || choice.isPending) return page(<Skeleton className="h-40 w-full" />);
-  if (model.error || !model.data) {
+  if (model.error || !model.data || !modelResource) {
     return page(
       <Alert variant="destructive">
         <TriangleAlert />
@@ -104,7 +128,7 @@ export function ModelPage() {
   const digest = shared ? variants[0].digest : undefined;
 
   return page(
-    <Tabs value={tab} onValueChange={(v) => setParam("tab", v === "info" ? "info" : undefined)} className="flex-col gap-4">
+    <Tabs value={tab} onValueChange={(v) => setParam("tab", v === "variants" ? undefined : v)} className="flex-col gap-4">
       <DetailHeader
         onBack={back}
         backLabel={t("model.back")}
@@ -135,6 +159,7 @@ export function ModelPage() {
             : []),
           ...(onDeploy ? [{ key: "deploy", label: t("model.deploy"), onClick: () => onDeploy({ model: name, catalog: choice.selected }) }] : []),
         ]}
+        additionalActions={modelActions.length ? modelActions.map(({ content }) => content) : undefined}
         meta={[
           { label: t("model.fields.family"), value: m.family || "-" },
           { label: t("model.fields.source"), value: <span title={m.source.hf}>{m.source.hf}</span> },
@@ -168,6 +193,7 @@ export function ModelPage() {
         items={[
           { value: "variants", label: t("model.tabs.variants"), count: variants.length },
           { value: "info", label: t("model.tabs.info") },
+          ...extensionTabs,
         ]}
       />
 
@@ -184,6 +210,7 @@ export function ModelPage() {
               <VariantCard
                 key={v.id}
                 v={v}
+                modelResource={modelResource}
                 kind={variantKind(v, m.tuning)}
                 version={shared ? undefined : v.version}
                 uplift={cmp && cmp.optimized === v.id ? cmp : null}
@@ -215,6 +242,11 @@ export function ModelPage() {
           />
         </SectionCard>
       </TabsContent>
+      {extensionTabs.map(({ value, content }) => (
+        <TabsContent key={value} value={value} className="p-0">
+          {content}
+        </TabsContent>
+      ))}
       <DeploySheet target={deploying} onClose={() => setDeploying(null)} />
       <VariantEditSheet target={editing} onClose={() => setEditing(null)} onSaved={written} />
       <VariantDeleteDialog target={deleting} onClose={() => setDeleting(null)} onDeleted={written} />
@@ -225,6 +257,7 @@ export function ModelPage() {
 
 function VariantCard({
   v,
+  modelResource,
   kind,
   version,
   uplift,
@@ -236,6 +269,7 @@ function VariantCard({
   onDelete,
 }: {
   v: ModelVariant;
+  modelResource: CatalogModelResource;
   kind: Kind;
   // The variant's own version, when the model's variants are not all at one.
   version?: string;
@@ -251,8 +285,15 @@ function VariantCard({
   const r = v.requires;
   const fit = fitness(v, nodes, gpus);
   const docs = httpLink(v.link);
+  const extensionActions = useResourcePresentations<CatalogVariantResource>({
+    resourceType: "catalog-variant",
+    resourceKey: JSON.stringify([modelResource.catalog, modelResource.model.name, v.id, v.version, v.digest]),
+    resource: { ...modelResource, variant: v },
+  }, "collection.card.actions", true);
+  const hasExtensionActions = extensionActions.length > 0;
   return (
     <SectionCard
+      className={hasExtensionActions ? "flex flex-col" : undefined}
       title={
         <span className="inline-flex flex-wrap items-center gap-2">
           <span className="font-mono">{v.id}</span>
@@ -292,6 +333,8 @@ function VariantCard({
           </span>
         )
       }
+      footer={hasExtensionActions && extensionActions.map(({ content }) => content)}
+      footerClassName="mt-auto flex flex-wrap items-center justify-end gap-2 empty:hidden"
     >
       <div className="space-y-3 text-sm">
         {v.description && <p className="text-muted-foreground">{v.description}</p>}

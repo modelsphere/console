@@ -1,4 +1,7 @@
 import type { Me } from "@/shell/api";
+import type { ApplicationItem } from "./applications";
+import type { ConsoleModule } from "./module";
+import { entryRegistry, entryVisible } from "./navigation-registry";
 
 // What the avatar menu draws, apart from how: the shell is the only place that
 // knows both the identity and the auth mode.
@@ -33,4 +36,38 @@ export function userMenuIdentity(me: Me | null): UserMenuIdentity {
     role: me?.isAdmin ? "admin" : "member",
     email: me?.email || undefined,
   };
+}
+
+export interface UserMenuLink {
+  key: string;
+  id: string;
+  namespace: string;
+  title: string;
+  to: string;
+  order: number;
+}
+
+export function resolveUserMenuItems(
+  modules: ConsoleModule[],
+  applications: ApplicationItem[],
+  has: (permission: string) => boolean,
+): UserMenuLink[] {
+  if (!modules.some(module => module.userMenu?.length)) return [];
+  const entries = entryRegistry(modules);
+  const links: UserMenuLink[] = [];
+  for (const module of modules) {
+    for (const { id, title, target, order = 999 } of module.userMenu ?? []) {
+      let to: string | undefined;
+      if (target.kind === "application") {
+        to = applications.find(application => application.id === target.id)?.to;
+      } else {
+        const entry = entries.find(entry => entry.module === module && entry.name === target.name);
+        if (entry && !/[:*]/.test(entry.path) && entryVisible(entry, entries, has)) to = entry.path;
+      }
+      if (to) links.push({ key: `${module.id}:${id}`, id, namespace: module.id, title, to, order });
+    }
+  }
+  return links.sort((left, right) =>
+    left.order - right.order || left.namespace.localeCompare(right.namespace) || left.id.localeCompare(right.id),
+  );
 }

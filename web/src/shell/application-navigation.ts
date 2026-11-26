@@ -26,10 +26,10 @@ function applicationPaths(modules: ConsoleModule[], entries: RegisteredEntry[], 
 
 function declaredApplications(modules: ConsoleModule[]) {
   return modules.flatMap(module => {
-    const navigation = moduleNavigation(module);
-    return navigation.composition ? navigation.scopes.map(scope => ({
+    const { composition, scopes } = moduleNavigation(module);
+    return composition ? (composition.scopes ?? scopes).map(scope => ({
       id: `${module.id}/${scope.scope}`, ns: module.id, scope: scope.scope, label: scope.title, icon: scope.icon,
-      path: scope.path, groups: navigation.composition!.groups,
+      path: scope.path, groups: composition.groups, launcher: composition.launcher,
     })) : [];
   }).sort((left, right) => left.id.localeCompare(right.id));
 }

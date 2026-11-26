@@ -90,6 +90,7 @@ export interface DetailHeaderProps {
    * （LF 2026-09-15）。没有「平铺几个、剩下折叠」这种混合形态。
    */
   actions?: DetailAction[]
+  additionalActions?: React.ReactNode
 
   /** 规格条。空数组或不传则整块消失（含分隔线） */
   meta?: DetailMetaItem[]
@@ -201,6 +202,7 @@ export function DetailHeader({
   accent,
   notice,
   actions = [],
+  additionalActions,
   meta = [],
   metaColumns = 4,
   tabs,
@@ -209,6 +211,7 @@ export function DetailHeader({
   const t = useUiT()
   const backText = backLabel === undefined ? t("shared.back") : backLabel
   const accentTone = accent === false ? null : (accent ?? status?.tone ?? null)
+  const showToolbar = Boolean(onBack || actions.length || additionalActions)
   // 要么全平铺、要么全折叠 —— 见 INLINE_ACTION_LIMIT。
   const foldAll = actions.length > INLINE_ACTION_LIMIT
   const inline = foldAll ? [] : actions
@@ -239,7 +242,7 @@ export function DetailHeader({
         )}
 
         <div className="px-5 pt-4 pb-0">
-          {(onBack || actions.length > 0) && (
+          {showToolbar && (
             <div className="flex flex-wrap items-center justify-between gap-3">
               {onBack ? (
                 // 用箭头而不是折角（chevron）：折角在导航里表达的是「展开/下一级」，
@@ -257,7 +260,7 @@ export function DetailHeader({
                 <span />
               )}
 
-              <div className="flex shrink-0 items-center gap-2">
+              <div className={cn("flex shrink-0 items-center gap-2", additionalActions && "max-w-full flex-wrap")}>
                 {inline.map((a) => (
                   <ActionButton key={a.key} action={a} />
                 ))}
@@ -298,12 +301,13 @@ export function DetailHeader({
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
+                {additionalActions}
               </div>
             </div>
           )}
 
           {/* ── 标题行 ── */}
-          <div className={cn("flex items-start gap-3", (onBack || actions.length) && "mt-3")}>
+          <div className={cn("flex items-start gap-3", showToolbar && "mt-3")}>
             {icon && (
               <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                 {icon}

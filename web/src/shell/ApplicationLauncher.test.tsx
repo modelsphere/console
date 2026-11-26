@@ -18,6 +18,14 @@ describe("application launcher", () => {
     expect(render([])).toBe("");
   });
 
+  it("hides the control if the only application opts out of the launcher", () => {
+    const items: ApplicationItem[] = [
+      { id: "console", ns: "shell", scope: "console", label: "Console", icon: Boxes, to: "/", paths: ["/"] },
+      { id: "example/platform", ns: "example", scope: "platform", label: "Settings", icon: Boxes, to: "/settings", paths: ["/settings"], launcher: false },
+    ];
+    expect(render(items, "/settings")).toBe("");
+  });
+
   it.each(["zh-CN", "en-US"] as const)("renders a localized accessible dialog trigger in %s", language => {
     setLocale(language);
     const html = render([{ id: "example/platform", ns: "example", scope: "platform", label: "Example", icon: Boxes, to: "/example", paths: ["/example"] }]);

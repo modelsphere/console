@@ -1,5 +1,5 @@
 import { Fragment, useState, type ReactNode } from "react";
-import { NavLink, useLocation } from "react-router";
+import { Link, NavLink, useLocation } from "react-router";
 import {
   Avatar,
   AvatarFallback,
@@ -8,6 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuLinkItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuGroup,
@@ -18,7 +19,7 @@ import { usePermissions } from "@/shell/permissions";
 import { ChangePasswordDialog } from "@/shell/ChangePasswordDialog";
 import { PreferencesPanel } from "@/shell/PreferencesPanel";
 import { useLayout } from "@/shell/preferences";
-import { userMenuIdentity, userMenuState } from "@/shell/user-menu";
+import { resolveUserMenuItems, userMenuIdentity, userMenuState, type UserMenuLink } from "@/shell/user-menu";
 import { topbarItems, type ConsoleModule, type NavItem } from "@/shell/module";
 import { Sidebar } from "./Sidebar";
 import { ApplicationLauncher } from "./ApplicationLauncher";
@@ -46,6 +47,7 @@ export function Layout({ modules, children }: { modules: ConsoleModule[]; childr
   const [prefsOpen, setPrefsOpen] = useState(false);
   const { groups, applications, activeID } = applicationNavigation(modules, has, pathname);
   const links = topbarItems(modules, has);
+  const userMenuLinks = resolveUserMenuItems(modules, applications, has);
   const toggle = () => setCollapsed((c) => !c);
   const page = <main className="relative min-h-0 min-w-0 flex-1 overflow-auto bg-surface-page">{children}</main>;
 
@@ -58,13 +60,13 @@ export function Layout({ modules, children }: { modules: ConsoleModule[]; childr
           </nav>
         </aside>
         <div className="m-2 ml-0 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-card shadow-[0_1px_3px_0_rgb(0_0_0/0.1),0_1px_2px_-1px_rgb(0_0_0/0.1)]">
-          <TopBar tone="light" links={links} applications={applications} collapse={{ collapsed, toggle }} onPreferences={() => setPrefsOpen(true)} />
+          <TopBar tone="light" links={links} applications={applications} userMenuLinks={userMenuLinks} collapse={{ collapsed, toggle }} onPreferences={() => setPrefsOpen(true)} />
           {page}
         </div>
       </div>
     ) : (
       <div className={`flex h-screen flex-col ${layout === "classic" ? "bg-[var(--shell-classic-canvas)]" : "bg-background"}`}>
-        <TopBar tone="dark" links={links} applications={applications} onPreferences={() => setPrefsOpen(true)} />
+        <TopBar tone="dark" links={links} applications={applications} userMenuLinks={userMenuLinks} onPreferences={() => setPrefsOpen(true)} />
         <div className="flex min-h-0 flex-1">
           <aside
             className={`flex shrink-0 flex-col bg-[var(--shell-sidebar)] transition-[width] duration-300 ${collapsed ? "w-16" : "w-64"} ${
@@ -131,12 +133,14 @@ function TopBar({
   tone,
   links,
   applications,
+  userMenuLinks,
   collapse,
   onPreferences,
 }: {
   tone: "light" | "dark";
   links: NavItem[];
   applications: ApplicationItem[];
+  userMenuLinks: UserMenuLink[];
   collapse?: { collapsed: boolean; toggle: () => void };
   onPreferences: () => void;
 }) {
@@ -223,6 +227,18 @@ function TopBar({
                 <Badge variant="warning" className="h-auto w-full justify-start px-2 py-1 text-left leading-snug whitespace-normal">
                   {tr("layout.noLogin")}
                 </Badge>
+              </>
+            )}
+            {userMenuLinks.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  {userMenuLinks.map(({ key, id, namespace, title, to }) => (
+                    <DropdownMenuLinkItem key={key} render={<Link to={to} />} closeOnClick>
+                      {tr(`${namespace}:userMenu.${id}`, { defaultValue: title })}
+                    </DropdownMenuLinkItem>
+                  ))}
+                </DropdownMenuGroup>
               </>
             )}
             {menu.entries.map((entry) => {

@@ -2,6 +2,9 @@ import type { ComponentType } from "react";
 import { Navigate, matchPath, useLocation, useParams } from "react-router";
 import { usePermissions } from "@/shell/permissions";
 import { pagePath, routeSpecificity, type ConsoleModule, type ModulePage } from "@/shell/module";
+import { entryRegistry, type RegisteredEntry } from "@/shell/navigation-registry";
+import type { PluginNavigationComposition, UserMenuItemDefinition, UserMenuTarget } from "../../../packages/plugin-sdk/src/types";
+import { compileNavigationComposition } from "./composition";
 import { menuIcon } from "./icons";
 import { absoluteRoute, pathNamespace, relativePath, routePath } from "./navigation-paths";
 import type { InstalledPlugin } from "./runtime";
@@ -29,6 +32,8 @@ export interface Definition {
   icon?: string;
   menus?: SDKMenu[];
   entries?: (SDKMenu & { viewports?: string[] })[];
+  navigationComposition?: PluginNavigationComposition;
+  userMenu?: UserMenuItemDefinition[];
   scopes?: SDKScopeDeclaration[];
 }
 
@@ -149,12 +154,47 @@ function addRoutes(pages: ModulePage[], registration: NavigationRegistration, ba
   }
 }
 
-function addLandings(pages: ModulePage[], basePath: string, menus: SDKMenu[]): void {
+function addLandings(pages: ModulePage[], basePath: string, menus: SDKMenu[], preferredMenus: SDKMenu[]): void {
   const mounts = new Set([basePath, ...pages.map(page => page.basePath ?? basePath)]);
+  const preferredMounts = new Set(compileMenus(preferredMenus).map(menu => pathNamespace(menu.path)));
   for (const mount of mounts) {
     if (pages.some(page => (page.basePath ?? basePath) === mount && page.path === "")) continue;
-    pages.unshift({ path: "", ...(mount === basePath ? {} : { basePath: mount }), element: <MenuLanding basePath={mount} menus={menus} /> });
+    const candidates = preferredMounts.has(mount) ? preferredMenus : menus;
+    pages.unshift({ path: "", ...(mount === basePath ? {} : { basePath: mount }), element: <MenuLanding basePath={mount} menus={candidates} /> });
   }
+}
+
+function userMenuTarget(value: unknown, entries: RegisteredEntry[], field: string): UserMenuTarget {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error(`${field} must be an object`);
+  const target = value as Record<string, unknown>;
+  if (target.kind === "entry" && typeof target.name === "string" && Object.keys(target).every(key => key === "kind" || key === "name")) {
+    const entry = entries.find(menu => menu.name === target.name);
+    if (!entry || /[:*]/.test(entry.path)) throw new Error(`${field} must name a registered static entry in this plugin`);
+    return { kind: "entry", name: target.name };
+  }
+  if (target.kind === "application" && typeof target.id === "string"
+    && /^(?:console|[a-z][a-z0-9-]*\/(?:platform|cluster))$/.test(target.id)
+    && Object.keys(target).every(key => key === "kind" || key === "id")) {
+    return { kind: "application", id: target.id };
+  }
+  throw new Error(`${field} must reference an entry or application`);
+}
+
+function compileUserMenu(value: unknown, entries: RegisteredEntry[]): UserMenuItemDefinition[] {
+  if (!Array.isArray(value)) throw new Error("SDK userMenu must be an array");
+  const ids = new Set<string>();
+  return Array.from(value, (item: unknown, index) => {
+    const field = `SDK userMenu[${index}]`;
+    if (item === null || typeof item !== "object" || Array.isArray(item)) throw new Error(`${field} must be an object`);
+    const { id, title, order, target, ...extra } = item as Record<string, unknown>;
+    if (Object.keys(extra).length) throw new Error(`${field} contains unsupported fields`);
+    if (typeof id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) throw new Error(`${field}.id must be kebab-case`);
+    if (ids.has(id)) throw new Error(`SDK userMenu id "${id}" declared twice`);
+    ids.add(id);
+    if (typeof title !== "string" || !title.trim()) throw new Error(`${field}.title must be a nonempty string`);
+    if (order !== undefined && (typeof order !== "number" || !Number.isSafeInteger(order))) throw new Error(`${field}.order must be a safe integer`);
+    return { id, title, ...(order === undefined ? {} : { order }), target: userMenuTarget(target, entries, `${field}.target`) };
+  });
 }
 
 export function buildModule(registration: NavigationRegistration): ConsoleModule {
@@ -164,7 +204,8 @@ export function buildModule(registration: NavigationRegistration): ConsoleModule
   if (definition.entries !== undefined && !Array.isArray(definition.entries)) throw new Error("SDK entries must be an array");
   if (definition.menus !== undefined && !Array.isArray(definition.menus)) throw new Error("SDK menus must be an array");
   const entryMenus = businessMenus(definition.entries ?? []);
-  const sourceMenus = [...entryMenus, ...(definition.menus ?? [])];
+  const legacyMenus = definition.menus ?? [];
+  const sourceMenus = [...entryMenus, ...legacyMenus];
   if (!sourceMenus.length) throw new Error("Entry did not register a menu");
   const menus = compileMenus(sourceMenus);
   const entries = compileMenus([...(definition.entries ?? []), ...(definition.menus ?? [])]);
@@ -172,19 +213,29 @@ export function buildModule(registration: NavigationRegistration): ConsoleModule
   const identities = menus.map(menu => menu.path.replace(/:[\w-]+/g, ":param"));
   if (new Set(identities).size !== menus.length) throw new Error("SDK menu path declared twice");
   const scopes = buildScopeDeclarations(definition, menus);
-  const basePath = pathNamespace(menus[0].path);
+  const composition = definition.navigationComposition === undefined ? undefined : compileNavigationComposition({
+    ...definition.navigationComposition,
+    name: plugin.id,
+    version: definition.version,
+    displayName: definition.displayName ?? plugin.id,
+  });
+  const primaryMenu = composition ? legacyMenus[0] ?? menus[0] : menus[0];
+  const basePath = pathNamespace(primaryMenu.path);
   const normalized = normalizedRoutes(registration.routes, basePath, [...new Set(menus.map(menu => pathNamespace(menu.path)))]);
   const navigation = { ...registration, routes: normalized.routes };
   const pages = menus.map(menu => menuPage(menu, basePath, navigation));
   addRoutes(pages, navigation, basePath, normalized.mounts);
   if (entryMenus.length) addBusinessRoutes(pages, entryMenus, basePath, navigation);
-  addLandings(pages, basePath, sourceMenus);
-  return { id: plugin.id, title: definition.displayName ?? definition.name, basePath,
+  addLandings(pages, basePath, sourceMenus, composition ? legacyMenus : []);
+  const module: ConsoleModule = { id: plugin.id, title: definition.displayName ?? definition.name, basePath,
     capability: plugin.backend?.name, frame: "flush", pages, navigation: {
       provider: `${plugin.group ?? "modelsphere.dev"}/${plugin.id}`, scopes,
       entries: entries.map(menu => ({ name: menu.name, path: menu.path, menu: menuMetadata(menu, definition) })),
-      menus: compileMenus(definition.menus ?? []).map(menu => menu.name),
+      menus: compileMenus(legacyMenus).map(menu => menu.name),
+      ...(composition ? { composition } : {}),
     } };
+  if (definition.userMenu !== undefined) module.userMenu = compileUserMenu(definition.userMenu, entryRegistry([module]));
+  return module;
 }
 
 function businessMenus(entries: SDKMenu[]): SDKMenu[] {

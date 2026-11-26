@@ -23,7 +23,8 @@ func (s *Server) handleRouteOptions(w http.ResponseWriter, r *http.Request, b co
 		writeError(w, http.StatusMethodNotAllowed, "GET required")
 		return
 	}
-	if !s.authorize(w, r, "get", backendResource, b.Name) {
+	verb, name := backendAccess(b, r.Method, "/route-options")
+	if !s.authorize(w, r, verb, backendResource, name) {
 		return
 	}
 	route := r.URL.Query().Get("route")
