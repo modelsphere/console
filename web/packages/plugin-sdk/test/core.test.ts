@@ -385,6 +385,23 @@ describe('registration contract validation', () => {
     expect(registerPlugin).toHaveBeenCalledWith(expect.objectContaining({ userMenu }))
   })
 
+  it('registers localized help chapters through the host', async () => {
+    const registerHelpChapter = vi.fn()
+    installHost('1.0.1', { registerHelpChapter })
+    const createPlugin = await loadCreatePlugin()
+    const chapter = { slug: 'test-plugin', title: { 'en-US': 'Guide', 'zh-CN': 'Guide' }, content: { 'en-US': '# Help', 'zh-CN': '# Help' } }
+    createPlugin({ ...baseDefinition, helpChapters: [chapter] })
+    expect(registerHelpChapter).toHaveBeenCalledWith('test-plugin', chapter)
+  })
+
+  it('rejects help declarations on hosts without the help registration capability', async () => {
+    const { registerPlugin } = installHost()
+    const createPlugin = await loadCreatePlugin()
+    const chapter = { slug: 'test-plugin', title: { 'en-US': 'Guide', 'zh-CN': 'Guide' }, content: { 'en-US': '# Help', 'zh-CN': '# Help' } }
+    expect(() => createPlugin({ ...baseDefinition, helpChapters: [chapter] })).toThrow(/help chapter/i)
+    expect(registerPlugin).not.toHaveBeenCalled()
+  })
+
   it('preserves scope visibility restrictions and recursive menus across the host bridge', async () => {
     const { registerPlugin } = installHost()
     const createPlugin = await loadCreatePlugin()
