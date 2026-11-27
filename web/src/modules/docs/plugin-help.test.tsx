@@ -33,10 +33,10 @@ function plugin(id = "example", backend = false) {
   return runtime;
 }
 
-function render(slug = "example", canRead = true, loading = false) {
+function render(slug = "example", canRead = true, loading = false, failed = false, configured = true) {
   const module = { id: "docs", title: "Help", basePath: "/help", pages: [] };
   return renderToStaticMarkup(
-    <CapabilityContext.Provider value={{ data: { example: { configured: true, canRead, canWrite: false } }, loading, failed: false, retry: () => undefined }}>
+    <CapabilityContext.Provider value={{ data: { example: { configured, canRead, canWrite: false } }, loading, failed, retry: () => undefined }}>
       <PermissionsProvider><ModuleProvider module={module}>
         <MemoryRouter initialEntries={[`/help/docs/${slug}`]}><Routes>
           <Route path="/help/docs/:chapter" element={<DocsPage />} />
@@ -70,6 +70,8 @@ describe("plugin help chapters", () => {
     state.permissions = ["example.view"];
     expect(render("example", false)).not.toContain("Example help");
     expect(render("example", true, true)).not.toContain("Example help");
+    expect(render("example", true, false, true)).not.toContain("Example help");
+    expect(render("example", true, false, false, false)).not.toContain("Example help");
     expect(render()).toContain("Example help");
   });
 
@@ -106,6 +108,38 @@ describe("plugin help chapters", () => {
     runtime.sdk.registerHelpChapter("example", chapter);
     runtime.sdk.registerHelpChapter("example", chapter);
     expect(() => runtime.finish()).toThrow(/help chapter/i);
+  });
+
+  it("rolls back partially registered chapters without removing an existing owner", () => {
+    const existing = plugin();
+    existing.sdk.registerHelpChapter("example", chapter);
+    existing.finish();
+    const failed = plugin();
+    failed.sdk.registerHelpChapter("example", { ...chapter, slug: "example-extra" });
+    failed.sdk.registerHelpChapter("example", chapter);
+    expect(() => failed.finish()).toThrow(/help chapter/i);
+    failed.rollback();
+    expect(render("example-extra")).not.toContain("Example help");
+    expect(render()).toContain("Example help");
+  });
+
+  it("selects the content in a replaced or rolled-back package registration", () => {
+    const first = plugin();
+    first.sdk.registerHelpChapter("example", chapter);
+    first.finish();
+    expect(render()).toContain("Example help");
+    first.rollback();
+    const replacement = plugin();
+    replacement.sdk.registerHelpChapter("example", { ...chapter, content: { ...chapter.content, "en-US": "# Updated package" } });
+    replacement.finish();
+    expect(render()).toContain("Updated package");
+    expect(render()).not.toContain("Example help");
+    replacement.rollback();
+    const restored = plugin();
+    restored.sdk.registerHelpChapter("example", chapter);
+    restored.finish();
+    expect(render()).toContain("Example help");
+    expect(render()).not.toContain("Updated package");
   });
 
   it("does not resolve relative images outside the plugin's asset directory", () => {
