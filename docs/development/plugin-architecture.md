@@ -256,6 +256,15 @@ working, but anything only the plugin uses needs its own compiled stylesheet.
 Tailwind's ordering guarantee does not cross stylesheet boundaries, so do not
 rely on another plugin's file.
 
+### Help contributions
+
+Plugins may register localized help through the SDK's `helpChapters` contract.
+The host merges permitted chapters into the existing help directory, preserving
+their `/help/docs/<slug>` URLs. Markdown is bundled with the frontend entry and
+relative images use that release's asset directory. Registration rollback and
+refresh after upgrade/removal follow the same lifecycle as plugin pages.
+See [help chapters](plugins.md#help-chapters) for validation and permissions.
+
 ## Backend contract
 
 A plugin may declare zero or more `ReverseProxy` objects in its chart. Console

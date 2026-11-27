@@ -1,7 +1,8 @@
 import type { Locale } from "@/shell";
+import { CHAPTERS } from "./chapter-list";
 
 // Sidebar order. Each slug is content/{locale}/{slug}.md; its first "# " line is the title.
-export const CHAPTERS = ["getting-started", "deploy", "playground", "api", "access-control", "faq"] as const;
+export { CHAPTERS } from "./chapter-list";
 export type Chapter = (typeof CHAPTERS)[number];
 
 const files = import.meta.glob<string>("./content/*/*.md", { query: "?raw", import: "default", eager: true });

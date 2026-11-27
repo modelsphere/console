@@ -1,5 +1,5 @@
 import type { HelpChapterRegistration } from "../../../packages/plugin-sdk/src/types";
-import { CHAPTERS } from "./chapters";
+import { CHAPTERS } from "./chapter-list";
 
 export interface PluginHelpChapter extends HelpChapterRegistration {
   plugin: string;
