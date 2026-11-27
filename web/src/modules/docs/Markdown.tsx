@@ -28,10 +28,19 @@ function A({ href = "", node: _node, ...props }: ComponentProps<"a"> & { node?: 
 
 const components = { pre: Pre, a: A };
 
-export function Markdown({ text }: { text: string }) {
+function imageSource(src: string | undefined, assetBase?: string): string | undefined {
+  if (!src || !assetBase || /^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(src)) return src;
+  if (/[\\%]/.test(src) || src.split("/").includes("..")) return undefined;
+  return assetBase + src.replace(/^(\.\/)+/, "");
+}
+
+export function Markdown({ text, assetBase }: { text: string; assetBase?: string }) {
+  const image = ({ src, node: _node, ...props }: ComponentProps<"img"> & { node?: unknown }) => (
+    <img {...props} src={imageSource(typeof src === "string" ? src : undefined, assetBase)} />
+  );
   return (
     <article className="docs-markdown prose prose-sm max-w-none break-words text-foreground prose-headings:text-foreground prose-a:text-primary prose-strong:text-foreground prose-code:text-foreground prose-code:before:content-none prose-code:after:content-none prose-pre:border prose-pre:border-border prose-pre:bg-muted prose-pre:text-foreground prose-th:text-foreground prose-blockquote:rounded-r-md prose-blockquote:border-primary prose-blockquote:bg-muted/50 prose-blockquote:py-0.5 prose-blockquote:font-normal prose-blockquote:not-italic prose-blockquote:text-foreground [&_blockquote_p]:before:content-none [&_blockquote_p]:after:content-none">
-      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
+      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={{ ...components, img: image }}>
         {text}
       </ReactMarkdown>
     </article>

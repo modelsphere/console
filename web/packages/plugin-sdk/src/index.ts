@@ -22,6 +22,7 @@ export type {
   CatalogVariantReference,
   CatalogVariantResource,
   ActionExtensionRegistration,
+  HelpChapterRegistration,
   UserMenuTarget,
   UserMenuItemDefinition,
   PluginDefinition,
