@@ -273,6 +273,14 @@ export interface ActionExtensionRegistration {
   evaluate: (context: { resourceType: string; resourceKey: string; resource: unknown; data: Record<string, unknown>; action: string }) => false | string
 }
 
+/** Localized Markdown bundled with an independently delivered plugin. */
+export interface HelpChapterRegistration {
+  slug: string
+  title: Record<'en-US' | 'zh-CN', string>
+  content: Record<'en-US' | 'zh-CN', string>
+  authKey?: string
+}
+
 export type UserMenuTarget =
   | { kind: 'entry'; name: string }
   | { kind: 'application'; id: string }
@@ -373,6 +381,7 @@ export interface PluginDefinition {
   visibilityExtensions?: VisibilityExtensionRegistration[]
   presentationExtensions?: PresentationExtensionRegistration[]
   actionExtensions?: ActionExtensionRegistration[]
+  helpChapters?: HelpChapterRegistration[]
 
   // ── Lifecycle hooks ──
 
@@ -529,6 +538,7 @@ export interface RiseHostSDK {
   registerVisibilityExtension: (pluginName: string, extension: VisibilityExtensionRegistration) => void
   registerPresentationExtension: (pluginName: string, extension: PresentationExtensionRegistration) => void
   registerActionExtension: (pluginName: string, extension: ActionExtensionRegistration) => void
+  registerHelpChapter?: (pluginName: string, chapter: HelpChapterRegistration) => void
   registerSlot: (def: unknown) => void
   createPlugin: (def: unknown) => unknown
   /**

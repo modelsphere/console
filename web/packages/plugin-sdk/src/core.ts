@@ -405,6 +405,7 @@ function registerComponentsAndSlots(sdk: RiseHostSDK, def: PluginDefinition): vo
   for (const extension of def.visibilityExtensions ?? []) sdk.registerVisibilityExtension(def.name, extension)
   for (const extension of def.presentationExtensions ?? []) sdk.registerPresentationExtension(def.name, extension)
   for (const extension of def.actionExtensions ?? []) sdk.registerActionExtension(def.name, extension)
+  for (const chapter of def.helpChapters ?? []) sdk.registerHelpChapter!(def.name, chapter)
 
 }
 
@@ -443,6 +444,9 @@ export function createPlugin(def: PluginDefinition): PluginInstance {
   validatePluginDefinition(def)
   const sdk = getHostSDK()
   checkVersion(sdk)
+  if (def.helpChapters?.length && typeof sdk.registerHelpChapter !== 'function') {
+    throw new Error('[modelsphere-plugin-sdk] Host does not support plugin help chapters')
+  }
 
   registerDefinition(sdk, def)
 

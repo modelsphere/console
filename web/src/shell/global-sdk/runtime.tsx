@@ -2,6 +2,8 @@ import * as React from "react";
 import { buildModule, type Definition } from "./navigation";
 import { compositionModule, type NavigationComposition } from "./composition";
 import { scopeForPath } from "./scope";
+import type { HelpChapterRegistration } from "../../../packages/plugin-sdk/src/types";
+import { registerPluginHelpChapter, validateHelpChapter } from "@/modules/docs/plugin-chapters";
 import {
   registerActionExtension,
   registerDataExtension,
@@ -39,6 +41,7 @@ interface Registration {
   visibility: VisibilityDefinition[];
   presentations: PresentationDefinition[];
   actions: ActionDefinition[];
+  helpChapters: HelpChapterRegistration[];
   cleanups: (() => void)[];
   error?: Error;
 }
@@ -59,6 +62,14 @@ function registerExtensions(registration: Registration): void {
   }
   for (const extension of registration.actions) {
     registration.cleanups.push(registerActionExtension({ ...extension, plugin: registration.plugin.id }));
+  }
+  for (const chapter of registration.helpChapters) {
+    registration.cleanups.push(registerPluginHelpChapter({
+      ...chapter,
+      plugin: registration.plugin.id,
+      capability: registration.plugin.backend?.name,
+      assetBase: registration.plugin.entry.slice(0, registration.plugin.entry.lastIndexOf("/") + 1),
+    }));
   }
 }
 
@@ -137,6 +148,13 @@ export function createRegistration() {
         registration.actions.push(extension);
       });
     },
+    registerHelpChapter(name: string, chapter: HelpChapterRegistration) {
+      record(name, (registration) => {
+        validateHelpChapter(name, chapter);
+        if (registration.helpChapters.some((current) => current.slug === chapter.slug)) throw new Error(`Help chapter "${chapter.slug}" registered twice`);
+        registration.helpChapters.push(chapter);
+      });
+    },
     getPluginComponents: (name: string) => current?.plugin.id === name ? current.components : installed.get(name)?.components ?? {},
     registerSlot(slot?: { plugin?: string; target?: string; resourceType?: string; placement?: string }) {
       if (!current || !slot) return;
@@ -153,7 +171,7 @@ export function createRegistration() {
   };
   return {
     sdk,
-    begin(plugin: InstalledPlugin) { current = { plugin, components: {}, routes: {}, data: [], visibility: [], presentations: [], actions: [], cleanups: [] }; },
+    begin(plugin: InstalledPlugin) { current = { plugin, components: {}, routes: {}, data: [], visibility: [], presentations: [], actions: [], helpChapters: [], cleanups: [] }; },
     finish() {
       if (!current) throw new Error("No SDK entry is loading");
       if (current.error) throw current.error;

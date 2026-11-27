@@ -314,6 +314,46 @@ The host checks the contribution's optional `authKey` and read access to the
 registered plugin backend. The destination and its backend still enforce their
 own permissions.
 
+### Help chapters
+
+Register localized Markdown with `helpChapters` on `createPlugin()`. Console
+adds the chapter to its existing help contents and serves it at
+`/help/docs/<slug>`; using the previous slug preserves existing chapter links.
+
+```ts
+helpChapters: [{
+  slug: "my-plugin",
+  title: { "en-US": "My Plugin", "zh-CN": "My Plugin" },
+  content: { "en-US": englishMarkdown, "zh-CN": chineseMarkdown },
+}],
+```
+
+- The slug is the plugin ID or a kebab-case descendant such as
+  `my-plugin-advanced`. Duplicate, foreign and built-in slugs are rejected.
+- Both supported locales require non-empty titles and Markdown. Bundle the
+  content as strings; for `.md` imports with the SDK build preset, configure
+  `tsup: { loader: { ".md": "text" } }` and declare the import type in the
+  plugin's TypeScript project.
+- Copy illustrations below the entry's directory under `frontend/` in the
+  package. `images/diagram.svg` resolves relative to that directory, not the
+  Console page URL. Parent traversal and percent-encoded relative image paths
+  are rejected. Use root-relative Console links inside the Markdown.
+- The optional chapter `authKey` requires the same UI permission in the contents
+  list and at a direct URL. A plugin with a backend also requires configured,
+  available read access to that backend. Loading or failed access hides it.
+- Built-in chapters retain their order; plugin chapters follow, sorted by slug.
+  A failed plugin registration rolls back its chapters. Removal or disabling
+  takes effect on refresh, matching the loader's boot-time discovery.
+- The content and illustrations come from the installed package. Upgrades and
+  rollback select that package's documentation on refresh; a missing or denied
+  chapter renders the existing help not-found state.
+- A host without `registerHelpChapter` rejects a help-bearing bundle with an
+  explicit capability error. Pin a Console revision that includes this feature;
+  the same SDK protocol major alone does not guarantee support.
+
+See [the integration requirements and design](../design/canary-plugin-integration.md)
+for ownership, compatibility and cross-repository acceptance.
+
 ### Data and permissions
 
 ```tsx
